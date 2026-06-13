@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' https: data: blob: nndd-re-local:; media-src 'self' https: http://127.0.0.1:* blob: nndd-re-local:; connect-src 'self' https: http://127.0.0.1:* nndd-re-local:; worker-src 'self' blob:;"
+    />
+    <title>NNDD Player</title>
+  </head>
+  <body class="bg-black text-white font-sans">
+    <div id="player-root"></div>
+    <script type="module" src="./player.tsx"></script>
+  </body>
+</html>

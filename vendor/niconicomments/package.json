@@ -1,0 +1,15 @@
+{
+  "exports": {
+    ".": {
+      "types": "./dist/bundle.d.ts",
+      "import": "./dist/bundle.esm.js",
+      "require": "./dist/bundle.js"
+    }
+  },
+  "version": "0.2.78",
+  "module": "dist/bundle.esm.js",
+  "license": "MIT",
+  "types": "dist/bundle.d.ts",
+  "name": "@xpadev-net/niconicomments",
+  "main": "dist/bundle.js"
+}

@@ -1,0 +1,115 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* RGB channels (no #) for Tailwind opacity modifier support */
+  --nndd-bg: 30 30 30;
+  --nndd-panel: 42 42 42;
+  --nndd-border: 58 58 58;
+  --nndd-accent: 233 78 27;
+  --nndd-text: 224 224 224;
+  --nndd-subtext: 160 160 160;
+  /* hex for plain CSS (scrollbar / datagrid) */
+  --nndd-scrollbar-track: #1a1a1a;
+  --nndd-scrollbar-thumb: #4a4a4a;
+  --nndd-scrollbar-thumb-hover: #5a5a5a;
+  --nndd-datagrid-bg: #2a2a2a;
+  --nndd-datagrid-th-bg: #333;
+  --nndd-datagrid-th-text: #ccc;
+  --nndd-datagrid-th-border: #444;
+  --nndd-datagrid-td-border: #333;
+  --nndd-datagrid-hover: #3a3a3a;
+  --nndd-datagrid-selected: #4a4a6a;
+}
+
+:root.light {
+  --nndd-bg: 240 240 240;
+  --nndd-panel: 255 255 255;
+  --nndd-border: 208 208 208;
+  --nndd-accent: 233 78 27;
+  --nndd-text: 32 32 32;
+  --nndd-subtext: 96 96 96;
+  --nndd-scrollbar-track: #e8e8e8;
+  --nndd-scrollbar-thumb: #b0b0b0;
+  --nndd-scrollbar-thumb-hover: #909090;
+  --nndd-datagrid-bg: #ffffff;
+  --nndd-datagrid-th-bg: #f0f0f0;
+  --nndd-datagrid-th-text: #333333;
+  --nndd-datagrid-th-border: #d0d0d0;
+  --nndd-datagrid-td-border: #e0e0e0;
+  --nndd-datagrid-hover: #e8e8e8;
+  --nndd-datagrid-selected: #b0b8d8;
+}
+
+html,
+body,
+#root,
+#player-root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+  font-size: 13px;
+  user-select: none;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--nndd-scrollbar-track);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--nndd-scrollbar-thumb);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--nndd-scrollbar-thumb-hover);
+}
+
+/* 複数行省略 (TailwindでLineClampプラグイン不使用の代替) */
+.line-clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.line-clamp-3 {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* DataGrid (テーブル) ベーススタイル */
+.nndd-datagrid {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--nndd-datagrid-bg);
+}
+.nndd-datagrid th {
+  background: var(--nndd-datagrid-th-bg);
+  color: var(--nndd-datagrid-th-text);
+  font-weight: normal;
+  padding: 4px 8px;
+  text-align: left;
+  border-bottom: 1px solid var(--nndd-datagrid-th-border);
+  position: sticky;
+  top: 0;
+}
+.nndd-datagrid td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--nndd-datagrid-td-border);
+}
+.nndd-datagrid tr:hover {
+  background: var(--nndd-datagrid-hover);
+}
+.nndd-datagrid tr.selected {
+  background: var(--nndd-datagrid-selected);
+}

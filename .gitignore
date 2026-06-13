@@ -1,0 +1,33 @@
+# yt-dlp download fragment files
+--Frag*
+
+node_modules/
+dist/
+out/
+release/
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.env
+*.env.local
+*.tsbuildinfo
+CLAUDE.md
+# Native binary build artifacts
+*.node
+prebuilds/
+
+# Local config / runtime data
+userData/
+
+# Test artifacts
+test-shots/
+apitest/
+test-*.mjs
+
+# Claude Code local settings (contains personal paths)
+.claude/
+
+# TypeScript output
+tc_out.txt
