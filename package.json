@@ -28,7 +28,7 @@
     "tc:both:short": "tsc --noEmit -p tsconfig.node.json 2>&1 | findstr \"VIDEO_OPEN_PLAYER registerIpc\" | more +0"
   },
   "dependencies": {
-    "@xpadev-net/niconicomments": "file:./vendor/niconicomments",
+    "@xpadev-net/niconicomments": "^0.3.0",
     "better-sqlite3": "^11.3.0",
     "electron-store": "^8.2.0",
     "electron-updater": "^6.3.9",
