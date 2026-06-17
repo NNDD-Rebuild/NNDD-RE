@@ -7,14 +7,17 @@ NNDD (NicoNico Douga Downloader/Player) を Adobe AIR/ActionScript から **Elec
 ## 主な機能
 
 - 動画ダウンロード (HLS/DMS 対応、AES-128 復号、FFmpegでMP4結合)
-- ローカルライブラリ管理 (SQLite、命名規則 `タイトル[sm12345].mp4`)
+- ローカルライブラリ管理 (SQLite、命名規則 `タイトル[sm12345].mp4`、フォルダ管理)
 - ニコニココメント付き動画プレイヤー (Canvas APIで流れるコメント描画)
 - マイリスト・チャンネル・コミュニティ・ユーザー投稿・シリーズ取得
+- フォロー中フィード (フォロー中ユーザーの新着動画)
 - ランキング表示 (17ジャンル × 5期間)
 - キーワード/タグ検索 (snapshot API V2)
 - 視聴履歴
+- NGリスト (コメント/タグ/投稿者)
 - DLスケジューラー (曜日+時刻指定)
 - 内蔵HTTPサーバー (他アプリ連携、Range対応動画配信)
+- LANライブラリ共有 (同一LAN上の他PCへ動画配信)
 - システムトレイ常駐
 - 自動更新 (electron-updater)
 - 接続診断
@@ -29,7 +32,8 @@ Electron 33 (デスクトップ基盤)
 ├─ better-sqlite3 (ライブラリDB)
 ├─ Express (内蔵HTTPサーバー)
 ├─ hls.js (HLS動画再生)
-├─ ffmpeg-static (セグメント結合)
+├─ mpegts.js (M2TS/TSストリーミング)
+├─ @xpadev-net/niconicomments (コメント描画エンジン)
 ├─ tough-cookie (Cookie永続化)
 ├─ fast-xml-parser (RSS/コメントXML解析)
 ├─ electron-updater (自動更新)
@@ -51,6 +55,7 @@ src/
 │   │   ├── search/            検索API (snapshot v2)
 │   │   ├── mylist/            マイリストAPI (nvapi v2)
 │   │   ├── ranking/           ランキングRSS
+│   │   ├── follow/            フォロー中フィード
 │   │   └── ConnectionDiag.ts  接続診断
 │   ├── downloader/            DownloadManager / ScheduleManager / MyListAutoDL
 │   ├── library/               LibraryScanner
@@ -63,16 +68,18 @@ src/
 │   └── util/                  Logger
 ├── preload/                   contextBridge IPC API
 ├── renderer/                  React UI
-│   ├── App.tsx                メインウィンドウ (7タブ)
+│   ├── App.tsx                メインウィンドウ (8タブ)
 │   ├── PlayerApp.tsx          プレイヤーウィンドウ
 │   ├── components/
 │   │   ├── ranking/           ランキング
 │   │   ├── search/            検索
+│   │   ├── follow/            フォロー中
 │   │   ├── mylist/            マイリスト
 │   │   ├── download/          DLリスト
 │   │   ├── library/           ライブラリ
 │   │   ├── history/           履歴
-│   │   ├── settings/          設定 (8サブタブ)
+│   │   ├── lan/               LANライブラリ
+│   │   ├── settings/          設定 (9サブタブ)
 │   │   ├── player/            VideoPlayer / CommentOverlay / CommentRenderer
 │   │   └── common/            VideoCard / TitleBar / StatusBar
 │   ├── hooks/                 useConfig, useKeyboardShortcuts
@@ -108,7 +115,7 @@ npm run dev
 ### 型チェック
 
 ```bash
-npm run typecheck
+npm run tc:all
 ```
 
 ### プロダクションビルド
@@ -178,6 +185,9 @@ npm run dist:linux   # Linux AppImage
 | `GET /api/mylist` | 登録マイリスト一覧 (JSON) |
 | `GET /api/video/:id` | 個別動画情報 (JSON) |
 | `GET /api/video/:id/stream` | 動画ストリーミング (Range対応) |
+| `GET /api/video/:id/thumb` | サムネイル画像 |
+| `GET /api/video/:id/comments` | コメント一覧 (JSON) |
+| `GET /library` | HTMLライブラリページ |
 | `POST /NNDDServer` | 旧仕様XMLプロトコル (互換) |
 | `GET /NNDDServer/:videoId` | 旧仕様 動画配信 |
 
@@ -216,8 +226,8 @@ FFmpegManager    → init + segments を連結し muxing → MP4
 ## 開発時の注意
 
 - `better-sqlite3` はネイティブモジュールのため `electron-rebuild` または `electron-builder install-app-deps` の実行が必要になることがあります
-- `ffmpeg-static` は約60MBのバイナリを含むため、Asar から `app.asar.unpacked` へ展開する設定が `electron-builder.yml` に既に入っています
-- カスタムプロトコル `nndd-local://` は CSP 設定で許可済みです
+- FFmpeg / yt-dlp は設定 → 外部ツール画面からオンデマンドでダウンロードします (バイナリは `userData` 配下に保存)
+- カスタムプロトコル `nndd-re-local://` は CSP 設定で許可済みです
 
 ## 参考
 
