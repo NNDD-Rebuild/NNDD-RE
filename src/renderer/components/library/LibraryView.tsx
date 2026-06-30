@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { NNDDREVideo } from '@shared/types';
 import { IpcChannel } from '@shared/types';
+import { ContinuousPlayButton } from '../common/ContinuousPlayButton';
 import { useAppStore } from '@renderer/store/useAppStore';
 
 type ViewMode = 'tag' | 'folder';
@@ -623,6 +624,23 @@ export function LibraryView(): JSX.Element {
               >
                 {displayMode === 'table' ? '⊞' : '☰'}
               </button>
+              <ContinuousPlayButton
+                disabled={sorted.length === 0}
+                onPlay={(audioOnly) => {
+                  if (sorted.length === 0) return;
+                  const paths = sorted.map((x) => x.uri);
+                  const startIdx = selectedVideoIds.size > 0
+                    ? sorted.findIndex((x) => selectedVideoIds.has(x.id))
+                    : selected !== null
+                    ? sorted.findIndex((x) => x.id === selected)
+                    : 0;
+                  window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
+                    localPath: sorted[startIdx >= 0 ? startIdx : 0].uri,
+                    folderPlaylist: paths,
+                    audioOnly: audioOnly || undefined,
+                  });
+                }}
+              />
               <button
                 onClick={handleScan}
                 disabled={scanning}

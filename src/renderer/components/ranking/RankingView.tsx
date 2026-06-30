@@ -60,6 +60,9 @@ export function RankingView(): JSX.Element {
   const handleNiconico = (videoId: string): void => {
     window.nndd.invoke(window.nndd.channels.SYS_OPEN_PATH, `https://www.nicovideo.jp/watch/${videoId}`);
   };
+  const handlePlayAudioOnly = (videoId: string): void => {
+    window.nndd.invoke(window.nndd.channels.VIDEO_OPEN_PLAYER, { videoId, audioOnly: true });
+  };
 
   return (
     <div className="h-full flex flex-col">
@@ -137,6 +140,7 @@ export function RankingView(): JSX.Element {
                   onPlay={handlePlay}
                   onDownload={handleDownload}
                   onNiconico={handleNiconico}
+                  onPlayAudioOnly={handlePlayAudioOnly}
                   isDownloaded={downloadedIds.has(r.videoId)}
                 />
               ))}
@@ -163,6 +167,7 @@ export function RankingView(): JSX.Element {
                   onPlay={handlePlay}
                   onDownload={handleDownload}
                   onNiconico={handleNiconico}
+                  onPlayAudioOnly={handlePlayAudioOnly}
                   isDownloaded={downloadedIds.has(r.videoId)}
                 />
               ))}

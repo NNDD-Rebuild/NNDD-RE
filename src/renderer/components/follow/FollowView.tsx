@@ -273,6 +273,9 @@ export function FollowView(): JSX.Element {
   const handlePlay = (videoId: string): void => {
     window.nndd.invoke(window.nndd.channels.VIDEO_OPEN_PLAYER, { videoId });
   };
+  const handlePlayAudioOnly = (videoId: string): void => {
+    window.nndd.invoke(window.nndd.channels.VIDEO_OPEN_PLAYER, { videoId, audioOnly: true });
+  };
   const handleDownload = (videoId: string): void => {
     const commentOnly = downloadedIds.has(videoId);
     window.nndd.invoke(window.nndd.channels.DOWNLOAD_ENQUEUE, { videoId, commentOnly });
@@ -441,6 +444,7 @@ export function FollowView(): JSX.Element {
                     onDownload={handleDownload}
                     onNiconico={handleNiconico}
                     onUserPage={handleUserPage}
+                    onPlayAudioOnly={handlePlayAudioOnly}
                     isDownloaded={downloadedIds.has(r.videoId)}
                   />
                 ))}
@@ -456,6 +460,7 @@ export function FollowView(): JSX.Element {
                     onDownload={handleDownload}
                     onNiconico={handleNiconico}
                     onUserPage={handleUserPage}
+                    onPlayAudioOnly={handlePlayAudioOnly}
                     isDownloaded={downloadedIds.has(r.videoId)}
                   />
                 ))}

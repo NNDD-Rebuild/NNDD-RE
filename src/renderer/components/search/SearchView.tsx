@@ -7,6 +7,7 @@ import type {
 } from '@shared/types';
 import { NNDDRESearchType, NNDDRESearchSortType } from '@shared/types';
 import { VideoCard } from '../common/VideoCard';
+import { ContinuousPlayButton } from '../common/ContinuousPlayButton';
 import { useAppStore } from '@renderer/store/useAppStore';
 
 /**
@@ -172,6 +173,10 @@ export function SearchView(): JSX.Element {
     window.nndd.invoke(window.nndd.channels.VIDEO_OPEN_PLAYER, { videoId });
   };
 
+  const handlePlayAudioOnly = (videoId: string): void => {
+    window.nndd.invoke(window.nndd.channels.VIDEO_OPEN_PLAYER, { videoId, audioOnly: true });
+  };
+
   const handleDownload = (videoId: string): void => {
     const commentOnly = downloadedIds.has(videoId);
     window.nndd.invoke(window.nndd.channels.DOWNLOAD_ENQUEUE, { videoId, commentOnly });
@@ -320,6 +325,18 @@ export function SearchView(): JSX.Element {
                 ? `${total.toLocaleString()} 件中 ${(page - 1) * LIMIT + 1}–${Math.min(page * LIMIT, total)} 件表示`
                 : loading ? '検索中…' : ''}
             </span>
+            <ContinuousPlayButton
+              disabled={loading || results.length === 0}
+              onPlay={(audioOnly) => {
+                if (results.length === 0) return;
+                const videoIds = results.map((r) => r.videoId);
+                window.nndd.invoke(window.nndd.channels.VIDEO_OPEN_PLAYER, {
+                  videoId: videoIds[0],
+                  searchPlaylist: videoIds,
+                  audioOnly: audioOnly || undefined,
+                });
+              }}
+            />
             <div className="flex items-center gap-1 ml-auto">
               <button
                 onClick={() => handleSearch(page - 1)}
@@ -364,6 +381,7 @@ export function SearchView(): JSX.Element {
                       }}
                       onPlay={handlePlay}
                       onDownload={handleDownload}
+                      onPlayAudioOnly={handlePlayAudioOnly}
                       isDownloaded={downloadedIds.has(r.videoId)}
                     />
                   ))}
@@ -387,6 +405,7 @@ export function SearchView(): JSX.Element {
                       }}
                       onPlay={handlePlay}
                       onDownload={handleDownload}
+                      onPlayAudioOnly={handlePlayAudioOnly}
                       isDownloaded={downloadedIds.has(r.videoId)}
                     />
                   ))}
@@ -398,3 +417,5 @@ export function SearchView(): JSX.Element {
     </div>
   );
 }
+
+

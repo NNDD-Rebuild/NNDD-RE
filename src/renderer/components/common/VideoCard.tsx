@@ -1,3 +1,5 @@
+import React, { useEffect, useState } from 'react';
+
 /**
  * 検索結果・ランキング・マイリストで共通利用する動画カード。
  */
@@ -29,6 +31,8 @@ interface Props {
   onNiconico?: (videoId: string) => void;
   /** ユーザーページを開く */
   onUserPage?: (userId: string) => void;
+  /** 音声のみ再生 */
+  onPlayAudioOnly?: (videoId: string) => void;
   /** 横並び表示 (リスト) ⇄ 縦並び表示 (グリッド) */
   layout?: 'grid' | 'list';
   /** ライブラリにDL済みかどうか */
@@ -42,12 +46,43 @@ export function VideoCard({
   onOpenInfo,
   onNiconico,
   onUserPage,
+  onPlayAudioOnly,
   layout = 'grid',
   isDownloaded = false
 }: Props): JSX.Element {
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
+
+  const handleContextMenu = (e: React.MouseEvent): void => {
+    e.preventDefault();
+    setCtxMenu({ x: e.clientX, y: e.clientY });
+  };
+
+  const menu = ctxMenu && (
+    <ContextMenuPopup
+      x={ctxMenu.x}
+      y={ctxMenu.y}
+      onClose={() => setCtxMenu(null)}
+    >
+      {onPlay && (
+        <MenuItem onClick={() => { onPlay(data.videoId); setCtxMenu(null); }}>▶ 再生</MenuItem>
+      )}
+      {onPlayAudioOnly && (
+        <MenuItem onClick={() => { onPlayAudioOnly(data.videoId); setCtxMenu(null); }}>♪ 音声のみ再生</MenuItem>
+      )}
+      {onDownload && (
+        <MenuItem onClick={() => { onDownload(data.videoId); setCtxMenu(null); }}>
+          {isDownloaded ? '💬 コメント再取得' : '⬇ ダウンロード'}
+        </MenuItem>
+      )}
+      {onNiconico && (
+        <MenuItem onClick={() => { onNiconico(data.videoId); setCtxMenu(null); }}>🌐 ニコニコで開く</MenuItem>
+      )}
+    </ContextMenuPopup>
+  );
+
   if (layout === 'list') {
     return (
-      <div className="flex gap-2 p-2 bg-nndd-panel hover:bg-nndd-border rounded items-start">
+      <div className="flex gap-2 p-2 bg-nndd-panel hover:bg-nndd-border rounded items-start" onContextMenu={handleContextMenu}>
         <Thumb data={data} small />
         <div className="flex-1 min-w-0">
           <Title data={data} onUserPage={onUserPage} />
@@ -62,11 +97,12 @@ export function VideoCard({
           onUserPage={onUserPage}
           isDownloaded={isDownloaded}
         />
+        {menu}
       </div>
     );
   }
   return (
-    <div className="bg-nndd-panel hover:bg-nndd-border rounded overflow-hidden flex flex-col">
+    <div className="bg-nndd-panel hover:bg-nndd-border rounded overflow-hidden flex flex-col" onContextMenu={handleContextMenu}>
       <Thumb data={data} />
       <div className="p-2 flex-1 flex flex-col">
         <Title data={data} onUserPage={onUserPage} />
@@ -83,6 +119,7 @@ export function VideoCard({
           />
         </div>
       </div>
+      {menu}
     </div>
   );
 }
@@ -265,4 +302,48 @@ function formatDate(d: Date | string): string {
   const date = typeof d === 'string' ? new Date(d) : d;
   if (isNaN(date.getTime())) return '';
   return date.toLocaleDateString('ja-JP');
+}
+
+function ContextMenuPopup({
+  x, y, onClose, children
+}: {
+  x: number; y: number;
+  onClose: () => void;
+  children: React.ReactNode;
+}): JSX.Element {
+  useEffect(() => {
+    const handler = (e: MouseEvent): void => {
+      if (!(e.target as HTMLElement).closest('[data-ctx-menu]')) onClose();
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [onClose]);
+
+  const top = Math.min(y, window.innerHeight - 160);
+  const left = Math.min(x, window.innerWidth - 200);
+
+  return (
+    <div
+      data-ctx-menu
+      className="fixed bg-nndd-panel border border-nndd-border rounded shadow-lg py-1 text-xs z-[9999]"
+      style={{ top, left }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {children}
+    </div>
+  );
+}
+
+function MenuItem({ onClick, children }: {
+  onClick: () => void;
+  children: React.ReactNode;
+}): JSX.Element {
+  return (
+    <button
+      onClick={onClick}
+      className="w-full px-3 py-1.5 text-left hover:bg-nndd-border whitespace-nowrap"
+    >
+      {children}
+    </button>
+  );
 }

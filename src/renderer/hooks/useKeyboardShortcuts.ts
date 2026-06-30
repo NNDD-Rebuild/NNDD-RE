@@ -8,6 +8,8 @@ export interface KeyboardShortcutHandlers {
   seek?: (deltaSec: number) => void;
   volumeUp?: () => void;
   volumeDown?: () => void;
+  skipNext?: () => void;
+  skipPrev?: () => void;
 }
 
 /**
@@ -66,6 +68,18 @@ export function useKeyboardShortcuts(
         case 'ArrowDown':
           e.preventDefault();
           handlers.volumeDown?.();
+          break;
+        case 'KeyN':
+          if (e.shiftKey) {
+            e.preventDefault();
+            handlers.skipNext?.();
+          }
+          break;
+        case 'KeyP':
+          if (e.shiftKey) {
+            e.preventDefault();
+            handlers.skipPrev?.();
+          }
           break;
       }
     };
