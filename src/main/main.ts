@@ -6,7 +6,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import { LibraryManager } from './db/LibraryManager';
 import { getConfigStore } from './config/ConfigStore';
 import { registerIpcHandlers } from './ipc/registerIpc';
-import { createLogger } from './util/Logger';
+import { createLogger, setLogLevel } from './util/Logger';
 import { NicoContext } from './nicovideo/NicoContext';
 import {
   registerScheme,
@@ -40,6 +40,20 @@ if (process.env['NODE_ENV'] !== 'production') {
 
 // app.whenReady() より前にスキーム登録が必要
 registerScheme();
+
+// 多重起動防止: 2つ目のインスタンスは既存ウィンドウを復元して終了
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      if (!mainWindow.isVisible()) mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+}
 
 function createMainWindow(): BrowserWindow {
   const config = getConfigStore();
@@ -148,6 +162,7 @@ app.whenReady().then(async () => {
 
   // ライブラリ (DB) 初期化 — DB は常にデフォルト位置 (Documents/NNDD-RE/)
   const config = getConfigStore();
+  setLogLevel(config.get('logLevel'));
   library = LibraryManager.createDefault();
 
   // 動画保存先: libraryRoot 設定があればそこ、なければデフォルト (library/Downloads)
