@@ -143,7 +143,7 @@ export async function handleProxyRequest(
   proxyBase: string
 ): Promise<{ body: Buffer; contentType: string; m3u8Meta?: M3u8Meta }> {
   const originalUrl = decodeProxyUrl(encodedUrl);
-  log.info(`proxy ${type}: ${originalUrl.slice(0, 120)}`);
+  log.verbose(`proxy ${type}: ${originalUrl.slice(0, 120)}`);
 
   const http = NicoContext.get().http;
 

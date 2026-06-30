@@ -39,7 +39,7 @@ export class LanLibraryClient {
   }
 
   async ping(): Promise<boolean> {
-    log.info(`LAN ping → ${this.base}/NNDDServer`);
+    log.verbose(`LAN ping → ${this.base}/NNDDServer`);
     try {
       const resp = await fetch(`${this.base}/NNDDServer`, {
         method: 'POST',
@@ -47,7 +47,7 @@ export class LanLibraryClient {
         body: '<nnddRequest type="GET_VIDEO_ID_LIST"/>',
         signal: AbortSignal.timeout(3000)
       });
-      log.info(`LAN ping ← status ${resp.status}`);
+      log.verbose(`LAN ping ← status ${resp.status}`);
       return resp.status < 500;
     } catch (e) {
       log.warn(`LAN ping failed: ${e instanceof Error ? e.message : String(e)}`);
@@ -63,10 +63,10 @@ export class LanLibraryClient {
         body: '<nnddRequest type="GET_VIDEO_ID_LIST"/>',
         signal: AbortSignal.timeout(5000)
       });
-      log.info(`LAN getVideoIdList ← status ${resp.status}`);
+      log.verbose(`LAN getVideoIdList ← status ${resp.status}`);
       if (!resp.ok) return [];
       const text = await resp.text();
-      log.info(`LAN getVideoIdList body(300): ${text.slice(0, 300)}`);
+      log.verbose(`LAN getVideoIdList body(300): ${text.slice(0, 300)}`);
       const results: LanVideo[] = [];
       const re = /<video\s+([^>]+)>([^<]*)<\/video>/g;
       let m;

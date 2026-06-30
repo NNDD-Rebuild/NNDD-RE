@@ -213,6 +213,9 @@ export interface NnddConfig {
     maxSizeMb: number;
   };
 
+  /** ログレベル: 'standard' = 重要ログのみ, 'verbose' = 全ログ */
+  logLevel: 'standard' | 'verbose';
+
   /** 開発者オプション */
   developer: {
     /** 開発者モードを有効にするか */
@@ -304,6 +307,7 @@ const DEFAULTS: NnddConfig = {
     enabled: true,
     maxSizeMb: 1000
   },
+  logLevel: 'standard',
   developer: {
     enabled: false,
     apiDumpPath: undefined,

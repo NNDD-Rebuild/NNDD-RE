@@ -111,7 +111,7 @@ export class CommentClient {
 
     if (developerEnabled && developerTargets.includes('comment')) {
       debugDumpPath = configStore.get('developer.apiDumpPath') || path.join(process.cwd(), 'apitest');
-      log.info(`Comment API dump enabled: ${debugDumpPath}`);
+      log.verbose(`Comment API dump enabled: ${debugDumpPath}`);
     }
 
     await rateLimiter.acquire();
@@ -192,7 +192,7 @@ export class CommentClient {
 
     if (developerEnabled && developerTargets.includes('comment')) {
       debugDumpPath = configStore.get('developer.apiDumpPath') || path.join(process.cwd(), 'apitest');
-      log.info(`Comment API dump enabled: ${debugDumpPath}`);
+      log.verbose(`Comment API dump enabled: ${debugDumpPath}`);
     }
 
     // スレッドごとの重複排除 Map (key: `${threadId}:${no}`)

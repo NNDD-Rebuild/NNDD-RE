@@ -168,7 +168,7 @@ export class BinaryInstaller {
     const url = `https://github.com/yt-dlp/yt-dlp/releases/latest/download/${remoteName}`;
     const destPath = this.ytDlpLocalPath();
 
-    log.info(`Downloading yt-dlp from ${url}`);
+    log.verbose(`Downloading yt-dlp from ${url}`);
     await downloadFile(url, destPath, onProgress, signal);
     if (platform !== 'win32') fs.chmodSync(destPath, 0o755);
     log.info('yt-dlp download complete:', destPath);
@@ -201,7 +201,7 @@ export class BinaryInstaller {
       const archivePath = path.join(tmpDir, archiveName);
       const url = `https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/${archiveName}`;
 
-      log.info(`Downloading ffmpeg from ${url}`);
+      log.verbose(`Downloading ffmpeg from ${url}`);
       await downloadFile(url, archivePath, onProgress, signal);
 
       if (platform === 'win32') {

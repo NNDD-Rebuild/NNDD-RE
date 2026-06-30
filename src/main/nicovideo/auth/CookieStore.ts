@@ -29,7 +29,7 @@ export class CookieStore {
       try {
         const raw = fs.readFileSync(filePath, 'utf-8');
         jar = await CookieJar.deserialize(JSON.parse(raw));
-        log.info('Cookie jar loaded:', filePath);
+        log.verbose('Cookie jar loaded:', filePath);
       } catch (e) {
         log.warn('Failed to load cookie jar, creating new one:', e);
         jar = new CookieJar();

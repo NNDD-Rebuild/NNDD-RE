@@ -98,7 +98,7 @@ export class NnddHttpServer {
   private setupRoutes(): void {
     // 全リクエストをログ
     this.app.use((req, _res, next) => {
-      log.info(`→ ${req.method} ${req.url} from ${req.ip} [CT:${req.headers['content-type'] ?? 'none'} CL:${req.headers['content-length'] ?? 'none'}]`);
+      log.verbose(`→ ${req.method} ${req.url} from ${req.ip} [CT:${req.headers['content-type'] ?? 'none'} CL:${req.headers['content-length'] ?? 'none'}]`);
       next();
     });
 
@@ -184,7 +184,7 @@ export class NnddHttpServer {
       : String(raw ?? '');
     log.debug('legacy NNDDServer POST:', xml.slice(0, 200));
 
-    log.info([
+    log.verbose([
       `NNDDServer ${req.method} from ${req.ip}`,
       `  URL: ${req.url}`,
       `  Content-Type: ${req.headers['content-type'] ?? 'none'}`,
@@ -196,7 +196,7 @@ export class NnddHttpServer {
 
     const typeMatch = xml.match(/type=["']([^"']+)["']/);
     const type = typeMatch?.[1] ?? '';
-    log.info(`NNDDServer request type: "${type}"`);
+    log.verbose(`NNDDServer request type: "${type}"`);
 
     try {
       // 本家NNDD互換: GET_VIDEO_ID_LIST

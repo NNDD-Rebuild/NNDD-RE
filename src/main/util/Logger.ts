@@ -13,6 +13,15 @@ import { app } from 'electron';
 let logFilePath: string | null = null;
 let initialized = false;
 const MAX_LOG_BYTES = 1_000_000; // 1MB
+let currentLogLevel: 'standard' | 'verbose' = 'standard';
+
+export function setLogLevel(level: 'standard' | 'verbose'): void {
+  currentLogLevel = level;
+}
+
+export function getLogLevel(): 'standard' | 'verbose' {
+  return currentLogLevel;
+}
 
 function ensureInit(): void {
   if (initialized) return;
@@ -76,6 +85,12 @@ export class Logger {
   error(...args: unknown[]): void {
     console.error(`[ERROR][${this.tag}]`, ...args);
     writeToFile('ERROR', this.tag, format(args));
+  }
+  verbose(...args: unknown[]): void {
+    if (currentLogLevel === 'verbose') {
+      console.log(`[VERBOSE][${this.tag}]`, ...args);
+      writeToFile('VERBOSE', this.tag, format(args));
+    }
   }
   debug(...args: unknown[]): void {
     if (process.env.NODE_ENV !== 'production') {

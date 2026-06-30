@@ -139,7 +139,7 @@ async function getMyUserId(): Promise<string> {
   const json = await res.json() as Record<string, unknown>;
   const id = (json['data'] as Record<string, unknown>)?.['user']?.['id'] ?? json['id'];
   if (!id) throw new Error('userId not found');
-  log.info('userId =', id);
+  log.verbose('userId =', id);
   return String(id);
 }
 
@@ -174,7 +174,7 @@ async function getFollowingUsers(maxCount = 30): Promise<FollowingUser[]> {
         });
         if (users.length >= maxCount) break;
       }
-      log.info(`following users: ${users.length}件取得`);
+      log.verbose(`following users: ${users.length}件取得`);
 
       const summary = json.data?.summary;
       if (!summary?.hasNext || !summary.cursor || users.length >= maxCount) break;

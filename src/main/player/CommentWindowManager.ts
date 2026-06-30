@@ -127,7 +127,7 @@ export class CommentWindowManager {
     });
 
     win.on('closed', () => {
-      log.info('comment window closed');
+      log.verbose('comment window closed');
       getConfigStore().set('player.commentWindowAutoOpen', false);
       this.win = null;
       this.playerWin = null;
