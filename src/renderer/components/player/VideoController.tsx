@@ -6,6 +6,11 @@ interface Props {
   showComments: boolean;
   onToggleComments: () => void;
   onToggleFullscreen?: () => void;
+  hideCommentToggle?: boolean;
+  canSkipPrev?: boolean;
+  canSkipNext?: boolean;
+  onSkipPrev?: () => void;
+  onSkipNext?: () => void;
 }
 
 /**
@@ -23,7 +28,12 @@ export function VideoController({
   video,
   showComments,
   onToggleComments,
-  onToggleFullscreen
+  onToggleFullscreen,
+  hideCommentToggle,
+  canSkipPrev,
+  canSkipNext,
+  onSkipPrev,
+  onSkipNext
 }: Props): JSX.Element {
   const [uiSize] = useConfig<'small' | 'normal' | 'large'>('player.controlUiSize', 'small');
   const zoomFactor = uiSize === 'large' ? 1.5 : uiSize === 'normal' ? 1.3 : 1;
@@ -180,6 +190,27 @@ export function VideoController({
         {fmt(currentTime)} / {isFinite(duration) && duration > 0 ? fmt(duration) : '...'}
       </span>
 
+      {(canSkipPrev != null || canSkipNext != null) && (
+        <>
+          <Btn
+            onClick={onSkipPrev}
+            disabled={!canSkipPrev}
+            title="前の動画 (Shift+P)"
+            className={!canSkipPrev ? 'opacity-50 cursor-not-allowed' : ''}
+          >
+            ◄
+          </Btn>
+          <Btn
+            onClick={onSkipNext}
+            disabled={!canSkipNext}
+            title="次の動画 (Shift+N)"
+            className={!canSkipNext ? 'opacity-50 cursor-not-allowed' : ''}
+          >
+            ►
+          </Btn>
+        </>
+      )}
+
       <Btn onClick={toggleMute} title={muted ? 'ミュート解除' : 'ミュート'}>
         {muted || volume === 0 ? '🔇' : '🔊'}
       </Btn>
@@ -193,27 +224,26 @@ export function VideoController({
         className="w-20"
       />
 
-      {[1.0, 1.5, 2.0].map((r) => (
-        <button
-          key={r}
-          onClick={() => changeRate(r)}
-          className={[
-            'px-2 py-0.5 rounded',
-            rate === r
-              ? 'bg-nndd-accent text-white'
-              : 'bg-nndd-border hover:bg-nndd-accent/60'
-          ].join(' ')}
-        >
-          {r.toFixed(1)}x
-        </button>
-      ))}
-
-      <Btn
-        onClick={onToggleComments}
-        title={showComments ? 'コメント非表示' : 'コメント表示'}
+      <select
+        value={rate}
+        onChange={(e) => changeRate(Number(e.target.value))}
+        className="bg-nndd-border text-white text-sm rounded px-1 py-0.5 cursor-pointer"
       >
-        {showComments ? '💬 ON' : '💬 OFF'}
-      </Btn>
+        {[0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0].map((r) => (
+          <option key={r} value={r}>
+            {r.toFixed(2).replace(/\.?0+$/, '')}x
+          </option>
+        ))}
+      </select>
+
+      {!hideCommentToggle && (
+        <Btn
+          onClick={onToggleComments}
+          title={showComments ? 'コメント非表示' : 'コメント表示'}
+        >
+          {showComments ? '💬 ON' : '💬 OFF'}
+        </Btn>
+      )}
 
       {onToggleFullscreen && (
         <Btn onClick={onToggleFullscreen} title="フルスクリーン">
