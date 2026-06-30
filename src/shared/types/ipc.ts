@@ -30,6 +30,8 @@ export const IpcChannel = {
   AUTH_AUTO_RELOGIN: 'nndd:auth:autoRelogin',
   /** 保存済みメールアドレスを返す → string | null */
   AUTH_GET_SAVED_EMAIL: 'nndd:auth:getSavedEmail',
+  /** 保存済み認証情報でログイン → FormLoginResult */
+  AUTH_LOGIN_WITH_SAVED: 'nndd:auth:loginWithSaved',
   /** セッション期限切れ通知 (main→renderer) → { mfaRequired?: boolean; mfaSubmitUrl?: string } */
   AUTH_SESSION_EXPIRED: 'nndd:auth:sessionExpired',
 
@@ -67,6 +69,8 @@ export const IpcChannel = {
   MYLIST_FETCH_PAGE: 'nndd:mylist:fetchPage',
   /** シリーズIDからアイテム一覧を取得 → {name: string, items: {videoId:string,title:string}[]} */
   SERIES_FETCH: 'nndd:series:fetch',
+  /** マイリストの表示名を更新 */
+  MYLIST_UPDATE_NAME: 'nndd:mylist:updateName',
   /** 動画をとりあえずマイリストに追加 → true */
   MYLIST_ADD_VIDEO_DEFLIST: 'nndd:mylist:addVideoDeflist',
 

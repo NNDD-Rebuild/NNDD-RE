@@ -28,14 +28,20 @@ export function LoginArea(): JSX.Element {
   // 起動時: セッション確認 + 期限切れなら自動再ログイン
   useEffect(() => {
     void (async () => {
-      const result = await window.nndd.invoke<AutoReloginResult>(
-        window.nndd.channels.AUTH_AUTO_RELOGIN
-      );
-      if (result.ok) {
-        setLoggedIn(true);
-      } else if (result.mfaRequired && result.mfaSubmitUrl) {
-        setAutoMfaUrl(result.mfaSubmitUrl);
-        setAutoMfaOpen(true);
+      try {
+        const result = await window.nndd.invoke<AutoReloginResult>(
+          window.nndd.channels.AUTH_AUTO_RELOGIN
+        );
+        if (result.ok) {
+          setLoggedIn(true);
+        } else if (result.mfaRequired && result.mfaSubmitUrl) {
+          setAutoMfaUrl(result.mfaSubmitUrl);
+          setAutoMfaOpen(true);
+        } else {
+          setLoggedIn(false);
+        }
+      } catch {
+        setLoggedIn(false);
       }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -14,6 +14,12 @@ const log = createLogger('AuthManager');
  * 元: nicovideo4as の Login.as, Niconicome-develop の Auth.cs
  */
 export class AuthManager {
+  private static _loggedOut = false;
+
+  static get isLoggedOut(): boolean {
+    return this._loggedOut;
+  }
+
   /**
    * ログイン状態を確認 (保存済みCookieの有効性)。
    * Niconicome同様、トップページに HEAD/GET し、リダイレクト先で判断する。
@@ -51,7 +57,9 @@ export class AuthManager {
     email: string,
     password: string
   ): Promise<FormLoginResult> {
-    return NicoFormLoginClient.login(email, password);
+    const result = await NicoFormLoginClient.login(email, password);
+    if (result.ok) this._loggedOut = false;
+    return result;
   }
 
   /** MFAコード送信で認証完了 */
@@ -59,7 +67,9 @@ export class AuthManager {
     mfaSubmitUrl: string,
     code: string
   ): Promise<FormLoginResult> {
-    return NicoFormLoginClient.completeMfa(mfaSubmitUrl, code);
+    const result = await NicoFormLoginClient.completeMfa(mfaSubmitUrl, code);
+    if (result.ok) this._loggedOut = false;
+    return result;
   }
 
   /** メール/パスワードを OS セキュアストレージに保存 */
@@ -121,7 +131,10 @@ export class AuthManager {
     log.debug('auto relogin for:', email);
     try {
       const result = await NicoFormLoginClient.login(email, password);
-      if (result.ok) return { ok: true };
+      if (result.ok) {
+        this._loggedOut = false;
+        return { ok: true };
+      }
       if (result.mfaRequired && result.mfaSubmitUrl) {
         return { ok: false, mfaRequired: true, mfaSubmitUrl: result.mfaSubmitUrl };
       }
@@ -133,6 +146,27 @@ export class AuthManager {
       log.warn('auto relogin error:', e);
       return { ok: false, error: e instanceof Error ? e.message : String(e) };
     }
+  }
+
+  /** 保存済み認証情報でログイン (モーダルから呼ばれる) */
+  static async loginWithSavedCredentials(): Promise<FormLoginResult> {
+    const auth = getConfigStore().get('auth');
+    const email = auth.savedEmail;
+    const enc = auth.savedPasswordEnc;
+    if (!email || !enc) {
+      return { ok: false, error: '保存済みの認証情報がありません' };
+    }
+    let password: string;
+    try {
+      password = safeStorage.decryptString(Buffer.from(enc, 'base64'));
+    } catch (e) {
+      log.warn('failed to decrypt saved password:', e);
+      this.clearCredentials();
+      return { ok: false, error: '保存済みパスワードの復号に失敗しました' };
+    }
+    const result = await NicoFormLoginClient.login(email, password);
+    if (result.ok) this._loggedOut = false;
+    return result;
   }
 
   /** ログアウト (Cookieを全クリア) */
@@ -148,5 +182,6 @@ export class AuthManager {
       log.warn('Server logout failed (ignored):', e);
     }
     await ctx.cookieStore.clear();
+    this._loggedOut = true;
   }
 }

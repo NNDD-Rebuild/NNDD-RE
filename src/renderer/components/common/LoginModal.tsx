@@ -31,21 +31,24 @@ export function LoginModal({ onClose, onLoggedIn, initialStage, initialMfaSubmit
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [savePassword, setSavePassword] = useState(false);
+  const [hasSavedCredentials, setHasSavedCredentials] = useState(false);
   const [mfaCode, setMfaCode] = useState('');
   const [mfaSubmitUrl, setMfaSubmitUrl] = useState(initialMfaSubmitUrl ?? '');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    window.nndd
-      .invoke<string | null>(window.nndd.channels.AUTH_GET_SAVED_EMAIL)
-      .then((savedEmail) => {
-        if (savedEmail) {
-          setEmail(savedEmail);
-          setSavePassword(true);
-        }
-      })
-      .catch(() => {});
+    void (async () => {
+      const [savedEmail, hasCreds] = await Promise.all([
+        window.nndd.invoke<string | null>(window.nndd.channels.AUTH_GET_SAVED_EMAIL).catch(() => null),
+        window.nndd.invoke<boolean>(window.nndd.channels.AUTH_HAS_CREDENTIALS).catch(() => false)
+      ]);
+      if (savedEmail) {
+        setEmail(savedEmail);
+        setSavePassword(true);
+      }
+      setHasSavedCredentials(hasCreds);
+    })();
   }, []);
 
   const saveCredentialsIfNeeded = async (): Promise<void> => {
@@ -60,26 +63,37 @@ export function LoginModal({ onClose, onLoggedIn, initialStage, initialMfaSubmit
     }
   };
 
+  const handleLoginResult = async (res: FormLoginResult): Promise<void> => {
+    if (res.ok) {
+      await saveCredentialsIfNeeded();
+      onLoggedIn();
+      onClose();
+      return;
+    }
+    if (res.mfaRequired && res.mfaSubmitUrl) {
+      setMfaSubmitUrl(res.mfaSubmitUrl);
+      setStage('mfa');
+      return;
+    }
+    setError(res.error ?? 'ログインに失敗しました');
+  };
+
   const submitCredentials = async (): Promise<void> => {
     setError(null);
     setBusy(true);
     try {
-      const res = await window.nndd.invoke<FormLoginResult>(
-        window.nndd.channels.AUTH_LOGIN_FORM,
-        { email, password }
-      );
-      if (res.ok) {
-        await saveCredentialsIfNeeded();
-        onLoggedIn();
-        onClose();
-        return;
+      let res: FormLoginResult;
+      if (!password && hasSavedCredentials) {
+        res = await window.nndd.invoke<FormLoginResult>(
+          window.nndd.channels.AUTH_LOGIN_WITH_SAVED
+        );
+      } else {
+        res = await window.nndd.invoke<FormLoginResult>(
+          window.nndd.channels.AUTH_LOGIN_FORM,
+          { email, password }
+        );
       }
-      if (res.mfaRequired && res.mfaSubmitUrl) {
-        setMfaSubmitUrl(res.mfaSubmitUrl);
-        setStage('mfa');
-        return;
-      }
-      setError(res.error ?? 'ログインに失敗しました');
+      await handleLoginResult(res);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -124,6 +138,8 @@ export function LoginModal({ onClose, onLoggedIn, initialStage, initialMfaSubmit
     }
   };
 
+  const canSubmit = email && (password || hasSavedCredentials) && !busy;
+
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
       <div className="bg-nndd-panel border border-nndd-border rounded p-5 w-[360px] text-sm">
@@ -156,12 +172,18 @@ export function LoginModal({ onClose, onLoggedIn, initialStage, initialMfaSubmit
                 disabled={busy}
                 className="w-full mt-1 px-2 py-1 bg-nndd-bg border border-nndd-border rounded"
                 autoComplete="current-password"
+                placeholder={hasSavedCredentials ? '●●●●●●●● (保存済み)' : ''}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter' && email && password && !busy) {
+                  if (e.key === 'Enter' && canSubmit) {
                     void submitCredentials();
                   }
                 }}
               />
+              {hasSavedCredentials && !password && (
+                <span className="text-nndd-subtext text-xs mt-1 block">
+                  空欄のまま送信すると保存済みパスワードを使用します
+                </span>
+              )}
             </label>
             <label className="flex items-center gap-2 mb-3 cursor-pointer select-none">
               <input
@@ -180,7 +202,7 @@ export function LoginModal({ onClose, onLoggedIn, initialStage, initialMfaSubmit
             )}
             <button
               onClick={submitCredentials}
-              disabled={busy || !email || !password}
+              disabled={!canSubmit}
               className="w-full py-1.5 bg-nndd-accent text-white rounded disabled:opacity-50"
             >
               {busy ? '送信中…' : 'ログイン'}
