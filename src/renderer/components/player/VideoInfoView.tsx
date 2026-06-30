@@ -29,8 +29,8 @@ interface Props {
   autoNextSeries?: boolean;
   /** 連続再生トグル */
   onAutoNextChange?: (v: boolean) => void;
-  /** シリーズ動画リスト読み込み完了 */
-  onSeriesItemsLoaded?: (items: MyListItem[]) => void;
+  /** シリーズページ読み込み完了 */
+  onSeriesPageLoaded?: (items: MyListItem[], page: number, totalPages: number, seriesId: string) => void;
 }
 
 type Tab = 'info' | 'comments' | 'pastComments' | 'series';
@@ -57,7 +57,7 @@ export function VideoInfoView({
   onPastCommentTabActive,
   autoNextSeries = false,
   onAutoNextChange,
-  onSeriesItemsLoaded
+  onSeriesPageLoaded
 }: Props): JSX.Element {
   const [tab, setTab] = useState<Tab>('info');
   const [controlUiSize] = useConfig<'small' | 'normal' | 'large'>('player.controlUiSize', 'small');
@@ -288,7 +288,7 @@ export function VideoInfoView({
             currentVideoId={watch.videoId}
             autoNext={autoNextSeries}
             onAutoNextChange={onAutoNextChange}
-            onItemsLoaded={onSeriesItemsLoaded}
+            onPageLoaded={onSeriesPageLoaded}
           />
         ) : tab === 'comments' ? (
           <CommentList
@@ -626,18 +626,22 @@ function SeriesTabContent({
   currentVideoId,
   autoNext = false,
   onAutoNextChange,
-  onItemsLoaded
+  onPageLoaded
 }: {
   seriesId: string;
   seriesTitle: string;
   currentVideoId: string;
   autoNext?: boolean;
   onAutoNextChange?: (v: boolean) => void;
-  onItemsLoaded?: (items: MyListItem[]) => void;
+  onPageLoaded?: (items: MyListItem[], page: number, totalPages: number, seriesId: string) => void;
 }): JSX.Element {
   const [items, setItems] = useState<MyListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const activeRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const [addingId, setAddingId] = useState<string | null>(null);
   const [addedIds, setAddedIds] = useState<Set<string>>(new Set());
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -649,19 +653,34 @@ function SeriesTabContent({
     toastTimerRef.current = setTimeout(() => setToastMsg(null), 2500);
   };
 
-  useEffect(() => {
+  const fetchSeriesPage = (targetPage?: number): void => {
     setLoading(true);
     setError(null);
     window.nndd
-      .invoke<{ name: string; items: MyListItem[] }>(IpcChannel.SERIES_FETCH, seriesId)
+      .invoke<{ name: string; items: MyListItem[]; page: number; totalPages: number }>(
+        IpcChannel.SERIES_FETCH, seriesId, targetPage ? undefined : currentVideoId, targetPage
+      )
       .then((r) => {
         setItems(r.items);
-        onItemsLoaded?.(r.items);
+        setPage(r.page);
+        setTotalPages(r.totalPages);
+        onPageLoaded?.(r.items, r.page, r.totalPages, seriesId);
+        if (targetPage) listRef.current?.scrollTo(0, 0);
       })
       .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    fetchSeriesPage();
     return () => { if (toastTimerRef.current) clearTimeout(toastTimerRef.current); };
   }, [seriesId]);
+
+  useEffect(() => {
+    if (!loading && items.length > 0 && activeRef.current) {
+      activeRef.current.scrollIntoView({ block: 'nearest' });
+    }
+  }, [loading, items, currentVideoId]);
 
   const handleAddWatchLater = (videoId: string): void => {
     setAddingId(videoId);
@@ -699,24 +718,41 @@ function SeriesTabContent({
       <div className="shrink-0 px-3 pt-2 pb-1 text-xs font-bold text-nndd-text truncate">
         {seriesTitle}
       </div>
-      <div className="shrink-0 px-3 pb-2 border-b border-nndd-border flex items-center gap-2">
-        <label className="flex items-center gap-1 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={autoNext}
-            onChange={(e) => onAutoNextChange?.(e.target.checked)}
-            className="accent-nndd-accent"
-          />
-          <span className="text-xs text-nndd-subtext">連続再生</span>
-        </label>
-        <button
-          onClick={handleAddToMylist}
-          className="text-xs text-nndd-subtext hover:text-nndd-text px-1.5 py-0.5 rounded border border-nndd-border hover:bg-nndd-border/50 transition-colors"
-        >
-          ★ マイリストに追加
-        </button>
+      <div className="shrink-0 px-3 pb-2 border-b border-nndd-border flex flex-col gap-1">
+        <div className="flex items-center gap-2">
+          <label className="flex items-center gap-1 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={autoNext}
+              onChange={(e) => onAutoNextChange?.(e.target.checked)}
+              className="accent-nndd-accent"
+            />
+            <span className="text-xs text-nndd-subtext">連続再生</span>
+          </label>
+          <button
+            onClick={handleAddToMylist}
+            className="text-xs text-nndd-subtext hover:text-nndd-text px-1.5 py-0.5 rounded border border-nndd-border hover:bg-nndd-border/50 transition-colors"
+          >
+            ★ マイリストに追加
+          </button>
+        </div>
+        {totalPages > 1 && (
+          <div className="flex items-center gap-1 ml-auto">
+            <button
+              onClick={() => fetchSeriesPage(page - 1)}
+              disabled={loading || page <= 1}
+              className="px-2 py-0.5 bg-nndd-border rounded hover:bg-nndd-accent disabled:opacity-40"
+            >◀ 前</button>
+            <span className="text-nndd-subtext px-2">{page} / {totalPages}</span>
+            <button
+              onClick={() => fetchSeriesPage(page + 1)}
+              disabled={loading || page >= totalPages}
+              className="px-2 py-0.5 bg-nndd-border rounded hover:bg-nndd-accent disabled:opacity-40"
+            >次 ▶</button>
+          </div>
+        )}
       </div>
-      <div className="flex-1 min-h-0 overflow-y-auto">
+      <div ref={listRef} className="flex-1 min-h-0 overflow-y-auto">
         {loading && (
           <div className="p-3 text-xs text-nndd-subtext">読込中…</div>
         )}
@@ -725,6 +761,7 @@ function SeriesTabContent({
         )}
         {items.map((item) => (
           <div
+            ref={item.videoId === currentVideoId ? activeRef : undefined}
             key={item.videoId}
             className={[
               'flex items-center gap-2 px-2 py-1.5',
