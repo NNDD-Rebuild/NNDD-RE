@@ -9,7 +9,8 @@ import {
   createLogger,
   readLogTail,
   clearLog,
-  getLogFilePath
+  getLogFilePath,
+  setLogLevel
 } from '../util/Logger';
 import {
   AuthManager,
@@ -242,6 +243,11 @@ export function registerIpcHandlers(
     return true;
   });
 
+  ipcMain.handle(IpcChannel.MYLIST_UPDATE_NAME, (_e, args: { url: string; name: string }) => {
+    library.myListDao.updateName(args.url, args.name);
+    return true;
+  });
+
   ipcMain.handle(
     IpcChannel.MYLIST_RENEW,
     async (_e, mylistUrl: string) => {
@@ -272,15 +278,12 @@ export function registerIpcHandlers(
     return MyListClient.fetchMylistInfo(m[1]);
   });
 
-  ipcMain.handle(IpcChannel.SERIES_FETCH, async (_e, seriesId: string) => {
+  ipcMain.handle(IpcChannel.SERIES_FETCH, async (_e, seriesId: string, currentVideoId?: string, requestedPage?: number) => {
     // seriesId は数字のみ、またはURL
     const m = (String(seriesId)).match(/series\/(\d+)/) ?? (String(seriesId)).match(/^(\d+)$/);
     if (!m) throw new Error(`invalid series id: ${seriesId}`);
     const id = m[1];
     const ctx = NicoContext.get();
-    // nvapi のシリーズエンドポイント
-    const url = `https://nvapi.nicovideo.jp/v2/series/${encodeURIComponent(id)}?pageSize=100&page=1`;
-    log.debug('fetch series:', url);
     interface SeriesVideo {
       id: string;
       title: string;
@@ -293,13 +296,11 @@ export function registerIpcHandlers(
       meta?: { status?: number };
       data?: {
         detail?: { title?: string; description?: string };
+        totalCount?: number;
         items?: Array<{ video: SeriesVideo }>;
       };
     }
-    const res = await ctx.http.getJson<SeriesRes>(url);
-    if (res.meta?.status && res.meta.status >= 400) {
-      throw new Error(`シリーズ取得失敗: status=${res.meta.status}`);
-    }
+    const PAGE_SIZE = 100;
     const toLength = (sec: number): string => {
       const h = Math.floor(sec / 3600);
       const mm = Math.floor((sec % 3600) / 60);
@@ -314,7 +315,7 @@ export function registerIpcHandlers(
       if (t.url && typeof t.url === 'object') return (t.url as { listingMedium?: string }).listingMedium ?? '';
       return '';
     };
-    let seriesItems = (res.data?.items ?? []).map((i) => ({
+    const mapItems = (items: Array<{ video: SeriesVideo }>) => items.map((i) => ({
       videoId: i.video.id,
       title: i.video.title,
       description: '',
@@ -326,10 +327,50 @@ export function registerIpcHandlers(
       mylistCount: i.video.count?.mylist ?? 0,
       likeCount: i.video.count?.like ?? 0,
     }));
-    return {
-      name: res.data?.detail?.title ?? `シリーズ ${id}`,
-      items: seriesItems
+    const fetchPage = async (page: number) => {
+      const url = `https://nvapi.nicovideo.jp/v2/series/${encodeURIComponent(id)}?pageSize=${PAGE_SIZE}&page=${page}`;
+      log.debug('fetch series page %d:', page, url);
+      return ctx.http.getJson<SeriesRes>(url);
     };
+    const mkResult = (items: ReturnType<typeof mapItems>, name: string, page: number, totalPages: number) =>
+      ({ name, items, page, totalPages });
+
+    // ページ指定あり → そのページを直接取得
+    if (requestedPage && requestedPage >= 1) {
+      const res = await fetchPage(requestedPage);
+      if (res.meta?.status && res.meta.status >= 400) {
+        throw new Error(`シリーズ取得失敗: status=${res.meta.status}`);
+      }
+      const name = res.data?.detail?.title ?? `シリーズ ${id}`;
+      const totalCount = res.data?.totalCount ?? 0;
+      const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
+      return mkResult(mapItems(res.data?.items ?? []), name, requestedPage, totalPages);
+    }
+
+    // 初回ロード: ページ1取得 → currentVideoId のページを自動検出
+    const firstRes = await fetchPage(1);
+    if (firstRes.meta?.status && firstRes.meta.status >= 400) {
+      throw new Error(`シリーズ取得失敗: status=${firstRes.meta.status}`);
+    }
+    const name = firstRes.data?.detail?.title ?? `シリーズ ${id}`;
+    const firstItems = mapItems(firstRes.data?.items ?? []);
+    const totalCount = firstRes.data?.totalCount ?? firstItems.length;
+    const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
+
+    if (!currentVideoId || totalPages <= 1 || firstItems.some((i) => i.videoId === currentVideoId)) {
+      return mkResult(firstItems, name, 1, totalPages);
+    }
+
+    // 現在の動画があるページを最終ページから逆順に探索
+    for (let p = totalPages; p >= 2; p--) {
+      const res = await fetchPage(p);
+      const items = mapItems(res.data?.items ?? []);
+      if (items.some((i) => i.videoId === currentVideoId)) {
+        return mkResult(items, name, p, totalPages);
+      }
+    }
+
+    return mkResult(firstItems, name, 1, totalPages);
   });
 
   ipcMain.handle(IpcChannel.MYLIST_ADD_VIDEO_DEFLIST, async (_e, videoId: string) => {
@@ -412,6 +453,10 @@ export function registerIpcHandlers(
     return AuthManager.autoRelogin();
   });
 
+  ipcMain.handle(IpcChannel.AUTH_LOGIN_WITH_SAVED, () => {
+    return AuthManager.loginWithSavedCredentials();
+  });
+
   // --- 動画 ---
   ipcMain.handle(IpcChannel.VIDEO_GET_WATCH_INFO, async (_e, videoId: string) => {
     return WatchInfoHandler.fetchWatchInfo(videoId);
@@ -436,8 +481,14 @@ export function registerIpcHandlers(
         if (video) {
           const fsmod = await import('node:fs');
           if (fsmod.existsSync(video.uri)) {
-            log.info('VIDEO_OPEN_PLAYER: found in library, using local file', video.uri);
-            PlayerManager.get().open({ localPath: video.uri });
+            log.verbose('VIDEO_OPEN_PLAYER: found in library, using local file', video.uri);
+            PlayerManager.get().open({
+              localPath: video.uri,
+              videoId: params.videoId,
+              searchPlaylist: params.searchPlaylist,
+              autoNext: params.autoNext,
+              audioOnly: params.audioOnly,
+            });
             return true;
           }
         }
@@ -457,18 +508,19 @@ export function registerIpcHandlers(
   //   'native':   hls.js でニコニコCDNに直接アクセス (session.webRequest でCookie/CORS処理)
   //   'hls':      HLS プロキシで即時再生 (StreamServer+HlsProxy 経由, yt-dlp ベース)
   //   'niconico': 公式プレイヤー webview 埋め込み
-  ipcMain.handle(IpcChannel.VIDEO_GET_STREAM_URL, async (_e, videoId: string, watchInfo?: WatchPageInfo) => {
+  ipcMain.handle(IpcChannel.VIDEO_GET_STREAM_URL, async (_e, videoId: string, watchInfo?: WatchPageInfo, audioOnly?: boolean) => {
     const mode = getConfigStore().get('player').streamingMode ?? 'native';
 
     // --- niconico モード ---
     if (mode === 'niconico') {
+      if (audioOnly) return { contentUrl: null, isDMS: false, error: 'niconico モードでは音声のみ再生に非対応です' };
       return { contentUrl: null, isDMS: false, niconico: true };
     }
 
     // キャッシュ済みならローカル即再生 (どのモードでも共通)
     const cachedPath = YtDlpStreamer.getCachedPath(videoId);
     if (cachedPath) {
-      log.info('cache: reuse local file', cachedPath);
+      log.verbose('cache: reuse local file', cachedPath);
       return { contentUrl: buildLocalVideoUrl(cachedPath), isDMS: false };
     }
 
@@ -477,11 +529,11 @@ export function registerIpcHandlers(
       const info = watchInfo ?? await WatchInfoHandler.fetchWatchInfo(videoId);
       let session: { contentUrl: string; isDMS: boolean };
       try {
-        session = await new WatchSession(info).ensure();
+        session = await new WatchSession(info).ensure(audioOnly);
       } catch (e) {
         return { contentUrl: null, isDMS: false, error: String(e) };
       }
-      log.info('native: direct stream', videoId, '→', session.contentUrl.slice(0, 80));
+      log.verbose('native: direct stream', videoId, audioOnly ? '(audioOnly)' : '', '→', session.contentUrl.slice(0, 80));
       return { contentUrl: session.contentUrl, isDMS: session.isDMS, isHls: true };
     }
 
@@ -490,13 +542,13 @@ export function registerIpcHandlers(
       const info = watchInfo ?? await WatchInfoHandler.fetchWatchInfo(videoId);
       let session: { contentUrl: string; isDMS: boolean };
       try {
-        session = await new WatchSession(info).ensure();
+        session = await new WatchSession(info).ensure(audioOnly);
       } catch (e) {
         return { contentUrl: null, isDMS: false, error: String(e) };
       }
       const proxyBase = buildHlsProxyBase(videoId);
       const proxyMasterUrl = encodeProxyUrl(session.contentUrl, 'm3u8', proxyBase);
-      log.info('hls: proxy start', videoId, '→', proxyMasterUrl.slice(0, 80));
+      log.verbose('hls: proxy start', videoId, audioOnly ? '(audioOnly)' : '', '→', proxyMasterUrl.slice(0, 80));
       return { contentUrl: proxyMasterUrl, isDMS: session.isDMS, isHls: true };
     }
 
@@ -545,6 +597,9 @@ export function registerIpcHandlers(
       const bgColor = value === 'light' ? '#f0f0f0' : '#1e1e1e';
       BrowserWindow.fromWebContents(e.sender)?.setBackgroundColor(bgColor);
       nativeTheme.themeSource = value === 'light' ? 'light' : 'dark';
+    }
+    if (key === 'logLevel') {
+      setLogLevel(value as 'standard' | 'verbose');
     }
     if (key === 'libraryRoot') {
       const dir = typeof value === 'string' && value ? value : library.defaultVideoDir;
@@ -649,10 +704,13 @@ export function registerIpcHandlers(
   );
   ipcMain.handle(
     IpcChannel.PAST_COMMENT_FETCH_LOCAL,
-    (_e, filePath: string, whenUnixSec: number) => {
+    (_e, filePath: string, whenUnixSec: number, fromUnixSec: number = 0) => {
       const all = CommentXmlReader.readFile(filePath);
-      // 指定日時以前に投稿されたコメントのみ返す
-      return all.filter((c) => !whenUnixSec || c.date <= whenUnixSec);
+      return all.filter(
+        (c) =>
+          (!fromUnixSec || c.date >= fromUnixSec) &&
+          (!whenUnixSec || c.date <= whenUnixSec)
+      );
     }
   );
 
@@ -682,7 +740,7 @@ export function registerIpcHandlers(
           videoId,
           'main'
         );
-        log.info(`PAST_COMMENT_REFETCH: +${diff.length} new comments`);
+        log.verbose(`PAST_COMMENT_REFETCH: +${diff.length} new comments`);
       }
       return { added: diff.length };
     }
@@ -711,7 +769,7 @@ export function registerIpcHandlers(
   ipcMain.handle(IpcChannel.VIDEO_DELETE_CACHE, (_e, videoId: string) => {
     const cached = YtDlpStreamer.getCachedPath(videoId);
     if (cached) {
-      try { fs.unlinkSync(cached); log.info('cache deleted:', cached); } catch (e) { log.warn('cache delete failed:', e); }
+      try { fs.unlinkSync(cached); log.verbose('cache deleted:', cached); } catch (e) { log.warn('cache delete failed:', e); }
     }
   });
 
@@ -861,7 +919,7 @@ export function registerIpcHandlers(
       // プレイヤー右端をdiv右端に揃える
       const xOff = Math.max(0, Math.round((rect.x + rect.w) * zoom - width) - LEFT_MARGIN);
       const yOff = Math.round(rect.y * zoom);
-      log.info('DEBUG fitPlayerToView:', {
+      log.verbose('fitPlayerToView:', {
         'nativeW (player)': rect.nativeW,
         'entry.bounds.width': width,
         'baseZoom': (width - MARGIN) / rect.nativeW,
@@ -1316,6 +1374,7 @@ export function registerIpcHandlers(
   // 切れていたら自動再ログイン、失敗時はrendererに通知
   setInterval(() => {
     void (async (): Promise<void> => {
+      if (AuthManager.isLoggedOut) return;
       try {
         const ok = await AuthManager.checkLoggedIn();
         if (ok) return;
@@ -1324,6 +1383,7 @@ export function registerIpcHandlers(
           log.info('session expired, auto relogin succeeded');
           return;
         }
+        if (result.noCredentials) return;
         const mainWin = mainWindowGetter?.();
         if (mainWin && !mainWin.isDestroyed()) {
           mainWin.webContents.send(IpcChannel.AUTH_SESSION_EXPIRED, {
