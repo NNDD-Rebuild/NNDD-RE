@@ -26,6 +26,7 @@ interface InitParams {
   /** LANライブラリのHTTPストリーミングURL */
   streamUrl?: string;
   folderPlaylist?: string[];
+  searchPlaylist?: string[];
   localFiles?: {
     commentXml?: string;
     ownerCommentXml?: string;
@@ -33,6 +34,10 @@ interface InitParams {
     thumbImage?: string;
     ichibaHtml?: string;
   };
+  /** 音声のみ再生モード */
+  audioOnly?: boolean;
+  /** 自動再生による遷移か */
+  autoNext?: boolean;
 }
 
 /** 視聴履歴記録: 再生開始から 10 秒経過した時点で 1 度だけ書き込む */
@@ -51,6 +56,7 @@ export default function PlayerApp(): JSX.Element {
   const [isHls, setIsHls] = useState(false);
   const [niconicoMode, setNiconicoMode] = useState(false);
   const [watch, setWatch] = useState<WatchPageInfo | null>(null);
+  const watchRef = useRef<WatchPageInfo | null>(null);
   const [comments, setComments] = useState<NNDDREComment[]>([]);
   const [pastComments, setPastComments] = useState<NNDDREComment[]>([]);
   const [showPastComments, setShowPastComments] = useState(false);
@@ -70,13 +76,24 @@ export default function PlayerApp(): JSX.Element {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [commentWindowOpen, setCommentWindowOpen] = useState(false);
   const [autoNextSeries, setAutoNextSeries] = useState(false);
+  const autoNextSeriesRef = useRef(false);
   const seriesItemsRef = useRef<import('@shared/types').MyListItem[]>([]);
+  const [seriesItems, setSeriesItems] = useState<import('@shared/types').MyListItem[]>([]);
+  const seriesPageRef = useRef(1);
+  const seriesTotalPagesRef = useRef(1);
+  const seriesIdRef = useRef('');
   const [autoNextFolder, setAutoNextFolder] = useState(false);
   const autoNextFolderRef = useRef(false);
   const [folderVideos, setFolderVideos] = useState<string[]>([]);
   const folderVideosRef = useRef<string[]>([]);
   const currentLocalPathRef = useRef<string>('');
   const isLocalRef = useRef(false);
+  const [searchPlaylist, setSearchPlaylist] = useState<string[]>([]);
+  const searchPlaylistRef = useRef<string[]>([]);
+  const [audioOnly, setAudioOnly] = useState(false);
+  const audioOnlyRef = useRef(false);
+  const consecutiveSkipRef = useRef(0);
+  const MAX_CONSECUTIVE_SKIPS = 10;
 
   // ── サイドバー幅リサイズ ──────────────────────────────────
   const SIDEBAR_MIN = 180;
@@ -90,6 +107,8 @@ export default function PlayerApp(): JSX.Element {
   useEffect(() => { isHlsRef.current = isHls; }, [isHls]);
   useEffect(() => { srcRef.current = src; }, [src]);
   useEffect(() => { isLocalRef.current = isLocal; }, [isLocal]);
+  useEffect(() => { searchPlaylistRef.current = searchPlaylist; }, [searchPlaylist]);
+  useEffect(() => { watchRef.current = watch; }, [watch]);
 
   // テーマ適用
   useEffect(() => {
@@ -280,17 +299,44 @@ export default function PlayerApp(): JSX.Element {
         try {
           setLoading(true);
           setError(null);
-          if (params.videoId) {
-            await initStreaming(params.videoId);
-          } else if (params.localPath) {
+          const isAudioOnly = !!params.audioOnly;
+          audioOnlyRef.current = isAudioOnly;
+          setAudioOnly(isAudioOnly);
+          if (params.searchPlaylist && params.searchPlaylist.length > 0) {
+            searchPlaylistRef.current = params.searchPlaylist;
+            setSearchPlaylist(params.searchPlaylist);
+          } else {
+            searchPlaylistRef.current = [];
+            setSearchPlaylist([]);
+          }
+          if (params.localPath) {
             await initLocal(params.localPath, params.localFiles, params.folderPlaylist);
+          } else if (params.videoId) {
+            await initStreaming(params.videoId, isAudioOnly);
           } else if (params.streamUrl) {
             initStreamUrl(params.streamUrl);
           } else {
             setError('再生対象が指定されていません');
           }
         } catch (e) {
-          setError(e instanceof Error ? e.message : String(e));
+          const msg = e instanceof Error ? e.message : String(e);
+          const isAutoPlay = params.autoNext &&
+            (autoNextSeriesRef.current || searchPlaylistRef.current.length > 0 || autoNextFolderRef.current);
+          if (isAutoPlay && consecutiveSkipRef.current < MAX_CONSECUTIVE_SKIPS) {
+            consecutiveSkipRef.current++;
+            console.warn(
+              `[AutoPlay] スキップ (${consecutiveSkipRef.current}/${MAX_CONSECUTIVE_SKIPS}):`,
+              params.videoId, msg
+            );
+            if (!advanceToNextVideo()) {
+              setError(msg);
+            }
+          } else if (isAutoPlay && consecutiveSkipRef.current >= MAX_CONSECUTIVE_SKIPS) {
+            consecutiveSkipRef.current = 0;
+            setError(`連続スキップ上限に達しました (${MAX_CONSECUTIVE_SKIPS}件)。${msg}`);
+          } else {
+            setError(msg);
+          }
         } finally {
           setLoading(false);
         }
@@ -307,12 +353,29 @@ export default function PlayerApp(): JSX.Element {
       setSrc('');
       setIsHls(false);
       await window.nndd.invoke(window.nndd.channels.VIDEO_DELETE_CACHE, vid);
-      await initStreaming(vid);
+      try {
+        await initStreaming(vid, audioOnlyRef.current);
+      } catch (e) {
+        const isAutoPlay = autoNextSeriesRef.current || searchPlaylistRef.current.length > 0 || autoNextFolderRef.current;
+        const msg = e instanceof Error ? e.message : String(e);
+        if (isAutoPlay && consecutiveSkipRef.current < MAX_CONSECUTIVE_SKIPS) {
+          consecutiveSkipRef.current++;
+          console.warn(`[AutoPlay] スキップ (${consecutiveSkipRef.current}/${MAX_CONSECUTIVE_SKIPS}):`, vid, msg);
+          if (!advanceToNextVideo()) {
+            setError(msg);
+          }
+        } else {
+          setError(msg);
+        }
+      }
     }
   };
 
-  const initStreaming = async (videoId: string): Promise<void> => {
+  const initStreaming = async (videoId: string, isAudioOnly?: boolean): Promise<void> => {
     setIsLocal(false);
+    setWatch(null);
+    watchRef.current = null;
+    playInfoRef.current = { videoId, title: videoId, thumbnailUrl: '', isLocal: false };
     setLocalCommentXmlPath(undefined);
     setPastComments([]);
     setShowPastComments(false);
@@ -335,8 +398,10 @@ export default function PlayerApp(): JSX.Element {
       isLocal: false
     };
 
-    // 2. コメント取得
-    try {
+    // 2. コメント取得（音声のみモードではスキップ）
+    if (isAudioOnly) {
+      setComments([]);
+    } else try {
       const cs = await window.nndd.invoke<NNDDREComment[]>(
         window.nndd.channels.VIDEO_GET_COMMENTS,
         videoId,
@@ -354,8 +419,14 @@ export default function PlayerApp(): JSX.Element {
       ffplay?: boolean;
       isHls?: boolean;
       niconico?: boolean;
-    }>(window.nndd.channels.VIDEO_GET_STREAM_URL, videoId, w);
+      error?: string;
+    }>(window.nndd.channels.VIDEO_GET_STREAM_URL, videoId, w, isAudioOnly);
 
+    if (stream.error) {
+      throw new Error(stream.error);
+    }
+
+    consecutiveSkipRef.current = 0;
     pendingSeekRef.current = 0;
     if (stream.niconico) {
       setNiconicoMode(true);
@@ -373,6 +444,7 @@ export default function PlayerApp(): JSX.Element {
     setLocalCommentXmlPath(undefined);
     setPastComments([]);
     setShowPastComments(false);
+    consecutiveSkipRef.current = 0;
     setSrc(url);
     setIsHls(false);
     historyRecordedRef.current = false;
@@ -391,6 +463,7 @@ export default function PlayerApp(): JSX.Element {
     folderPlaylist?: string[]
   ): Promise<void> => {
     setIsLocal(true);
+    setWatch(null);
     setPastComments([]);
     setShowPastComments(false);
     setLocalCommentXmlPath(files?.commentXml);
@@ -407,6 +480,7 @@ export default function PlayerApp(): JSX.Element {
         .catch(() => { folderVideosRef.current = []; setFolderVideos([]); });
     }
     // IPC不要: URL はレンダラー側で直接構築
+    consecutiveSkipRef.current = 0;
     setSrc(buildLocalUrl(localPath));
     setIsHls(false);
     historyRecordedRef.current = false;
@@ -494,10 +568,192 @@ export default function PlayerApp(): JSX.Element {
         .invoke<WatchPageInfo | null>(window.nndd.channels.VIDEO_GET_WATCH_INFO, guessId)
         .then((online) => {
           if (online?.series) {
-            setWatch((prev) => prev ? { ...prev, series: online.series } : prev);
+            setWatch((prev) => {
+              if (prev) return { ...prev, series: online.series };
+              return online;
+            });
           }
         })
         .catch(() => {});
+    }
+  };
+
+  const advanceToNextVideo = (): boolean => {
+    const isAudio = audioOnlyRef.current || undefined;
+
+    if (autoNextSeriesRef.current) {
+      const items = seriesItemsRef.current;
+      const currentId = watchRef.current?.videoId ?? playInfoRef.current?.videoId;
+      const idx = items.findIndex((i) => i.videoId === currentId);
+      if (idx >= 0 && idx < items.length - 1) {
+        window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
+          videoId: items[idx + 1].videoId, autoNext: true, audioOnly: isAudio,
+        });
+        return true;
+      }
+      if (idx === items.length - 1 && seriesPageRef.current < seriesTotalPagesRef.current) {
+        const nextPage = seriesPageRef.current + 1;
+        window.nndd.invoke<{ items: { videoId: string }[]; page: number; totalPages: number }>(
+          IpcChannel.SERIES_FETCH, seriesIdRef.current, undefined, nextPage
+        ).then((r) => {
+          seriesItemsRef.current = r.items as import('@shared/types').MyListItem[];
+          seriesPageRef.current = r.page;
+          seriesTotalPagesRef.current = r.totalPages;
+          if (r.items.length > 0) {
+            window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
+              videoId: r.items[0].videoId, autoNext: true, audioOnly: isAudio,
+            });
+          }
+        }).catch(() => {});
+        return true;
+      }
+    }
+
+    if (autoNextFolderRef.current && isLocalRef.current) {
+      const vids = folderVideosRef.current;
+      const idx = vids.indexOf(currentLocalPathRef.current);
+      if (idx >= 0 && idx < vids.length - 1) {
+        window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
+          localPath: vids[idx + 1], folderPlaylist: vids, autoNext: true, audioOnly: isAudio,
+        });
+        return true;
+      }
+    }
+
+    const pl = searchPlaylistRef.current;
+    if (pl.length > 0) {
+      const currentId = watchRef.current?.videoId ?? playInfoRef.current?.videoId;
+      const idx = pl.indexOf(currentId ?? '');
+      if (idx >= 0 && idx < pl.length - 1) {
+        window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
+          videoId: pl[idx + 1], searchPlaylist: pl, autoNext: true, audioOnly: isAudio,
+        });
+        return true;
+      }
+    }
+
+    return false;
+  };
+
+  const getActivePlaylist = (): { type: 'search'; list: string[]; idx: number } | { type: 'folder'; list: string[]; idx: number } | { type: 'series'; list: import('@shared/types').MyListItem[]; idx: number } | null => {
+    const currentId = watchRef.current?.videoId ?? playInfoRef.current?.videoId;
+
+    const pl = searchPlaylistRef.current;
+    if (pl.length > 0 && currentId) {
+      const idx = pl.indexOf(currentId);
+      if (idx >= 0) return { type: 'search', list: pl, idx };
+    }
+
+    const vids = folderVideosRef.current;
+    if (vids.length > 0 && isLocalRef.current) {
+      const idx = vids.indexOf(currentLocalPathRef.current);
+      if (idx >= 0) return { type: 'folder', list: vids, idx };
+    }
+
+    const items = seriesItemsRef.current;
+    if (items.length > 0 && currentId) {
+      const idx = items.findIndex((i) => i.videoId === currentId);
+      if (idx >= 0) return { type: 'series', list: items, idx };
+    }
+
+    return null;
+  };
+
+  const skipToNext = (): void => {
+    const isAudio = audioOnlyRef.current || undefined;
+    const active = getActivePlaylist();
+    if (!active) return;
+
+    if (active.type === 'search') {
+      if (active.idx < active.list.length - 1) {
+        window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
+          videoId: active.list[active.idx + 1], searchPlaylist: active.list, audioOnly: isAudio,
+        });
+      }
+      return;
+    }
+
+    if (active.type === 'folder') {
+      if (active.idx < active.list.length - 1) {
+        window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
+          localPath: active.list[active.idx + 1], folderPlaylist: active.list, audioOnly: isAudio,
+        });
+      }
+      return;
+    }
+
+    if (active.type === 'series') {
+      if (active.idx < active.list.length - 1) {
+        window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
+          videoId: active.list[active.idx + 1].videoId, audioOnly: isAudio,
+        });
+        return;
+      }
+      if (seriesPageRef.current < seriesTotalPagesRef.current) {
+        const nextPage = seriesPageRef.current + 1;
+        window.nndd.invoke<{ items: { videoId: string }[]; page: number; totalPages: number }>(
+          IpcChannel.SERIES_FETCH, seriesIdRef.current, undefined, nextPage
+        ).then((r) => {
+          seriesItemsRef.current = r.items as import('@shared/types').MyListItem[];
+          setSeriesItems(r.items as import('@shared/types').MyListItem[]);
+          seriesPageRef.current = r.page;
+          seriesTotalPagesRef.current = r.totalPages;
+          if (r.items.length > 0) {
+            window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
+              videoId: r.items[0].videoId, audioOnly: isAudio,
+            });
+          }
+        }).catch(() => {});
+      }
+    }
+  };
+
+  const skipToPrev = (): void => {
+    const isAudio = audioOnlyRef.current || undefined;
+    const active = getActivePlaylist();
+    if (!active) return;
+
+    if (active.type === 'search') {
+      if (active.idx > 0) {
+        window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
+          videoId: active.list[active.idx - 1], searchPlaylist: active.list, audioOnly: isAudio,
+        });
+      }
+      return;
+    }
+
+    if (active.type === 'folder') {
+      if (active.idx > 0) {
+        window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
+          localPath: active.list[active.idx - 1], folderPlaylist: active.list, audioOnly: isAudio,
+        });
+      }
+      return;
+    }
+
+    if (active.type === 'series') {
+      if (active.idx > 0) {
+        window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
+          videoId: active.list[active.idx - 1].videoId, audioOnly: isAudio,
+        });
+        return;
+      }
+      if (seriesPageRef.current > 1) {
+        const prevPage = seriesPageRef.current - 1;
+        window.nndd.invoke<{ items: { videoId: string }[]; page: number; totalPages: number }>(
+          IpcChannel.SERIES_FETCH, seriesIdRef.current, undefined, prevPage
+        ).then((r) => {
+          seriesItemsRef.current = r.items as import('@shared/types').MyListItem[];
+          setSeriesItems(r.items as import('@shared/types').MyListItem[]);
+          seriesPageRef.current = r.page;
+          seriesTotalPagesRef.current = r.totalPages;
+          if (r.items.length > 0) {
+            window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
+              videoId: r.items[r.items.length - 1].videoId, audioOnly: isAudio,
+            });
+          }
+        }).catch(() => {});
+      }
     }
   };
 
@@ -550,7 +806,7 @@ export default function PlayerApp(): JSX.Element {
           const m = rawText.match(/((?:sm|nm|so|ax|sd|ca|cd|cw|zb|ze|yo)\d+)/);
           const targetId = m ? m[1] : rawText;
           if (targetId) {
-            window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, { videoId: targetId });
+            window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, { videoId: targetId, autoNext: true });
           }
         }
       }
@@ -639,10 +895,10 @@ export default function PlayerApp(): JSX.Element {
     }
     if (autoOpenDoneRef.current) return;
     autoOpenDoneRef.current = true;
-    if (commentListDisplay === 'window') {
+    if (commentListDisplay === 'window' && !audioOnly) {
       openCommentWindow();
     }
-  }, [loading, src, commentListDisplay, commentWindowAutoOpen, openCommentWindow]);
+  }, [loading, src, commentListDisplay, commentWindowAutoOpen, openCommentWindow, audioOnly]);
 
 
   // フルスクリーン状態追跡 (DOM fullscreen + BrowserWindow fullscreen + niconico)
@@ -698,6 +954,41 @@ export default function PlayerApp(): JSX.Element {
     };
   }, [isFullscreen, showControlsTemporarily]);
 
+  const currentVideoId = watch?.videoId ?? playInfoRef.current?.videoId;
+  const canSkipNext = useMemo(() => {
+    if (searchPlaylist.length > 0 && currentVideoId) {
+      const idx = searchPlaylist.indexOf(currentVideoId);
+      return idx >= 0 && idx < searchPlaylist.length - 1;
+    }
+    if (folderVideos.length > 0 && isLocal) {
+      const idx = folderVideos.indexOf(currentLocalPathRef.current);
+      return idx >= 0 && idx < folderVideos.length - 1;
+    }
+    if (seriesItems.length > 0 && currentVideoId) {
+      const idx = seriesItems.findIndex((i) => i.videoId === currentVideoId);
+      if (idx >= 0 && idx < seriesItems.length - 1) return true;
+      return seriesPageRef.current < seriesTotalPagesRef.current;
+    }
+    return undefined;
+  }, [searchPlaylist, folderVideos, seriesItems, currentVideoId, isLocal]);
+
+  const canSkipPrev = useMemo(() => {
+    if (searchPlaylist.length > 0 && currentVideoId) {
+      const idx = searchPlaylist.indexOf(currentVideoId);
+      return idx > 0;
+    }
+    if (folderVideos.length > 0 && isLocal) {
+      const idx = folderVideos.indexOf(currentLocalPathRef.current);
+      return idx > 0;
+    }
+    if (seriesItems.length > 0 && currentVideoId) {
+      const idx = seriesItems.findIndex((i) => i.videoId === currentVideoId);
+      if (idx > 0) return true;
+      return seriesPageRef.current > 1;
+    }
+    return undefined;
+  }, [searchPlaylist, folderVideos, seriesItems, currentVideoId, isLocal]);
+
   useKeyboardShortcuts({
     togglePlay: () => {
       if (!video) return;
@@ -724,7 +1015,9 @@ export default function PlayerApp(): JSX.Element {
     volumeDown: () => {
       if (!video) return;
       video.volume = Math.max(0, video.volume - 0.05);
-    }
+    },
+    skipNext: skipToNext,
+    skipPrev: skipToPrev,
   });
 
   const progressPct = streamProgress
@@ -740,6 +1033,46 @@ export default function PlayerApp(): JSX.Element {
       return `失敗: ${streamProgress.message ?? ''}`;
     return loading ? '読み込み中…' : null;
   })();
+
+  if (audioOnly) {
+    return (
+      <div className="flex flex-col h-full bg-nndd-bg text-nndd-text select-none">
+        {src && (
+          <VideoPlayer
+            src={src}
+            isHls={isHls}
+            comments={[]}
+            videoRefCallback={setVideoWithRef}
+            videoId={watch?.videoId ?? playInfoRef.current?.videoId}
+            className="w-0 h-0"
+            audioOnly
+            onVideoError={(code) => { handleVideoError(code).catch(console.error); }}
+            onEnded={() => { consecutiveSkipRef.current = 0; advanceToNextVideo(); }}
+          />
+        )}
+        <div className="flex-1 flex items-center px-3 gap-3 min-w-0">
+          <div className="truncate text-sm font-semibold flex-1">
+            ♪ {watch?.title ?? playInfoRef.current?.title ?? ''}
+          </div>
+        </div>
+        <VideoController
+          video={video}
+          showComments={false}
+          onToggleComments={() => {}}
+          hideCommentToggle
+          canSkipPrev={canSkipPrev}
+          canSkipNext={canSkipNext}
+          onSkipPrev={skipToPrev}
+          onSkipNext={skipToNext}
+        />
+        {(loading || error) && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/70 text-white text-xs">
+            {error ?? '読み込み中...'}
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full bg-black text-nndd-text">
@@ -765,24 +1098,8 @@ export default function PlayerApp(): JSX.Element {
                   videoId={watch?.videoId ?? playInfoRef.current?.videoId}
                   className="w-full h-full"
                   onVideoError={(code) => { handleVideoError(code).catch(console.error); }}
-                  onEnded={() => {
-                    if (autoNextSeries) {
-                      const items = seriesItemsRef.current;
-                      const currentId = watch?.videoId ?? playInfoRef.current?.videoId;
-                      const idx = items.findIndex((i) => i.videoId === currentId);
-                      if (idx >= 0 && idx < items.length - 1) {
-                        window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, { videoId: items[idx + 1].videoId });
-                        return;
-                      }
-                    }
-                    if (autoNextFolderRef.current && isLocalRef.current) {
-                      const vids = folderVideosRef.current;
-                      const idx = vids.indexOf(currentLocalPathRef.current);
-                      if (idx >= 0 && idx < vids.length - 1) {
-                        window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, { localPath: vids[idx + 1], folderPlaylist: vids });
-                      }
-                    }
-                  }}
+                  audioOnly={audioOnly}
+                  onEnded={() => { consecutiveSkipRef.current = 0; advanceToNextVideo(); }}
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-nndd-subtext">
@@ -833,6 +1150,10 @@ export default function PlayerApp(): JSX.Element {
                 showComments={showComments}
                 onToggleComments={() => setShowComments((v) => !v)}
                 onToggleFullscreen={toggleFullscreen}
+                canSkipPrev={canSkipPrev}
+                canSkipNext={canSkipNext}
+                onSkipPrev={skipToPrev}
+                onSkipNext={skipToNext}
               />
             </div>
           </>
@@ -864,8 +1185,14 @@ export default function PlayerApp(): JSX.Element {
               onPastCommentsLoaded={(cs) => setPastComments(cs)}
               onPastCommentTabActive={(active) => setShowPastComments(active)}
               autoNextSeries={autoNextSeries}
-              onAutoNextChange={setAutoNextSeries}
-              onSeriesItemsLoaded={(items) => { seriesItemsRef.current = items; }}
+              onAutoNextChange={(v) => { autoNextSeriesRef.current = v; setAutoNextSeries(v); }}
+              onSeriesPageLoaded={(items, page, totalPages, sid) => {
+                seriesItemsRef.current = items;
+                setSeriesItems(items);
+                seriesPageRef.current = page;
+                seriesTotalPagesRef.current = totalPages;
+                seriesIdRef.current = sid;
+              }}
             />
           </aside>
         </>

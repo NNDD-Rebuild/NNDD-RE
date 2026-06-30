@@ -22,6 +22,8 @@ interface Props {
   onVideoError?: (code: number, message: string) => void;
   /** 動画終了時コールバック */
   onEnded?: () => void;
+  /** 音声のみ再生モード (映像非表示) */
+  audioOnly?: boolean;
 }
 
 /**
@@ -43,7 +45,8 @@ export function VideoPlayer({
   videoId,
   className,
   onVideoError,
-  onEnded
+  onEnded,
+  audioOnly
 }: Props): JSX.Element {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -51,6 +54,8 @@ export function VideoPlayer({
   const [error, setError] = useState<string | null>(null);
   // 再生回数カウント済みフラグ (src が変わるたびにリセット)
   const playCountedRef = useRef(false);
+  const onEndedRef = useRef(onEnded);
+  onEndedRef.current = onEnded;
 
   useEffect(() => {
     if (videoRefCallback) videoRefCallback(videoRef.current);
@@ -82,7 +87,7 @@ export function VideoPlayer({
     };
     const onEndedInternal = (): void => {
       if (timer) { clearTimeout(timer); timer = null; }
-      onEnded?.();
+      onEndedRef.current?.();
     };
 
     video.addEventListener('play', onPlay);
@@ -183,6 +188,7 @@ export function VideoPlayer({
       <video
         ref={videoRef}
         className="w-full h-full bg-black"
+        style={audioOnly ? { display: 'none' } : undefined}
         playsInline
         autoPlay
         controls={false}

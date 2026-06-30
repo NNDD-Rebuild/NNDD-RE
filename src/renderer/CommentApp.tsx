@@ -36,6 +36,8 @@ export default function CommentApp(): JSX.Element {
   const localDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const localTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   const [pastComments, setPastComments] = useState<NNDDREComment[]>([]);
+  const [pastDateFrom, setPastDateFrom] = useState('');
+  const [pastTimeFrom, setPastTimeFrom] = useState('00:00');
   const [pastDate, setPastDate] = useState(localDateStr);
   const [pastTime, setPastTime] = useState(localTimeStr);
   const [pastLoading, setPastLoading] = useState(false);
@@ -156,6 +158,15 @@ export default function CommentApp(): JSX.Element {
     }
   }, [pastDate, pastTime]);
 
+  const getFromUnixSec = useCallback((): number => {
+    if (!pastDateFrom) return 0;
+    try {
+      return Math.floor(new Date(`${pastDateFrom}T${pastTimeFrom}`).getTime() / 1000);
+    } catch {
+      return 0;
+    }
+  }, [pastDateFrom, pastTimeFrom]);
+
   /**
    * ローカルXMLを日時フィルタして過去コメント取得。
    * 大量データは CHUNK_SIZE ずつ非同期で state に積み込む。
@@ -169,7 +180,8 @@ export default function CommentApp(): JSX.Element {
       const cs = await window.nndd.invoke<NNDDREComment[]>(
         IpcChannel.PAST_COMMENT_FETCH_LOCAL,
         localXmlPath,
-        getWhenUnixSec()
+        getWhenUnixSec(),
+        getFromUnixSec()
       );
       const resolved = cs.map(ensureCommandResolved);
 
@@ -267,6 +279,22 @@ export default function CommentApp(): JSX.Element {
           <div className="flex flex-col h-full min-h-0">
             <div className="shrink-0 p-2 border-b border-nndd-border bg-nndd-panel">
               <div className="flex items-center gap-1 flex-wrap mb-1">
+                <span className="text-xs text-nndd-subtext w-6">From</span>
+                <input
+                  type="date"
+                  value={pastDateFrom}
+                  onChange={(e) => setPastDateFrom(e.target.value)}
+                  className="text-xs bg-nndd-bg border border-nndd-border rounded px-1 py-0.5 text-nndd-text"
+                />
+                <input
+                  type="time"
+                  value={pastTimeFrom}
+                  onChange={(e) => setPastTimeFrom(e.target.value)}
+                  className="text-xs bg-nndd-bg border border-nndd-border rounded px-1 py-0.5 text-nndd-text"
+                />
+              </div>
+              <div className="flex items-center gap-1 flex-wrap mb-1">
+                <span className="text-xs text-nndd-subtext w-6">To</span>
                 <input
                   type="date"
                   value={pastDate}
