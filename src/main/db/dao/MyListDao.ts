@@ -44,6 +44,10 @@ export class MyListDao {
       );
   }
 
+  updateName(url: string, name: string): void {
+    this.db.prepare('UPDATE mylist SET name = ? WHERE url = ?').run(name, url);
+  }
+
   remove(url: string): void {
     this.db.prepare(Q.DELETE_MYLIST).run(url);
   }

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { MyList, MyListItem, RssTypeValue } from '@shared/types';
 import { IpcChannel, RssType } from '@shared/types';
 import { VideoCard } from '../common/VideoCard';
+import { ContinuousPlayButton } from '../common/ContinuousPlayButton';
 import { useAppStore } from '../../store/useAppStore';
 
 
@@ -43,6 +44,10 @@ export function MyListView(): JSX.Element {
   // 選択状態 (shift/ctrl クリック)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [lastClickedId, setLastClickedId] = useState<string | null>(null);
+
+  // 左ペイン名前編集
+  const [editingUrl, setEditingUrl] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState('');
 
   // 一括DL中
   const [bulkDling, setBulkDling] = useState(false);
@@ -213,8 +218,15 @@ export function MyListView(): JSX.Element {
 
   const handleAdd = async (): Promise<void> => {
     const url = newUrl.trim();
-    const name = newName.trim() || url;
     if (!url) return;
+    let name = newName.trim();
+    if (!name) {
+      const info = await window.nndd.invoke<{ name: string } | null>(
+        IpcChannel.MYLIST_FETCH_INFO,
+        url
+      ).catch(() => null);
+      name = info?.name ?? url;
+    }
     const ml: MyList = {
       myListUrl: url,
       myListName: name,
@@ -292,6 +304,9 @@ export function MyListView(): JSX.Element {
   const handlePlay = (videoId: string): void => {
     window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, { videoId });
   };
+  const handlePlayAudioOnly = (videoId: string): void => {
+    window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, { videoId, audioOnly: true });
+  };
   const handleDownload = (videoId: string): void => {
     const commentOnly = downloadedIds.has(videoId);
     window.nndd.invoke(IpcChannel.DOWNLOAD_ENQUEUE, { videoId, commentOnly });
@@ -306,6 +321,20 @@ export function MyListView(): JSX.Element {
     if (!selected) return;
     await window.nndd.invoke(IpcChannel.MYLIST_ADD, selected);
     reloadMylists();
+  };
+
+  const handleRename = async (ml: MyList, newName: string): Promise<void> => {
+    const trimmed = newName.trim();
+    if (!trimmed || trimmed === ml.myListName) {
+      setEditingUrl(null);
+      return;
+    }
+    await window.nndd.invoke(IpcChannel.MYLIST_UPDATE_NAME, { url: ml.myListUrl, name: trimmed });
+    setEditingUrl(null);
+    reloadMylists();
+    if (selected?.myListUrl === ml.myListUrl) {
+      setSelected({ ...selected, myListName: trimmed });
+    }
   };
 
   // 選択クリック処理 (shift/ctrl)
@@ -476,10 +505,30 @@ export function MyListView(): JSX.Element {
                 'flex items-center gap-1 px-2 py-1 text-xs border-b border-nndd-border cursor-pointer',
                 selected?.myListUrl === ml.myListUrl ? 'bg-nndd-bg' : 'hover:bg-nndd-border'
               ].join(' ')}
-              onClick={() => fetchItems(ml)}
+              onClick={() => editingUrl !== ml.myListUrl && fetchItems(ml)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setEditingUrl(ml.myListUrl);
+                setEditingName(ml.myListName);
+              }}
             >
               <span className="text-nndd-subtext shrink-0">{typeLabel(ml.type)}</span>
-              <span className="flex-1 truncate" title={ml.myListUrl}>{ml.myListName}</span>
+              {editingUrl === ml.myListUrl ? (
+                <input
+                  autoFocus
+                  value={editingName}
+                  onChange={(e) => setEditingName(e.target.value)}
+                  onBlur={() => handleRename(ml, editingName)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleRename(ml, editingName);
+                    if (e.key === 'Escape') setEditingUrl(null);
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  className="flex-1 min-w-0 bg-nndd-bg border border-nndd-accent px-1 py-0 text-xs outline-none"
+                />
+              ) : (
+                <span className="flex-1 truncate" title={ml.myListUrl}>{ml.myListName}</span>
+              )}
               <button
                 onClick={(e) => { e.stopPropagation(); handleRemove(ml); }}
                 className="text-nndd-subtext hover:text-red-500 dark:hover:text-red-400"
@@ -502,7 +551,17 @@ export function MyListView(): JSX.Element {
             <div className="shrink-0 p-2 border-b border-nndd-border bg-nndd-panel flex items-center gap-2 flex-wrap">
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-bold truncate">{selected.myListName}</div>
-                <div className="text-xs text-nndd-subtext truncate">{selected.myListUrl}</div>
+                <div
+                  className="text-xs text-nndd-subtext truncate cursor-pointer hover:underline"
+                  title="クリックでIDをコピー"
+                  onClick={() => {
+                    const id = extractId(selected.myListUrl);
+                    navigator.clipboard.writeText(id);
+                    showToast('IDをコピーしました');
+                  }}
+                >
+                  {extractId(selected.myListUrl)}
+                </div>
               </div>
               {selectedIds.size > 0 && (
                 <button
@@ -544,6 +603,27 @@ export function MyListView(): JSX.Element {
             </div>
 
             {error && <div className="text-red-500 dark:text-red-400 text-sm p-2">エラー: {error}</div>}
+
+            {items.length > 0 && (
+              <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-nndd-border bg-nndd-panel text-xs">
+                <ContinuousPlayButton
+                  disabled={loading || items.length === 0}
+                  onPlay={(audioOnly) => {
+                    if (items.length === 0) return;
+                    const videoIds = items.map((it) => it.videoId);
+                    const startIdx = selectedIds.size > 0
+                      ? items.findIndex((it) => selectedIds.has(it.videoId))
+                      : 0;
+                    window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
+                      videoId: videoIds[startIdx >= 0 ? startIdx : 0],
+                      searchPlaylist: videoIds,
+                      audioOnly: audioOnly || undefined,
+                    });
+                  }}
+                />
+                <span className="text-nndd-subtext">{items.length} 件</span>
+              </div>
+            )}
 
             {/* ページネーションバー (固定) */}
             {(items.length > 0 || loading) && totalItems > PAGE_SIZE && (
@@ -592,6 +672,7 @@ export function MyListView(): JSX.Element {
                         onPlay={handlePlay}
                         onDownload={handleDownload}
                         onNiconico={handleNiconico}
+                        onPlayAudioOnly={handlePlayAudioOnly}
                         isDownloaded={downloadedIds.has(it.videoId)}
                       />
                     </div>
@@ -614,6 +695,7 @@ export function MyListView(): JSX.Element {
                         onPlay={handlePlay}
                         onDownload={handleDownload}
                         onNiconico={handleNiconico}
+                        onPlayAudioOnly={handlePlayAudioOnly}
                         isDownloaded={downloadedIds.has(it.videoId)}
                       />
                     </div>
@@ -641,6 +723,12 @@ function itemToCard(it: MyListItem) {
     likeCount: it.likeCount,
     registeredAt: it.pubDate,   // 投稿日
   };
+}
+
+function extractId(url: string): string {
+  const m = url.match(/(?:mylist\/|series\/)(\d+)/);
+  const raw = m ? m[1] : url;
+  return raw.replace(/\.0$/, '');
 }
 
 function typeLabel(t: RssTypeValue): string {
