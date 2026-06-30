@@ -43,7 +43,7 @@ export class WatchSession {
   /**
    * セッションを確立する。返り値の contentUrl で master.m3u8 を取得できる。
    */
-  async ensure(): Promise<SessionResult> {
+  async ensure(audioOnly?: boolean): Promise<SessionResult> {
     if (this.session) return this.session;
 
     if (!this.watch.isDownloadable) {
@@ -52,6 +52,15 @@ export class WatchSession {
           ? '動画が暗号化されているためダウンロードできません'
           : '動画がダウンロード不可能な状態です (会員限定/削除済み等)'
       );
+    }
+
+    // audioOnly は DMS 必須（DMC は音声のみ非対応）
+    if (audioOnly) {
+      if (!this.watch.domandAccessRightKey || this.watch.domandAudios.length === 0) {
+        throw new Error('音声のみ再生には DMS が必要ですが、この動画では利用できません');
+      }
+      this.session = await this.ensureDMS(true);
+      return this.session;
     }
 
     // DMS が利用可能なら優先、失敗時は DMC にフォールバック
@@ -85,22 +94,25 @@ export class WatchSession {
    * Response:
    *   { data: { contentUrl: "https://...master.m3u8", createTime, expireTime } }
    */
-  private async ensureDMS(): Promise<SessionResult> {
+  private async ensureDMS(audioOnly?: boolean): Promise<SessionResult> {
     const ctx = NicoContext.get();
     const accessRightKey = this.watch.domandAccessRightKey!;
 
-    // 最高品質を優先 (qualityLevel が大きいもの)
-    const video = this.pickBestStream(this.watch.domandVideos);
     const audio = this.pickBestStream(this.watch.domandAudios);
-    if (!video || !audio) {
-      throw new Error('DMS の videos/audios に利用可能な候補がありません');
+    if (!audio) {
+      throw new Error('DMS の audios に利用可能な候補がありません');
+    }
+
+    const video = audioOnly ? null : this.pickBestStream(this.watch.domandVideos);
+    if (!audioOnly && !video) {
+      throw new Error('DMS の videos に利用可能な候補がありません');
     }
 
     const url = `https://nvapi.nicovideo.jp/v1/watch/${encodeURIComponent(
       this.videoId
     )}/access-rights/hls?actionTrackId=${this.generateActionTrackId()}`;
 
-    log.info('DMS session ensure:', url, 'video=', video.id, 'audio=', audio.id);
+    log.info('DMS session ensure:', url, audioOnly ? 'audioOnly' : `video=${video!.id}`, 'audio=', audio.id);
 
     interface AccessRightsResponse {
       data?: {
@@ -122,9 +134,10 @@ export class WatchSession {
       log.info(`Session API dump enabled: ${debugDumpPath}`);
     }
 
+    const outputs = audioOnly ? [[audio.id]] : [[video!.id, audio.id]];
     const res = await ctx.http.postJson<AccessRightsResponse>(
       url,
-      { outputs: [[video.id, audio.id]] },
+      { outputs },
       {
         headers: {
           'X-Access-Right-Key': accessRightKey,

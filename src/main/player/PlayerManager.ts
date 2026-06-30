@@ -23,6 +23,8 @@ export interface OpenPlayerParams {
   localPath?: string;
   /** フォルダ連続再生用: ソート済みローカルパス一覧 */
   folderPlaylist?: string[];
+  /** 検索結果連続再生用: videoId の配列 */
+  searchPlaylist?: string[];
   /** LANライブラリのHTTPストリーミングURL (例: http://192.168.x.x:12345/NNDDServer/sm123) */
   streamUrl?: string;
   /** ローカル再生時の付帯ファイル群 (コメントXML, サムネ画像など) */
@@ -36,6 +38,10 @@ export interface OpenPlayerParams {
     /** 今コメント no 配列JSON (ストリーミング時と同等の今コメ再現用) */
     nowCommentJson?: string;
   };
+  /** 自動再生による遷移か (true なら最小化中のウィンドウを前面に出さない) */
+  autoNext?: boolean;
+  /** 音声のみ再生モード */
+  audioOnly?: boolean;
 }
 
 /**
@@ -64,20 +70,32 @@ export class PlayerManager {
       if (resolved.localPath && !resolved.localFiles) {
         resolved.localFiles = this.resolveLocalFiles(resolved.localPath);
       }
+      if (params.audioOnly) {
+        existing.setMinimumSize(300, 100);
+        existing.setSize(1100, 120);
+      } else {
+        existing.setMinimumSize(640, 400);
+        if (existing.getSize()[1] < 400) {
+          existing.setSize(1440, 900);
+        }
+      }
       existing.webContents.send('nndd:player:init', resolved);
-      existing.show();
-      existing.focus();
+      if (!params.autoNext || !existing.isMinimized()) {
+        existing.show();
+        existing.focus();
+      }
       return existing;
     }
 
     const config = getConfigStore();
     const bgColor = config.get('ui').theme === 'light' ? '#f0f0f0' : '#000000';
 
+    const isMini = !!params.audioOnly;
     const win = new BrowserWindow({
-      width: 1440,
-      height: 900,
-      minWidth: 640,
-      minHeight: 400,
+      width: isMini ? 1100 : 1440,
+      height: isMini ? 120 : 900,
+      minWidth: isMini ? 300 : 640,
+      minHeight: isMini ? 100 : 400,
       autoHideMenuBar: true,
       backgroundColor: bgColor,
       title: 'NNDD-RE Player',
