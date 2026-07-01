@@ -1,7 +1,7 @@
 ﻿import { useState, useEffect, useCallback, useRef } from 'react';
 import { useConfig } from '@renderer/hooks/useConfig';
 import type { WatchPageInfo, NNDDREComment, NgListItem, MyListItem } from '@shared/types';
-import { IpcChannel } from '@shared/types';
+import { IpcChannel, NgListItemType } from '@shared/types';
 import { CommentList } from './CommentList';
 import { ensureCommandResolved } from '../../util/commentCommands';
 
@@ -280,7 +280,7 @@ export function VideoInfoView({
       {/* コンテンツ */}
       <div className="flex-1 min-h-0 overflow-hidden">
         {tab === 'info' ? (
-          <InfoContent watch={watch} ichibaHtmlPath={ichibaHtmlPath} />
+          <InfoContent watch={watch} ichibaHtmlPath={ichibaHtmlPath} onAddNg={handleAddNg} ngList={ngList} />
         ) : tab === 'series' && watch?.series ? (
           <SeriesTabContent
             seriesId={watch.series.id}
@@ -400,7 +400,7 @@ function TabButton({
   );
 }
 
-function InfoContent({ watch, ichibaHtmlPath }: { watch: WatchPageInfo | null; ichibaHtmlPath?: string }): JSX.Element {
+function InfoContent({ watch, ichibaHtmlPath, onAddNg, ngList }: { watch: WatchPageInfo | null; ichibaHtmlPath?: string; onAddNg?: (item: NgListItem) => void; ngList?: NgListItem[] }): JSX.Element {
   const [openVideoLinkInPlayer] = useConfig<boolean>('player.openVideoLinkInPlayer', false);
 
   if (!watch) {
@@ -492,6 +492,25 @@ function InfoContent({ watch, ichibaHtmlPath }: { watch: WatchPageInfo | null; i
           >
             {watch.owner.nickname}
           </button>
+          {onAddNg && (() => {
+            const ownerId = String(watch.owner!.id);
+            const isNg = ngList?.some((n) => n.type === NgListItemType.USER_ID && n.value === ownerId);
+            return (
+              <button
+                onClick={() => onAddNg({ type: NgListItemType.USER_ID, value: ownerId })}
+                className={[
+                  'text-xs px-1.5 py-0.5 rounded border transition-colors',
+                  isNg
+                    ? 'border-red-500 text-red-500 cursor-not-allowed opacity-60'
+                    : 'border-nndd-border text-nndd-subtext hover:border-red-500 hover:text-red-500'
+                ].join(' ')}
+                title={isNg ? '投稿者IDをNG済み' : '投稿者のコメントをNGに追加'}
+                disabled={isNg}
+              >
+                {isNg ? 'NG済' : 'コメントNG'}
+              </button>
+            );
+          })()}
         </div>
       )}
 
