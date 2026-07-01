@@ -21,6 +21,12 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: set-version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}" -replace '^[vV]', ''
+          npm version $tag --no-git-tag-version
+
       - name: install
         run: npm ci
 
