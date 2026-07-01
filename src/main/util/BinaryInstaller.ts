@@ -1,4 +1,7 @@
-import { execSync, spawn, spawnSync } from 'node:child_process';
+import { exec, execSync, spawn } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const execAsync = promisify(exec);
 import fs from 'node:fs';
 import https from 'node:https';
 import os from 'node:os';
@@ -35,10 +38,10 @@ export class BinaryInstaller {
     return path.join(this.binDir(), name);
   }
 
-  static checkWinget(): boolean {
+  static async checkWinget(): Promise<boolean> {
     if (process.platform !== 'win32') return false;
     try {
-      execSync('winget --version', { stdio: 'ignore', timeout: 5000 });
+      await execAsync('winget --version', { timeout: 5000 });
       return true;
     } catch {
       return false;
@@ -57,15 +60,15 @@ export class BinaryInstaller {
   static async checkYtDlp(): Promise<BinaryStatus> {
     const configured = getConfigStore().get('ytDlpPath');
     if (configured && fs.existsSync(configured)) {
-      return { found: true, path: configured, version: getVersion(configured) };
+      return { found: true, path: configured, version: await getVersion(configured) };
     }
     const local = this.ytDlpLocalPath();
     if (fs.existsSync(local)) {
-      return { found: true, path: local, version: getVersion(local) };
+      return { found: true, path: local, version: await getVersion(local) };
     }
     try {
-      execSync('yt-dlp --version', { stdio: 'ignore', timeout: 5000 });
-      return { found: true, path: 'yt-dlp', version: getVersion('yt-dlp') };
+      await execAsync('yt-dlp --version', { timeout: 5000 });
+      return { found: true, path: 'yt-dlp', version: await getVersion('yt-dlp') };
     } catch {
       return { found: false, path: null, version: null };
     }
@@ -74,15 +77,15 @@ export class BinaryInstaller {
   static async checkFfmpeg(): Promise<BinaryStatus> {
     const configured = getConfigStore().get('ffmpegPath');
     if (configured && fs.existsSync(configured)) {
-      return { found: true, path: configured, version: getFfmpegVersion(configured) };
+      return { found: true, path: configured, version: await getFfmpegVersion(configured) };
     }
     const local = this.ffmpegLocalPath();
     if (fs.existsSync(local)) {
-      return { found: true, path: local, version: getFfmpegVersion(local) };
+      return { found: true, path: local, version: await getFfmpegVersion(local) };
     }
     try {
-      execSync('ffmpeg -version', { stdio: 'ignore', timeout: 5000 });
-      return { found: true, path: 'ffmpeg', version: getFfmpegVersion('ffmpeg') };
+      await execAsync('ffmpeg -version', { timeout: 5000 });
+      return { found: true, path: 'ffmpeg', version: await getFfmpegVersion('ffmpeg') };
     } catch {
       return { found: false, path: null, version: null };
     }
@@ -91,15 +94,15 @@ export class BinaryInstaller {
   static async checkFfplay(): Promise<BinaryStatus> {
     const configured = getConfigStore().get('ffplayPath');
     if (configured && fs.existsSync(configured)) {
-      return { found: true, path: configured, version: getFfmpegVersion(configured) };
+      return { found: true, path: configured, version: await getFfmpegVersion(configured) };
     }
     const local = this.ffplayLocalPath();
     if (fs.existsSync(local)) {
-      return { found: true, path: local, version: getFfmpegVersion(local) };
+      return { found: true, path: local, version: await getFfmpegVersion(local) };
     }
     try {
-      execSync('ffplay -version', { stdio: 'ignore', timeout: 5000 });
-      return { found: true, path: 'ffplay', version: getFfmpegVersion('ffplay') };
+      await execAsync('ffplay -version', { timeout: 5000 });
+      return { found: true, path: 'ffplay', version: await getFfmpegVersion('ffplay') };
     } catch {
       return { found: false, path: null, version: null };
     }
@@ -127,7 +130,7 @@ export class BinaryInstaller {
       await runCommand(exePath, ['--update'], onProgress, signal);
       return;
     }
-    if (this.checkWinget()) {
+    if (await this.checkWinget()) {
       log.info('winget install yt-dlp.yt-dlp');
       await runCommand('winget', ['install', '--id', 'yt-dlp.yt-dlp', '-e', '--accept-package-agreements', '--accept-source-agreements'], onProgress, signal);
       return;
@@ -145,7 +148,7 @@ export class BinaryInstaller {
     onProgress: (pct: number) => void,
     signal?: AbortSignal
   ): Promise<void> {
-    if (this.checkWinget()) {
+    if (await this.checkWinget()) {
       const subCmd = isUpdate ? 'upgrade' : 'install';
       log.info(`winget ${subCmd} Gyan.FFmpeg`);
       await runCommand('winget', [subCmd, '--id', 'Gyan.FFmpeg', '-e', '--accept-package-agreements', '--accept-source-agreements'], onProgress, signal);
@@ -237,26 +240,31 @@ export class BinaryInstaller {
   }
 }
 
-function getVersion(exePath: string): string | null {
+async function getVersion(exePath: string): Promise<string | null> {
   try {
     const quoted = exePath.includes(' ') ? `"${exePath}"` : exePath;
-    const out = execSync(`${quoted} --version`, { encoding: 'utf8', timeout: 5000 });
-    return out.trim().split('\n')[0] ?? null;
+    const { stdout } = await execAsync(`${quoted} --version`, { timeout: 5000 });
+    return stdout.trim().split('\n')[0] ?? null;
   } catch {
     return null;
   }
 }
 
-function getFfmpegVersion(exePath: string): string | null {
-  try {
-    const result = spawnSync(exePath, ['-version'], { encoding: 'utf8', timeout: 5000 });
-    const out = (result.stdout ?? '') + (result.stderr ?? '');
-    const first = out.trim().split('\n')[0] ?? '';
-    const m = first.match(/\bversion\s+(\S+)/);
-    return m ? m[1] : null;
-  } catch {
-    return null;
-  }
+function getFfmpegVersion(exePath: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const proc = spawn(exePath, ['-version'], { windowsHide: true });
+    let out = '';
+    proc.stdout?.on('data', (d: Buffer) => { out += d.toString(); });
+    proc.stderr?.on('data', (d: Buffer) => { out += d.toString(); });
+    const timer = setTimeout(() => { proc.kill(); resolve(null); }, 5000);
+    proc.on('close', () => {
+      clearTimeout(timer);
+      const first = out.trim().split('\n')[0] ?? '';
+      const m = first.match(/\bversion\s+(\S+)/);
+      resolve(m ? m[1] : null);
+    });
+    proc.on('error', () => { clearTimeout(timer); resolve(null); });
+  });
 }
 
 /** コマンドを spawn して完了を待つ。進捗は indeterminate (0.1 → 1.0 on done) */

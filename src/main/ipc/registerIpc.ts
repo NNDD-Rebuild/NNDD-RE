@@ -618,6 +618,16 @@ export function registerIpcHandlers(
     return app.getVersion();
   });
 
+  ipcMain.handle(IpcChannel.SYS_GET_APP_INFO, () => ({
+    version: app.getVersion(),
+    userData: app.getPath('userData'),
+    libraryRoot: library.rootDir,
+    dbPath: path.join(library.systemDir, 'library.db'),
+    cookiePath: path.join(library.systemDir, 'cookies.json'),
+    logPath: getLogFilePath(),
+    cacheDir: YtDlpStreamer.cacheDir(),
+  }));
+
   ipcMain.handle(
     IpcChannel.SYS_CHOOSE_DIRECTORY,
     async (e, defaultPath?: string) => {
@@ -1336,7 +1346,7 @@ export function registerIpcHandlers(
     return {
       ytDlp, ffmpeg, ffplay,
       canAutoInstallFfmpeg: BinaryInstaller.canAutoInstallFfmpeg(),
-      hasWinget: BinaryInstaller.checkWinget(),
+      hasWinget: await BinaryInstaller.checkWinget(),
       platform: process.platform,
       localPaths: {
         ytDlp: BinaryInstaller.ytDlpLocalPath(),
