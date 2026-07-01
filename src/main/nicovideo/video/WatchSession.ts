@@ -43,7 +43,7 @@ export class WatchSession {
   /**
    * セッションを確立する。返り値の contentUrl で master.m3u8 を取得できる。
    */
-  async ensure(audioOnly?: boolean): Promise<SessionResult> {
+  async ensure(audioOnly?: boolean, videoQualityId?: string): Promise<SessionResult> {
     if (this.session) return this.session;
 
     if (!this.watch.isDownloadable) {
@@ -66,7 +66,7 @@ export class WatchSession {
     // DMS が利用可能なら優先、失敗時は DMC にフォールバック
     if (this.watch.domandAccessRightKey && this.watch.domandVideos.length > 0) {
       try {
-        this.session = await this.ensureDMS();
+        this.session = await this.ensureDMS(false, videoQualityId);
       } catch (dmsErr) {
         if (this.watch.dmcSessionRequestJson) {
           log.warn('DMS failed, falling back to DMC:', dmsErr);
@@ -94,7 +94,7 @@ export class WatchSession {
    * Response:
    *   { data: { contentUrl: "https://...master.m3u8", createTime, expireTime } }
    */
-  private async ensureDMS(audioOnly?: boolean): Promise<SessionResult> {
+  private async ensureDMS(audioOnly?: boolean, videoQualityId?: string): Promise<SessionResult> {
     const ctx = NicoContext.get();
     const accessRightKey = this.watch.domandAccessRightKey!;
 
@@ -103,7 +103,11 @@ export class WatchSession {
       throw new Error('DMS の audios に利用可能な候補がありません');
     }
 
-    const video = audioOnly ? null : this.pickBestStream(this.watch.domandVideos);
+    const videoCandidates = this.watch.domandVideos;
+    const video = audioOnly ? null
+      : (videoQualityId
+          ? (videoCandidates.find(c => c.id === videoQualityId && c.isAvailable) ?? this.pickBestStream(videoCandidates))
+          : this.pickBestStream(videoCandidates));
     if (!audioOnly && !video) {
       throw new Error('DMS の videos に利用可能な候補がありません');
     }

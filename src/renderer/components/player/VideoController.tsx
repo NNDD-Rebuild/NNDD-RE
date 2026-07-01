@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import type { DomandStreamCandidate } from '@shared/types';
 import { useConfig } from '@renderer/hooks/useConfig';
 
 interface Props {
@@ -11,6 +12,10 @@ interface Props {
   canSkipNext?: boolean;
   onSkipPrev?: () => void;
   onSkipNext?: () => void;
+  availableQualities?: DomandStreamCandidate[];
+  currentQualityId?: string;
+  onQualityChange?: (id: string) => void;
+  audioOnly?: boolean;
 }
 
 /**
@@ -33,7 +38,11 @@ export function VideoController({
   canSkipPrev,
   canSkipNext,
   onSkipPrev,
-  onSkipNext
+  onSkipNext,
+  availableQualities,
+  currentQualityId,
+  onQualityChange,
+  audioOnly
 }: Props): JSX.Element {
   const [uiSize] = useConfig<'small' | 'normal' | 'large'>('player.controlUiSize', 'small');
   const zoomFactor = uiSize === 'large' ? 1.5 : uiSize === 'normal' ? 1.3 : 1;
@@ -223,6 +232,20 @@ export function VideoController({
         onChange={(e) => changeVolume(Number(e.target.value))}
         className="w-20"
       />
+
+      {!audioOnly && availableQualities && availableQualities.length >= 2 && onQualityChange && (
+        <select
+          value={currentQualityId ?? ''}
+          onChange={(e) => onQualityChange(e.target.value)}
+          className="bg-nndd-border text-white text-sm rounded px-1 py-0.5 cursor-pointer"
+        >
+          {availableQualities.map((q) => (
+            <option key={q.id} value={q.id}>
+              {q.height ? `${q.height}p` : (q.id.match(/(\d+p)$/)?.[1] ?? q.id)}
+            </option>
+          ))}
+        </select>
+      )}
 
       <select
         value={rate}

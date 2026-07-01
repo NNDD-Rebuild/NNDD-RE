@@ -19,6 +19,7 @@ export class ImageCache {
   private static _enabled = true;
   private static _maxSizeMb = 1000;
   private static _dir: string | null = null;
+  private static _cachedKeys = new Set<string>();
 
   static get cacheDir(): string {
     if (!this._dir) {
@@ -38,6 +39,15 @@ export class ImageCache {
 
   static setMaxSizeMb(v: number): void {
     this._maxSizeMb = (typeof v === 'number' && isFinite(v) && v >= 0) ? v : 1000;
+  }
+
+  /** 起動時に一度だけ呼ぶ。ディレクトリをスキャンしてメモリセットに読み込む */
+  static async init(): Promise<void> {
+    try {
+      const files = await fs.promises.readdir(this.cacheDir);
+      this._cachedKeys = new Set(files);
+      log.info(`ImageCache init: ${files.length} files loaded`);
+    } catch {}
   }
 
   // ----- internal helpers -----
@@ -60,10 +70,8 @@ export class ImageCache {
   /** キャッシュ済みなら nndd-re-local:// URL を返す。未キャッシュなら null */
   static getCached(url: string): string | null {
     if (!this._enabled || !url) return null;
-    try {
-      const p = this.cachePath(url);
-      if (fs.existsSync(p)) return this.toLocalUrl(p);
-    } catch {}
+    const name = this.fileName(url);
+    if (this._cachedKeys.has(name)) return this.toLocalUrl(path.join(this.cacheDir, name));
     return null;
   }
 
@@ -82,10 +90,12 @@ export class ImageCache {
         noCookieReceive: true,
         timeoutMs: 10000
       });
-      const p = this.cachePath(url);
+      const name = this.fileName(url);
+      const p = path.join(this.cacheDir, name);
       fs.writeFileSync(p, buf);
-      log.debug('cached:', this.fileName(url), '<-', url);
-      this.evictIfNeeded();
+      this._cachedKeys.add(name);
+      log.debug('cached:', name, '<-', url);
+      void this.evictIfNeeded();
       return this.toLocalUrl(p);
     } catch (e) {
       log.warn('fetch failed, using original URL:', url, String(e));
@@ -94,20 +104,28 @@ export class ImageCache {
   }
 
   /** 上限超過時に古いファイルから削除 */
-  private static evictIfNeeded(): void {
+  private static async evictIfNeeded(): Promise<void> {
     if (this._maxSizeMb === 0) return;
     const maxBytes = this._maxSizeMb * 1024 * 1024;
     const d = this.cacheDir;
     try {
-      const entries = fs.readdirSync(d).map(f => {
-        const p = path.join(d, f);
-        const stat = fs.statSync(p);
-        return { path: p, size: stat.size, mtime: stat.mtimeMs };
-      }).sort((a, b) => a.mtime - b.mtime);
+      const files = await fs.promises.readdir(d);
+      const entries = await Promise.all(
+        files.map(async f => {
+          const p = path.join(d, f);
+          const stat = await fs.promises.stat(p);
+          return { path: p, name: f, size: stat.size, mtime: stat.mtimeMs };
+        })
+      );
+      entries.sort((a, b) => a.mtime - b.mtime);
       let total = entries.reduce((s, e) => s + e.size, 0);
       for (const entry of entries) {
         if (total <= maxBytes) break;
-        try { fs.unlinkSync(entry.path); total -= entry.size; } catch {}
+        try {
+          await fs.promises.unlink(entry.path);
+          this._cachedKeys.delete(entry.name);
+          total -= entry.size;
+        } catch {}
       }
     } catch {}
   }
@@ -150,6 +168,7 @@ export class ImageCache {
       for (const f of fs.readdirSync(d)) {
         try { fs.unlinkSync(path.join(d, f)); count++; } catch {}
       }
+      this._cachedKeys.clear();
       log.info(`image cache cleared: ${count} files removed`);
     } catch {}
   }

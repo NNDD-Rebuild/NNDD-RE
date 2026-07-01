@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { NNDDREComment, WatchPageInfo } from '@shared/types';
+import type { NNDDREComment, WatchPageInfo, DomandStreamCandidate } from '@shared/types';
 import { IpcChannel } from '@shared/types';
 import { buildLocalUrl } from '@shared/constants';
 import { VideoPlayer } from './components/player/VideoPlayer';
@@ -92,6 +92,8 @@ export default function PlayerApp(): JSX.Element {
   const searchPlaylistRef = useRef<string[]>([]);
   const [audioOnly, setAudioOnly] = useState(false);
   const audioOnlyRef = useRef(false);
+  const [availableQualities, setAvailableQualities] = useState<DomandStreamCandidate[]>([]);
+  const [selectedQualityId, setSelectedQualityId] = useState<string | null>(null);
   const consecutiveSkipRef = useRef(0);
   const MAX_CONSECUTIVE_SKIPS = 10;
 
@@ -381,6 +383,8 @@ export default function PlayerApp(): JSX.Element {
     setShowPastComments(false);
     folderVideosRef.current = [];
     setFolderVideos([]);
+    setAvailableQualities([]);
+    setSelectedQualityId(null);
     // 1. WatchPageInfo を取得
     const w = await window.nndd.invoke<WatchPageInfo>(
       window.nndd.channels.VIDEO_GET_WATCH_INFO,
@@ -397,6 +401,14 @@ export default function PlayerApp(): JSX.Element {
       thumbnailUrl: w?.thumbnail?.url ?? '',
       isLocal: false
     };
+
+    // 画質リストをセット (DMS のみ)
+    const available = w.domandVideos
+      .filter(v => v.isAvailable)
+      .sort((a, b) => b.qualityLevel - a.qualityLevel);
+    setAvailableQualities(available);
+    const defaultQualityId = available[0]?.id ?? null;
+    setSelectedQualityId(defaultQualityId);
 
     // 2. コメント取得（音声のみモードではスキップ）
     if (isAudioOnly) {
@@ -420,7 +432,7 @@ export default function PlayerApp(): JSX.Element {
       isHls?: boolean;
       niconico?: boolean;
       error?: string;
-    }>(window.nndd.channels.VIDEO_GET_STREAM_URL, videoId, w, isAudioOnly);
+    }>(window.nndd.channels.VIDEO_GET_STREAM_URL, videoId, w, isAudioOnly, defaultQualityId);
 
     if (stream.error) {
       throw new Error(stream.error);
@@ -435,6 +447,25 @@ export default function PlayerApp(): JSX.Element {
     } else {
       setNiconicoMode(false);
       setSrc(stream.contentUrl ?? '');
+      setIsHls(stream.isHls ?? false);
+    }
+  };
+
+  const handleQualityChange = async (qualityId: string): Promise<void> => {
+    const currentSec = videoElementRef.current?.currentTime ?? 0;
+    pendingSeekRef.current = currentSec;
+    setSelectedQualityId(qualityId);
+    const vid = watchRef.current?.videoId ?? playInfoRef.current?.videoId;
+    const w = watchRef.current;
+    if (!vid || !w) return;
+    const stream = await window.nndd.invoke<{
+      contentUrl: string | null;
+      isDMS: boolean;
+      isHls?: boolean;
+      error?: string;
+    }>(window.nndd.channels.VIDEO_GET_STREAM_URL, vid, w, audioOnlyRef.current, qualityId);
+    if (!stream.error && stream.contentUrl) {
+      setSrc(stream.contentUrl);
       setIsHls(stream.isHls ?? false);
     }
   };
@@ -1064,6 +1095,10 @@ export default function PlayerApp(): JSX.Element {
           canSkipNext={canSkipNext}
           onSkipPrev={skipToPrev}
           onSkipNext={skipToNext}
+          availableQualities={availableQualities}
+          currentQualityId={selectedQualityId ?? undefined}
+          onQualityChange={(id) => { handleQualityChange(id).catch(console.error); }}
+          audioOnly={audioOnly}
         />
         {(loading || error) && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/70 text-white text-xs">
@@ -1154,6 +1189,10 @@ export default function PlayerApp(): JSX.Element {
                 canSkipNext={canSkipNext}
                 onSkipPrev={skipToPrev}
                 onSkipNext={skipToNext}
+                availableQualities={availableQualities}
+                currentQualityId={selectedQualityId ?? undefined}
+                onQualityChange={(id) => { handleQualityChange(id).catch(console.error); }}
+                audioOnly={audioOnly}
               />
             </div>
           </>

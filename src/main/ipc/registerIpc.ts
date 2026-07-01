@@ -508,7 +508,7 @@ export function registerIpcHandlers(
   //   'native':   hls.js でニコニコCDNに直接アクセス (session.webRequest でCookie/CORS処理)
   //   'hls':      HLS プロキシで即時再生 (StreamServer+HlsProxy 経由, yt-dlp ベース)
   //   'niconico': 公式プレイヤー webview 埋め込み
-  ipcMain.handle(IpcChannel.VIDEO_GET_STREAM_URL, async (_e, videoId: string, watchInfo?: WatchPageInfo, audioOnly?: boolean) => {
+  ipcMain.handle(IpcChannel.VIDEO_GET_STREAM_URL, async (_e, videoId: string, watchInfo?: WatchPageInfo, audioOnly?: boolean, videoQualityId?: string) => {
     const mode = getConfigStore().get('player').streamingMode ?? 'native';
 
     // --- niconico モード ---
@@ -529,7 +529,7 @@ export function registerIpcHandlers(
       const info = watchInfo ?? await WatchInfoHandler.fetchWatchInfo(videoId);
       let session: { contentUrl: string; isDMS: boolean };
       try {
-        session = await new WatchSession(info).ensure(audioOnly);
+        session = await new WatchSession(info).ensure(audioOnly, videoQualityId);
       } catch (e) {
         return { contentUrl: null, isDMS: false, error: String(e) };
       }
@@ -542,7 +542,7 @@ export function registerIpcHandlers(
       const info = watchInfo ?? await WatchInfoHandler.fetchWatchInfo(videoId);
       let session: { contentUrl: string; isDMS: boolean };
       try {
-        session = await new WatchSession(info).ensure(audioOnly);
+        session = await new WatchSession(info).ensure(audioOnly, videoQualityId);
       } catch (e) {
         return { contentUrl: null, isDMS: false, error: String(e) };
       }

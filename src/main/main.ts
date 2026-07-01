@@ -204,6 +204,7 @@ app.whenReady().then(async () => {
     ImageCache.setMaxSizeMb(ic.maxSizeMb);
     // フォルダを明示的に作成して常駐させる (lazy init に依存しない)
     fs.mkdirSync(ImageCache.cacheDir, { recursive: true });
+    await ImageCache.init();
   }
 
   // ネイティブタイトルバーの明暗をテーマに合わせる
