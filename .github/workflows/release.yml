@@ -29,3 +29,16 @@ jobs:
         run: npm run dist:win -- --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: generate-notes
+        shell: pwsh
+        run: |
+          $prev = git describe --tags --abbrev=0 HEAD^ 2>$null
+          if ($prev) {
+            $notes = (git log "$prev..HEAD" --pretty=format:"- %s" --no-merges) -join "`n"
+          } else {
+            $notes = (git log --pretty=format:"- %s" --no-merges) -join "`n"
+          }
+          gh release edit "${{ github.ref_name }}" --notes $notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
