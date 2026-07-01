@@ -26,13 +26,6 @@ jobs:
         run: npm run build
 
       - name: dist
-        run: npm run dist:win
+        run: npm run dist:win -- --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: upload
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            dist/*.exe
-            dist/latest.yml

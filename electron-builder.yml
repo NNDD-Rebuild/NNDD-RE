@@ -40,3 +40,7 @@ linux:
       arch:
         - x64
   category: AudioVideo
+publish:
+  provider: github
+  owner: NNDD-Rebuild
+  repo: NNDD-RE

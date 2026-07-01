@@ -1,5 +1,5 @@
 import { autoUpdater } from 'electron-updater';
-import { webContents } from 'electron';
+import { app, webContents } from 'electron';
 import { IpcChannel } from '@shared/types';
 import { createLogger } from '../util/Logger';
 
@@ -43,6 +43,7 @@ export class UpdateManager {
   }
 
   async check(): Promise<unknown> {
+    if (!app.isPackaged) return null;
     this.initialize();
     try {
       return await autoUpdater.checkForUpdates();
