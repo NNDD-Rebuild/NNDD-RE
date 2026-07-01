@@ -96,6 +96,18 @@ export default function PlayerApp(): JSX.Element {
   const [selectedQualityId, setSelectedQualityId] = useState<string | null>(null);
   const consecutiveSkipRef = useRef(0);
   const MAX_CONSECUTIVE_SKIPS = 10;
+  const preloadRef = useRef<{
+    videoId: string;
+    watchInfo?: WatchPageInfo;
+    stream?: {
+      contentUrl: string | null;
+      isDMS: boolean;
+      isHls?: boolean;
+      ffplay?: boolean;
+      niconico?: boolean;
+      error?: string;
+    };
+  } | null>(null);
 
   // ── サイドバー幅リサイズ ──────────────────────────────────
   const SIDEBAR_MIN = 180;
@@ -374,6 +386,9 @@ export default function PlayerApp(): JSX.Element {
   };
 
   const initStreaming = async (videoId: string, isAudioOnly?: boolean): Promise<void> => {
+    const cached = preloadRef.current?.videoId === videoId ? preloadRef.current : null;
+    preloadRef.current = null;
+
     setIsLocal(false);
     setWatch(null);
     watchRef.current = null;
@@ -385,11 +400,9 @@ export default function PlayerApp(): JSX.Element {
     setFolderVideos([]);
     setAvailableQualities([]);
     setSelectedQualityId(null);
-    // 1. WatchPageInfo を取得
-    const w = await window.nndd.invoke<WatchPageInfo>(
-      window.nndd.channels.VIDEO_GET_WATCH_INFO,
-      videoId
-    );
+    // 1. WatchPageInfo を取得（プリロードキャッシュ優先）
+    const w = cached?.watchInfo
+      ?? await window.nndd.invoke<WatchPageInfo>(window.nndd.channels.VIDEO_GET_WATCH_INFO, videoId);
     setWatch(w);
     if (w.channel !== null && !w.isDownloadable) {
       throw new Error(`チャンネル限定動画です。「${w.channel.name}」への加入が必要です。`);
@@ -424,15 +437,16 @@ export default function PlayerApp(): JSX.Element {
       console.warn('comment fetch failed:', e);
     }
 
-    // 3. ストリーミング URL を取得 (watchInfo を渡して二重スクレイピング回避)
-    const stream = await window.nndd.invoke<{
-      contentUrl: string | null;
-      isDMS: boolean;
-      ffplay?: boolean;
-      isHls?: boolean;
-      niconico?: boolean;
-      error?: string;
-    }>(window.nndd.channels.VIDEO_GET_STREAM_URL, videoId, w, isAudioOnly, defaultQualityId);
+    // 3. ストリーミング URL を取得（プリロードキャッシュ優先）
+    const stream = cached?.stream
+      ?? await window.nndd.invoke<{
+        contentUrl: string | null;
+        isDMS: boolean;
+        ffplay?: boolean;
+        isHls?: boolean;
+        niconico?: boolean;
+        error?: string;
+      }>(window.nndd.channels.VIDEO_GET_STREAM_URL, videoId, w, isAudioOnly, defaultQualityId);
 
     if (stream.error) {
       throw new Error(stream.error);
@@ -607,6 +621,22 @@ export default function PlayerApp(): JSX.Element {
         })
         .catch(() => {});
     }
+  };
+
+  const getNextVideoId = (): string | null => {
+    if (isLocalRef.current) return null;
+    const currentId = watchRef.current?.videoId ?? playInfoRef.current?.videoId;
+    if (autoNextSeriesRef.current) {
+      const items = seriesItemsRef.current;
+      const idx = items.findIndex((i) => i.videoId === currentId);
+      if (idx >= 0 && idx < items.length - 1) return items[idx + 1].videoId;
+    }
+    const pl = searchPlaylistRef.current;
+    if (pl.length > 0) {
+      const idx = pl.indexOf(currentId ?? '');
+      if (idx >= 0 && idx < pl.length - 1) return pl[idx + 1];
+    }
+    return null;
   };
 
   const advanceToNextVideo = (): boolean => {
@@ -852,11 +882,48 @@ export default function PlayerApp(): JSX.Element {
     window.nndd.send(IpcChannel.COMMENT_WINDOW_PUSH, comments);
   }, [comments]);
 
-  // 250ms ごとに再生位置をプッシュ
+  // 250ms ごとに再生位置をプッシュ + 残り5秒で次の動画をプリロード
   useEffect(() => {
     const id = window.setInterval(() => {
-      const t = videoElementRef.current?.currentTime ?? 0;
+      const v = videoElementRef.current;
+      const t = v?.currentTime ?? 0;
       window.nndd.send(IpcChannel.COMMENT_WINDOW_TIME, t);
+
+      if (v && !isLocalRef.current && preloadRef.current === null && v.duration > 0) {
+        const remaining = v.duration - t;
+        if (remaining > 0 && remaining <= 5) {
+          const nextId = getNextVideoId();
+          if (nextId) {
+            preloadRef.current = { videoId: nextId };
+            (async () => {
+              try {
+                const watchInfo = await window.nndd.invoke<WatchPageInfo>(
+                  window.nndd.channels.VIDEO_GET_WATCH_INFO, nextId
+                );
+                const avail = watchInfo.domandVideos
+                  .filter((q) => q.isAvailable)
+                  .sort((a, b) => b.qualityLevel - a.qualityLevel);
+                const qualityId = avail[0]?.id ?? null;
+                const stream = await window.nndd.invoke<{
+                  contentUrl: string | null;
+                  isDMS: boolean;
+                  isHls?: boolean;
+                  ffplay?: boolean;
+                  niconico?: boolean;
+                  error?: string;
+                }>(window.nndd.channels.VIDEO_GET_STREAM_URL, nextId, watchInfo, audioOnlyRef.current, qualityId);
+                if (!stream.error) {
+                  preloadRef.current = { videoId: nextId, watchInfo, stream };
+                } else {
+                  preloadRef.current = null;
+                }
+              } catch {
+                preloadRef.current = null;
+              }
+            })();
+          }
+        }
+      }
     }, 250);
     return () => window.clearInterval(id);
   }, []);
