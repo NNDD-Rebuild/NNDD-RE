@@ -117,8 +117,10 @@ export const PremiumColors: Record<string, number> = {
  * NGリスト項目種別
  */
 export const NgListItemType = {
-  /** 単語によるNG */
+  /** 単語によるNG（部分一致） */
   WORD: 'word',
+  /** 単語によるNG（完全一致） */
+  WORD_EXACT: 'wordExact',
   /** ユーザーIDによるNG */
   USER_ID: 'userId',
   /** コマンドによるNG */

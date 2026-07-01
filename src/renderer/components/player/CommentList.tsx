@@ -520,6 +520,7 @@ export function CommentList({
       {showNgDialog && (
         <NgListDialog
           ngList={ngList}
+          onAdd={onAddNg}
           onRemove={onRemoveNg}
           onClose={() => setShowNgDialog(false)}
         />

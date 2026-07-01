@@ -265,6 +265,8 @@ export class CommentRenderer {
       for (const ng of this.config.ngList) {
         if (ng.type === NgListItemType.WORD && c.text.includes(ng.value))
           return false;
+        if (ng.type === NgListItemType.WORD_EXACT && c.text === ng.value)
+          return false;
         if (ng.type === NgListItemType.USER_ID && c.userId === ng.value)
           return false;
         if (ng.type === NgListItemType.COMMAND && c.mail.includes(ng.value))
