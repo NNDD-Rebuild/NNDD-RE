@@ -23,7 +23,7 @@ export function HistoryView(): JSX.Element {
     reload();
   };
 
-  const handlePlayLocal = (videoId: string): void => {
+  const handlePlay = (videoId: string): void => {
     void window.nndd.invoke(window.nndd.channels.VIDEO_OPEN_PLAYER, { videoId });
   };
 
@@ -58,39 +58,37 @@ export function HistoryView(): JSX.Element {
                 <th className="w-32">動画ID</th>
                 <th className="w-40">視聴日時</th>
                 <th className="w-20">ローカル</th>
-                <th className="w-28">操作</th>
+                <th className="w-36">操作</th>
               </tr>
             </thead>
             <tbody>
               {items.map((it, i) => (
-                <tr key={i}>
+                <tr key={i} onDoubleClick={() => handlePlay(it.videoId)} className="cursor-pointer">
                   <td>{it.title}</td>
                   <td>{it.videoId}</td>
                   <td>{it.watchedAt.toLocaleString('ja-JP')}</td>
                   <td>
-                    {it.isLocal && (
-                      <div className="flex items-center gap-1">
-                        <span>○</span>
-                        <button
-                          onClick={() => handlePlayLocal(it.videoId)}
-                          className="text-xs px-2 py-0.5 bg-nndd-border hover:bg-nndd-accent rounded"
-                          title="ローカルファイルで再生"
-                        >
-                          ▶
-                        </button>
-                      </div>
-                    )}
+                    {it.isLocal && <span>○</span>}
                   </td>
                   <td>
-                    {it.videoId && (
+                    <div className="inline-flex items-center gap-1">
                       <button
-                        onClick={() => handleOpenNiconico(it.videoId)}
+                        onClick={() => handlePlay(it.videoId)}
                         className="text-xs px-2 py-0.5 bg-nndd-border hover:bg-nndd-accent rounded"
-                        title="ニコニコ動画で再生"
+                        title={it.isLocal ? 'ローカルファイルで再生' : 'ストリーミングで再生'}
                       >
-                        ニコ動で開く
+                        ▶
                       </button>
-                    )}
+                      {it.videoId && (
+                        <button
+                          onClick={() => handleOpenNiconico(it.videoId)}
+                          className="text-xs px-2 py-0.5 bg-nndd-border hover:bg-nndd-accent rounded"
+                          title="ニコニコ動画で再生"
+                        >
+                          ニコ動で開く
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
