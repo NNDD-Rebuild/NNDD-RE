@@ -8,17 +8,27 @@ type UpdateEvent =
   | { event: 'downloaded'; info: { version?: string } }
   | { event: 'error'; message: string };
 
+type AppInfo = {
+  version: string;
+  userData: string;
+  libraryRoot: string;
+  dbPath: string;
+  cookiePath: string;
+  logPath: string;
+  cacheDir: string;
+};
+
 /**
- * バージョン情報・自動更新パネル。
+ * 情報・自動更新パネル。
  */
 export function UpdateSettings(): JSX.Element {
-  const [version, setVersion] = useState('');
+  const [info, setInfo] = useState<AppInfo | null>(null);
   const [status, setStatus] = useState<UpdateEvent | null>(null);
 
   useEffect(() => {
     window.nndd
-      .invoke<string>(window.nndd.channels.SYS_GET_VERSION)
-      .then(setVersion);
+      .invoke<AppInfo>(window.nndd.channels.SYS_GET_APP_INFO)
+      .then(setInfo);
     const off = window.electron.ipcRenderer.on(
       'nndd:update:event',
       (_e, payload: UpdateEvent) => setStatus(payload)
@@ -40,14 +50,30 @@ export function UpdateSettings(): JSX.Element {
 
   return (
     <div className="p-4 max-w-3xl">
-      <h2 className="text-base font-bold mb-3">バージョン情報・更新</h2>
+      <h2 className="text-base font-bold mb-3">情報</h2>
 
-      <Section title="現在のバージョン">
-        <div className="text-sm">NNDD-RE v{version || '?'}</div>
+      <Section title="バージョン">
+        <div className="text-sm">NNDD-RE v{info?.version ?? '?'}</div>
         <div className="text-xs text-nndd-subtext mt-1">
           オリジナル NNDD V4.4.9 (Adobe AIR) を Electron + TypeScript + React に
           移植したバージョンです。
         </div>
+      </Section>
+
+      <Section title="パス情報">
+        <div className="text-xs text-nndd-subtext mb-2">クリックでクリップボードにコピー</div>
+        {info ? (
+          <>
+            <CopyRow label="userData" value={info.userData} />
+            <CopyRow label="ライブラリDB" value={info.dbPath} />
+            <CopyRow label="Cookie" value={info.cookiePath} />
+            <CopyRow label="ログ" value={info.logPath} />
+            <CopyRow label="キャッシュ" value={info.cacheDir} />
+            <CopyRow label="ライブラリ" value={info.libraryRoot} />
+          </>
+        ) : (
+          <div className="text-xs text-nndd-subtext">読み込み中…</div>
+        )}
       </Section>
 
       <Section title="アップデート">
@@ -112,5 +138,27 @@ function Btn(props: React.ButtonHTMLAttributes<HTMLButtonElement>): JSX.Element 
         props.className ?? ''
       ].join(' ')}
     />
+  );
+}
+
+function CopyRow({ label, value }: { label: string; value: string }): JSX.Element {
+  const [copied, setCopied] = useState(false);
+  const copy = (): void => {
+    navigator.clipboard.writeText(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
+  return (
+    <div
+      onClick={copy}
+      title="クリックでコピー"
+      className="flex items-start gap-2 py-1 px-2 rounded hover:bg-nndd-border cursor-pointer group"
+    >
+      <span className="text-xs text-nndd-subtext w-28 shrink-0">{label}</span>
+      <span className="text-xs font-mono break-all flex-1">{value}</span>
+      <span className="text-xs text-nndd-accent opacity-0 group-hover:opacity-100 shrink-0">
+        {copied ? '✓' : 'コピー'}
+      </span>
+    </div>
   );
 }

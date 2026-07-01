@@ -568,12 +568,6 @@ export function GeneralSettings({ onDeveloperModeChange }: GeneralSettingsProps)
           API生データの保存先選択やダンプ対象の設定ができるようになります。
         </p>
       </Section>
-
-      <Section title="バージョン">
-        <div className="text-sm text-nndd-subtext">
-          NNDD-RE (Adobe AIR 版から移植)
-        </div>
-      </Section>
     </div>
   );
 }

@@ -9,6 +9,7 @@ import { LogViewer } from './LogViewer';
 import { UpdateSettings } from './UpdateSettings';
 import { ExternalToolsSettings } from './ExternalToolsSettings';
 import { DebugSettings } from './DebugSettings';
+import { NgCommentSettings } from './NgCommentSettings';
 
 /**
  * 設定タブ。
@@ -28,6 +29,7 @@ type SubTab =
   | 'library'
   | 'schedule'
   | 'player'
+  | 'ng'
   | 'tools'
   | 'connection'
   | 'log'
@@ -40,21 +42,18 @@ const SUBTABS: { id: SubTab; label: string }[] = [
   { id: 'library', label: 'DLリスト・ライブラリ' },
   { id: 'schedule', label: 'スケジュール' },
   { id: 'player', label: 'プレイヤー' },
+  { id: 'ng', label: 'NGコメント' },
   { id: 'tools', label: '外部ツール' },
   { id: 'connection', label: '接続診断' },
   { id: 'log', label: 'ログ' },
-  { id: 'update', label: 'バージョン情報・更新' }
+  { id: 'update', label: '情報' }
 ];
 
 export function SettingsView(): JSX.Element {
   const [active, setActive] = useState<SubTab>('general');
-  const [version, setVersion] = useState('');
   const [developerEnabled, setDeveloperEnabled] = useState(false);
 
   useEffect(() => {
-    window.nndd
-      .invoke<string>(window.nndd.channels.SYS_GET_VERSION)
-      .then(setVersion);
     window.nndd
       .invoke<boolean>(window.nndd.channels.CONFIG_GET, 'developer.enabled')
       .then((v) => setDeveloperEnabled(v !== false))
@@ -93,11 +92,6 @@ export function SettingsView(): JSX.Element {
             </button>
           )}
         </div>
-        {version && (
-          <div className="border-t border-nndd-border px-4 py-2 text-xs text-nndd-subtext">
-            NNDD-RE v{version}
-          </div>
-        )}
       </aside>
       <main className="flex-1 overflow-auto">
         {active === 'general' && <GeneralSettings onDeveloperModeChange={setDeveloperEnabled} />}
@@ -105,6 +99,7 @@ export function SettingsView(): JSX.Element {
         {active === 'library' && <LibrarySettings />}
         {active === 'schedule' && <ScheduleSettings />}
         {active === 'player' && <PlayerSettings />}
+        {active === 'ng' && <NgCommentSettings />}
         {active === 'tools' && <ExternalToolsSettings />}
         {active === 'connection' && <ConnectionDiagnostics />}
         {active === 'log' && <LogViewer />}

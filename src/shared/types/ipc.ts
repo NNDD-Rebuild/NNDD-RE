@@ -105,6 +105,7 @@ export const IpcChannel = {
   /** ファイル選択ダイアログ (filters?: Electron.FileFilter[]) → string | null */
   SYS_CHOOSE_FILE: 'nndd:sys:chooseFile',
   SYS_GET_VERSION: 'nndd:sys:getVersion',
+  SYS_GET_APP_INFO: 'nndd:sys:getAppInfo',
 
   // NGリスト
   NG_LIST_COMMENT: 'nndd:ng:listComment',
