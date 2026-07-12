@@ -30,7 +30,8 @@ interface NvApiRankingResponse {
       thumbnail?: { url?: string; middleUrl?: string; largeUrl?: string };
       count?: { view?: number; comment?: number; mylist?: number; like?: number };
       shortDescription?: string;
-      owner?: { name?: string };
+      owner?: { name?: string; ownerType?: string };
+      isChannelVideo?: boolean;
     }>;
     hasNext?: boolean;
   };
@@ -81,7 +82,8 @@ export class RankingClient {
       commentCount: Number(v.count?.comment ?? 0),
       mylistCount: Number(v.count?.mylist ?? 0),
       likeCount: Number(v.count?.like ?? 0),
-      registeredAt: v.registeredAt ? new Date(v.registeredAt) : new Date()
+      registeredAt: v.registeredAt ? new Date(v.registeredAt) : new Date(),
+      isChannelVideo: v.isChannelVideo === true || v.owner?.ownerType === 'channel'
     }));
   }
 
@@ -102,7 +104,8 @@ export class RankingClient {
         commentCount: Number(v.count?.comment ?? 0),
         mylistCount: Number(v.count?.mylist ?? 0),
         likeCount: Number(v.count?.like ?? 0),
-        registeredAt: v.registeredAt ? new Date(v.registeredAt) : new Date()
+        registeredAt: v.registeredAt ? new Date(v.registeredAt) : new Date(),
+        isChannelVideo: v.isChannelVideo === true || v.owner?.ownerType === 'channel'
       }));
     } catch (e) {
       log.warn('nvapi hot-topic failed, falling back to RSS:', e);

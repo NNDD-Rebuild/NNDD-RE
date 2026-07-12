@@ -113,6 +113,9 @@ export default function PlayerApp(): JSX.Element {
   const SIDEBAR_MIN = 180;
   const SIDEBAR_MAX = 700;
   const [sidebarWidth, setSidebarWidth] = useState(320);
+  // ResizeObserver が検知した「これまでの必要最小幅」。CONFIG_GET のロードが後から
+  // 解決してもこれより狭く戻さないためのフロア
+  const neededSidebarWidthRef = useRef(0);
   const [isSidebarDragging, setIsSidebarDragging] = useState(false);
   const sidebarDragging = useRef(false);
   const sidebarDragStartX = useRef(0);
@@ -147,8 +150,17 @@ export default function PlayerApp(): JSX.Element {
   useEffect(() => {
     window.nndd
       .invoke<number>(window.nndd.channels.CONFIG_GET, 'player.sidebarWidth')
-      .then((w) => { if (w && w > 0) setSidebarWidth(w); })
+      .then((w) => {
+        if (w && w > 0) setSidebarWidth(Math.max(w, neededSidebarWidthRef.current));
+      })
       .catch(() => {});
+  }, []);
+
+  // タブバーが収まらない時、スクロールでなくペイン幅拡大で対応 (縮小方向へは動かさない)
+  const handleTabsOverflow = useCallback((neededWidth: number): void => {
+    const w = Math.min(SIDEBAR_MAX, neededWidth + 8);
+    neededSidebarWidthRef.current = w;
+    setSidebarWidth((prev) => Math.max(prev, w));
   }, []);
 
   const onSidebarDividerMouseDown = useCallback((e: React.MouseEvent): void => {
@@ -188,7 +200,7 @@ export default function PlayerApp(): JSX.Element {
   const webviewWrapperRef = useRef<HTMLDivElement>(null);
   const hideTimerRef = useRef<number | null>(null);
   const historyRecordedRef = useRef(false);
-  /** nndd-stream:// → nndd-re-local:// 切替時に再生位置を復元するためのRef */
+  /** src切替後に再生位置を復元するためのRef (nndd-stream→nndd-re-local自動切替時、および画質変更時に使用) */
   const pendingSeekRef = useRef(0);
   /** イベントリスナー内でstaleにならないようvideo stateをrefでも持つ */
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
@@ -423,21 +435,17 @@ export default function PlayerApp(): JSX.Element {
     const defaultQualityId = available[0]?.id ?? null;
     setSelectedQualityId(defaultQualityId);
 
-    // 2. コメント取得（音声のみモードではスキップ）
-    if (isAudioOnly) {
-      setComments([]);
-    } else try {
-      const cs = await window.nndd.invoke<NNDDREComment[]>(
-        window.nndd.channels.VIDEO_GET_COMMENTS,
-        videoId,
-        w
-      );
-      setComments(cs.map(ensureCommandResolved));
-    } catch (e) {
-      console.warn('comment fetch failed:', e);
-    }
+    // 2. コメント取得をバックグラウンドで開始（ストリームURL取得と並列実行）
+    const commentsPromise = isAudioOnly
+      ? Promise.resolve<NNDDREComment[]>([])
+      : window.nndd.invoke<NNDDREComment[]>(
+          window.nndd.channels.VIDEO_GET_COMMENTS, videoId, w
+        ).catch((e: unknown) => {
+          console.warn('comment fetch failed:', e);
+          return [] as NNDDREComment[];
+        });
 
-    // 3. ストリーミング URL を取得（プリロードキャッシュ優先）
+    // 3. ストリーミング URL を取得（プリロードキャッシュ優先、コメントと並列）
     const stream = cached?.stream
       ?? await window.nndd.invoke<{
         contentUrl: string | null;
@@ -463,6 +471,9 @@ export default function PlayerApp(): JSX.Element {
       setSrc(stream.contentUrl ?? '');
       setIsHls(stream.isHls ?? false);
     }
+
+    // コメントが届き次第セット（動画再生開始後に非同期でポップイン）
+    commentsPromise.then(cs => setComments(cs.map(ensureCommandResolved)));
   };
 
   const handleQualityChange = async (qualityId: string): Promise<void> => {
@@ -1265,44 +1276,45 @@ export default function PlayerApp(): JSX.Element {
           </>
         )}
       </div>
-      {!isFullscreen && (
-        <>
-          {/* ドラッグハンドル (境界線) */}
-          <div
-            className="w-1 shrink-0 bg-nndd-border hover:bg-nndd-accent/70 active:bg-nndd-accent cursor-col-resize transition-colors"
-            onMouseDown={onSidebarDividerMouseDown}
-            style={{ userSelect: 'none' }}
-            title="ドラッグでサイズ変更"
+      {/* フルスクリーン時は display:none で隠すだけにし、VideoInfoView を
+          unmount しない (過去コメント取得結果などの内部 state を保持するため) */}
+      <div className={isFullscreen ? 'hidden' : 'contents'}>
+        {/* ドラッグハンドル (境界線) */}
+        <div
+          className="w-1 shrink-0 bg-nndd-border hover:bg-nndd-accent/70 active:bg-nndd-accent cursor-col-resize transition-colors"
+          onMouseDown={onSidebarDividerMouseDown}
+          style={{ userSelect: 'none' }}
+          title="ドラッグでサイズ変更"
+        />
+        <aside
+          className="shrink-0 bg-nndd-bg overflow-hidden flex flex-col"
+          style={{ width: sidebarWidth }}
+        >
+          <VideoInfoView
+            watch={watch}
+            comments={comments}
+            video={video}
+            videoId={playInfoRef.current?.videoId}
+            isLocal={isLocal}
+            localCommentXmlPath={localCommentXmlPath}
+            ichibaHtmlPath={localIchibaHtmlPath}
+            showCommentTab={commentListDisplay === 'tab'}
+            onCommentsUpdated={(cs) => setComments(cs.map(ensureCommandResolved))}
+            onPastCommentsLoaded={(cs) => setPastComments(cs)}
+            onPastCommentTabActive={(active) => setShowPastComments(active)}
+            autoNextSeries={autoNextSeries}
+            onAutoNextChange={(v) => { autoNextSeriesRef.current = v; setAutoNextSeries(v); }}
+            onSeriesPageLoaded={(items, page, totalPages, sid) => {
+              seriesItemsRef.current = items;
+              setSeriesItems(items);
+              seriesPageRef.current = page;
+              seriesTotalPagesRef.current = totalPages;
+              seriesIdRef.current = sid;
+            }}
+            onTabsOverflow={handleTabsOverflow}
           />
-          <aside
-            className="shrink-0 bg-nndd-bg overflow-hidden flex flex-col"
-            style={{ width: sidebarWidth }}
-          >
-            <VideoInfoView
-              watch={watch}
-              comments={comments}
-              video={video}
-              videoId={playInfoRef.current?.videoId}
-              isLocal={isLocal}
-              localCommentXmlPath={localCommentXmlPath}
-              ichibaHtmlPath={localIchibaHtmlPath}
-              showCommentTab={commentListDisplay === 'tab'}
-              onCommentsUpdated={(cs) => setComments(cs.map(ensureCommandResolved))}
-              onPastCommentsLoaded={(cs) => setPastComments(cs)}
-              onPastCommentTabActive={(active) => setShowPastComments(active)}
-              autoNextSeries={autoNextSeries}
-              onAutoNextChange={(v) => { autoNextSeriesRef.current = v; setAutoNextSeries(v); }}
-              onSeriesPageLoaded={(items, page, totalPages, sid) => {
-                seriesItemsRef.current = items;
-                setSeriesItems(items);
-                seriesPageRef.current = page;
-                seriesTotalPagesRef.current = totalPages;
-                seriesIdRef.current = sid;
-              }}
-            />
-          </aside>
-        </>
-      )}
+        </aside>
+      </div>
     </div>
   );
 }

@@ -60,6 +60,8 @@ export interface SearchResultItem {
     nickname: string;
     iconUrl: string;
   };
+  /** チャンネル動画かどうか (未加入だと再生できない場合がある) */
+  isChannelVideo?: boolean;
 }
 
 /**

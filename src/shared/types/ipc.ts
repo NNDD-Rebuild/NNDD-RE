@@ -122,8 +122,10 @@ export const IpcChannel = {
   COMMENT_READ_LOCAL: 'nndd:comment:readLocal',
 
   // 過去コメント
-  /** 過去コメントをニコニコから取得 (videoId + whenUnixSec) */
+  /** 過去コメントをニコニコから取得 (videoId + whenUnixSec + maxCount?) */
   PAST_COMMENT_FETCH: 'nndd:pastComment:fetch',
+  /** 過去コメント取得の進捗通知 (main→renderer, msg: string) */
+  PAST_COMMENT_FETCH_PROGRESS: 'nndd:pastComment:fetchProgress',
   /** ローカルXMLから日時フィルタして過去コメント取得 (filePath + whenUnixSec) */
   PAST_COMMENT_FETCH_LOCAL: 'nndd:pastComment:fetchLocal',
 
@@ -226,6 +228,8 @@ export const IpcChannel = {
   NAV_SERIES: 'nndd:nav:series',
   /** タグ文字列を指定して検索タブでタグ検索を実行する */
   NAV_SEARCH_TAG: 'nndd:nav:searchTag',
+  /** ユーザー情報を指定してフォロー中タブでそのユーザーの投稿動画に絞り込む(フォロー有無問わず) */
+  NAV_FOLLOW_USER: 'nndd:nav:followUser',
 
   /** ユーザーIDからアイコンURL取得 → string | null */
   USER_ICON_FETCH: 'nndd:user:iconFetch',

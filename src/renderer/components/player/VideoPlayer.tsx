@@ -13,7 +13,7 @@ interface Props {
   commentConfig?: Partial<CommentRenderConfig>;
   loading?: boolean;
   videoRefCallback?: (el: HTMLVideoElement | null) => void;
-  /** src切替後に復元すべき再生位置 (nndd-stream → nndd-re-local 自動切替時に使用) */
+  /** src切替後に復元すべき再生位置 (キャッシュ完了によるURL切替、および画質変更時のシーク位置維持に使用) */
   pendingSeekRef?: React.MutableRefObject<number>;
   /** 再生回数カウント用の動画ID (10秒再生で+1) */
   videoId?: string;
@@ -115,9 +115,19 @@ export function VideoPlayer({
     const isHlsResolved = isHls ?? /\.m3u8(\?|$)/i.test(src);
 
     if (isHlsResolved) {
+      const resumeAt = pendingSeekRef && pendingSeekRef.current > 0 ? pendingSeekRef.current : 0;
+      if (pendingSeekRef && pendingSeekRef.current > 0) {
+        pendingSeekRef.current = 0;
+      }
+
       // Safari 互換ブラウザは native HLS
       if (video.canPlayType('application/vnd.apple.mpegurl')) {
         video.src = src;
+        if (resumeAt > 0) {
+          video.addEventListener('loadedmetadata', () => {
+            video.currentTime = resumeAt;
+          }, { once: true });
+        }
         video.play().catch(() => {});
         return;
       }
@@ -126,7 +136,8 @@ export function VideoPlayer({
         const hls = new Hls({
           enableWorker: true,
           lowLatencyMode: false,
-          maxBufferLength: 60
+          maxBufferLength: 60,
+          ...(resumeAt > 0 ? { startPosition: resumeAt } : {})
         });
         hlsRef.current = hls;
         hls.attachMedia(video);

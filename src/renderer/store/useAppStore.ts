@@ -47,6 +47,10 @@ interface AppState {
   pendingSearchTag: string | null;
   setPendingSearchTag: (tag: string | null) => void;
 
+  /** プレイヤーから投稿者の動画一覧を開く際のユーザー情報。FollowViewが処理後 null にクリア */
+  pendingFollowUser: { id: string; nickname: string; iconUrl: string } | null;
+  setPendingFollowUser: (user: { id: string; nickname: string; iconUrl: string } | null) => void;
+
   /**
    * ランキング・検索・マイリスト・フォロー共通の表示モード。
    * 設定変更で即時反映するためにZustandで管理。
@@ -78,6 +82,8 @@ export const useAppStore = create<AppState>((set) => ({
   setPendingSeriesId: (id) => set({ pendingSeriesId: id }),
   pendingSearchTag: null,
   setPendingSearchTag: (tag) => set({ pendingSearchTag: tag }),
+  pendingFollowUser: null,
+  setPendingFollowUser: (user) => set({ pendingFollowUser: user }),
   contentViewMode: 'grid',
   setContentViewMode: (mode) => set({ contentViewMode: mode }),
   libraryViewMode: 'table',

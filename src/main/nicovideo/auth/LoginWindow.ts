@@ -60,7 +60,13 @@ export class LoginWindow {
           for (const c of cookies) {
             const domain = c.domain ?? '.nicovideo.jp';
             const cookieDomain = domain.replace(/^\./, '');
-            const cookieStr = `${c.name}=${c.value}; Domain=${domain}; Path=${c.path ?? '/'}${c.secure ? '; Secure' : ''}${c.httpOnly ? '; HttpOnly' : ''}`;
+            // expirationDate 未指定 (セッションCookie) の場合は付けない。
+            // 付け忘れると tough-cookie 側で無期限扱いになり、実際のサーバー側の
+            // 失効タイミングとローカルのCookie有効期限判定がズレる。
+            const expiresPart = c.expirationDate
+              ? `; Expires=${new Date(c.expirationDate * 1000).toUTCString()}`
+              : '';
+            const cookieStr = `${c.name}=${c.value}; Domain=${domain}; Path=${c.path ?? '/'}${expiresPart}${c.secure ? '; Secure' : ''}${c.httpOnly ? '; HttpOnly' : ''}`;
             await cookieStore.setCookies(
               cookieStr,
               `https://${cookieDomain}/`

@@ -20,6 +20,8 @@ export interface VideoCardData {
   authorIconUrl?: string;
   authorId?: string;
   authorNickname?: string;
+  /** チャンネル動画かどうか (未加入だと再生できない場合がある) */
+  isChannelVideo?: boolean;
 }
 
 interface Props {
@@ -157,6 +159,14 @@ function Thumb({
       {data.rank !== undefined && (
         <span className="absolute left-1 top-1 bg-nndd-accent text-white text-xs px-2 py-0.5 rounded font-bold">
           {data.rank}位
+        </span>
+      )}
+      {data.isChannelVideo && (
+        <span
+          className="absolute right-1 top-1 bg-yellow-500 text-black text-xs px-1.5 py-0.5 rounded font-bold"
+          title="チャンネル動画 (未加入だと再生できない場合があります)"
+        >
+          CH
         </span>
       )}
     </div>
@@ -304,7 +314,7 @@ function formatDate(d: Date | string): string {
   return date.toLocaleDateString('ja-JP');
 }
 
-function ContextMenuPopup({
+export function ContextMenuPopup({
   x, y, onClose, children
 }: {
   x: number; y: number;
@@ -334,7 +344,7 @@ function ContextMenuPopup({
   );
 }
 
-function MenuItem({ onClick, children }: {
+export function MenuItem({ onClick, children }: {
   onClick: () => void;
   children: React.ReactNode;
 }): JSX.Element {

@@ -243,6 +243,8 @@ async function getUserRecentVideos(
           nickname: user.nickname,
           iconUrl: user.iconUrl,
         },
+        // フォロー中ユーザー個人の動画一覧のためチャンネル動画は含まれない
+        isChannelVideo: false,
       } satisfies SearchResultItem;
     }).filter((x): x is SearchResultItem => x !== null);
     if (ImageCache.isEnabled()) {
@@ -381,6 +383,7 @@ async function tryFeedApi(limit: number, cursor?: string): Promise<FeedResult | 
         registeredAt: new Date(a.createdAt),
         tags: [],
         author: a.actor ? { id: a.actor.id, nickname: a.actor.name, iconUrl: a.actor.iconUrl } : undefined,
+        isChannelVideo: a.actor?.type === 'channel',
       }));
 
     if (ImageCache.isEnabled()) {

@@ -149,6 +149,10 @@ export class CommentClient {
       comment429RetryWaitSec?: number;
       /** キャンセル用シグナル */
       signal?: AbortSignal;
+      /** 遡り開始時刻 (Unix秒)。未指定なら現在時刻 */
+      startWhenUnixSec?: number;
+      /** 累積取得件数の上限。到達したら全スレッドの取得を打ち切る */
+      maxTotalCount?: number;
     }
   ): Promise<NNDDREComment[]> {
     if (!watch.threadKey) {
@@ -177,10 +181,14 @@ export class CommentClient {
       if (s === '2') return 'easy';
       return s;
     };
-    const targets = watch.nvCommentParams?.targets
+    const targets = (watch.nvCommentParams?.targets
       ?? watch.commentThreads
           .filter((t) => t.isActive)
-          .map((t) => ({ id: t.id, fork: normalizeFork(t.fork) }));
+          .map((t) => ({ id: t.id, fork: normalizeFork(t.fork) })))
+      // owner (投稿者コメント) は数が少ないため、件数上限到達で main に押し出されて
+      // 欠落しないよう先に処理する
+      .slice()
+      .sort((a, b) => (a.fork === 'owner' ? -1 : 0) - (b.fork === 'owner' ? -1 : 0));
     const language = watch.nvCommentParams?.language ?? 'ja-jp';
     const url = `${watch.commentServerUrl.replace(/\/$/, '')}/v1/threads`;
 
@@ -197,12 +205,19 @@ export class CommentClient {
 
     // スレッドごとの重複排除 Map (key: `${threadId}:${no}`)
     const seen = new Map<string, NNDDREComment>();
+    // maxTotalCount 到達で全スレッドの取得を打ち切るためのフラグ
+    let reachedLimit = false;
+    // 全滅判定用 (最初のラウンドが失敗したターゲット数 === 処理対象ターゲット数 なら例外化)
+    let processedTargetCount = 0;
+    let firstRoundFailures = 0;
 
     for (const target of targets) {
+      if (reachedLimit) break;
       // easy スレッドはオプションで制御 (増量コメントで量が多く、デフォルトはスキップ)
       if (target.fork === 'easy' && !includeEasy) continue;
+      processedTargetCount++;
 
-      let lastTime = Math.floor(Date.now() / 1000);
+      let lastTime = options?.startWhenUnixSec ?? Math.floor(Date.now() / 1000);
       let retries429 = 0;
 
       for (let round = 0; round < maxRounds; round++) {
@@ -236,6 +251,7 @@ export class CommentClient {
             continue;
           }
           log.warn(`fetchAllComments thread=${target.id} round=${round} failed:`, e);
+          if (round === 0) firstRoundFailures++;
           break;
         }
 
@@ -264,6 +280,12 @@ export class CommentClient {
 
         onProgress?.(`コメント取得中 (${target.fork} / ${seen.size} 件取得)`);
 
+        if (options?.maxTotalCount && seen.size >= options.maxTotalCount) {
+          log.debug(`reached maxTotalCount=${options.maxTotalCount}`);
+          reachedLimit = true;
+          break;
+        }
+
         // 先頭コメント no < 5 → スレッドの最初に到達
         const minNo = Math.min(...batch.map((c) => c.no));
         if (minNo < 5) {
@@ -291,60 +313,15 @@ export class CommentClient {
       }
     }
 
-    return Array.from(seen.values());
-  }
-
-  /**
-   * 過去コメント取得 (プレイヤー表示用 — 指定日時以前の最大1000件/スレッド)。
-   * comment-zouryou と同じ方式: additionals.when に Unix 秒, res_from=-1000
-   */
-  static async fetchPastComments(
-    watch: WatchPageInfo,
-    whenUnixSec: number
-  ): Promise<NNDDREComment[]> {
-    if (!watch.threadKey) {
-      throw new Error('threadKey が取得できません');
+    let result = Array.from(seen.values());
+    if (options?.maxTotalCount && result.length > options.maxTotalCount) {
+      // 上限超過分は末尾 (=より古いコメント) 側を切り捨てる
+      result = result.slice(0, options.maxTotalCount);
     }
-    if (watch.commentThreads.length === 0) {
-      throw new Error('コメントスレッドが見つかりません');
+    if (result.length === 0 && processedTargetCount > 0 && firstRoundFailures === processedTargetCount) {
+      throw new Error('コメント取得に失敗しました (ネットワークエラーの可能性があります)');
     }
-
-    const normalizeFork = (fork: string | number): string => {
-      const s = String(fork);
-      if (s === '0') return 'main';
-      if (s === '1') return 'owner';
-      if (s === '2') return 'easy';
-      return s;
-    };
-    const targets = watch.nvCommentParams?.targets
-      ?? watch.commentThreads
-          .filter((t) => t.isActive)
-          .map((t) => ({ id: t.id, fork: normalizeFork(t.fork) }));
-    const language = watch.nvCommentParams?.language ?? 'ja-jp';
-    const url = `${watch.commentServerUrl.replace(/\/$/, '')}/v1/threads`;
-    const out: NNDDREComment[] = [];
-
-    for (const target of targets) {
-      if (target.fork === 'easy') continue;
-      const body = {
-        params: { targets: [target], language },
-        threadKey: watch.threadKey,
-        additionals: { when: whenUnixSec, res_from: -1000 }
-      };
-      try {
-        await rateLimiter.acquire();
-        const res = await NicoContext.get().http.postJson<V3CommentResponse>(url, body);
-        for (const t of res?.data?.threads ?? []) {
-          const fork = t.fork ?? target.fork ?? 'main';
-          for (const c of t.comments ?? []) {
-            out.push(this.toNNDDREComment(c, t.id, fork));
-          }
-        }
-      } catch (e) {
-        log.warn(`fetchPastComments thread ${target.id} failed:`, e);
-      }
-    }
-    return out;
+    return result;
   }
 
   private static toNNDDREComment(

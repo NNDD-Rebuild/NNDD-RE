@@ -55,4 +55,6 @@ export interface RankingItem {
   mylistCount: number;
   likeCount: number;
   registeredAt: Date;
+  /** チャンネル動画かどうか (未加入だと再生できない場合がある) */
+  isChannelVideo?: boolean;
 }

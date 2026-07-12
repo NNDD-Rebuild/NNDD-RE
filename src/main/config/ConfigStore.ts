@@ -243,7 +243,7 @@ const DEFAULTS: NnddConfig = {
   ffmpegPath: '',
   ffplayPath: '',
   downloadEasyComments: false,
-  downloadAllComments: true,
+  downloadAllComments: false,
   comment429RetryWaitSec: 60,
   cacheRoot: '',
   player: {
@@ -273,7 +273,7 @@ const DEFAULTS: NnddConfig = {
       no: 28,
       mail: 48
     },
-    controlUiSize: 'small',
+    controlUiSize: 'normal',
     openVideoLinkInPlayer: false
   },
   ui: {

@@ -1,6 +1,6 @@
 {
   "name": "nndd-re",
-  "version": "0.1.0",
+  "version": "1.0.2",
   "description": "NNDD-RE - NicoNico Douga Downloader/Player",
   "main": "out/main/main.js",
   "author": "NNDD-RE Project",

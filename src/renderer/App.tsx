@@ -19,6 +19,7 @@ export default function App(): JSX.Element {
   const setPendingMylistId = useAppStore((s) => s.setPendingMylistId);
   const setPendingSeriesId = useAppStore((s) => s.setPendingSeriesId);
   const setPendingSearchTag = useAppStore((s) => s.setPendingSearchTag);
+  const setPendingFollowUser = useAppStore((s) => s.setPendingFollowUser);
   const setContentViewMode = useAppStore((s) => s.setContentViewMode);
   const setLibraryViewMode = useAppStore((s) => s.setLibraryViewMode);
 
@@ -86,6 +87,22 @@ export default function App(): JSX.Element {
     );
     return off;
   }, [setActiveTab, setPendingSearchTag]);
+
+  // プレイヤーからのフォローユーザーナビゲーション
+  useEffect(() => {
+    const off = window.electron.ipcRenderer.on(
+      IpcChannel.NAV_FOLLOW_USER,
+      (_e, payload: { userId: string; nickname: string; iconUrl: string }) => {
+        setActiveTab('follow');
+        setPendingFollowUser({
+          id: payload.userId,
+          nickname: payload.nickname,
+          iconUrl: payload.iconUrl
+        });
+      }
+    );
+    return off;
+  }, [setActiveTab, setPendingFollowUser]);
 
   function tabContent(id: MainTab): JSX.Element {
     switch (id) {

@@ -29,6 +29,7 @@ interface SnapshotV2Item {
   likeCounter: number;
   startTime: string;
   tags: string;
+  channelId?: number | string | null;
 }
 
 export interface SearchOptions {
@@ -97,7 +98,8 @@ export class SearchClient {
         tags: parsed.tags,
         author: parsed.ownerId
           ? { id: parsed.ownerId, nickname: parsed.ownerNickname, iconUrl }
-          : undefined
+          : undefined,
+        isChannelVideo: !!parsed.chId
       };
     } catch (e) {
       log.warn('fetchByVideoId failed:', videoId, e);
@@ -114,7 +116,7 @@ export class SearchClient {
     );
     params.set(
       'fields',
-      'contentId,title,description,thumbnailUrl,lengthSeconds,viewCounter,commentCounter,mylistCounter,likeCounter,startTime,tags'
+      'contentId,title,description,thumbnailUrl,lengthSeconds,viewCounter,commentCounter,mylistCounter,likeCounter,startTime,tags,channelId'
     );
     const [sortKey, sortDir] = this.toSortParam(opts.sortType);
     params.set('_sort', `${sortDir === 'asc' ? '+' : '-'}${sortKey}`);
@@ -167,7 +169,8 @@ export class SearchClient {
       mylistCount: d.mylistCounter,
       likeCount: d.likeCounter,
       registeredAt: new Date(d.startTime),
-      tags: (d.tags ?? '').split(/\s+/).filter(Boolean)
+      tags: (d.tags ?? '').split(/\s+/).filter(Boolean),
+      isChannelVideo: d.channelId !== null && d.channelId !== undefined
     };
   }
 }

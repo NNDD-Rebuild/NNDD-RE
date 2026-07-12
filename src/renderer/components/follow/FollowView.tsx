@@ -33,6 +33,7 @@ function toCardData(it: SearchResultItem): VideoCardData {
     authorIconUrl: it.author?.iconUrl,
     authorId: it.author?.id,
     authorNickname: it.author?.nickname,
+    isChannelVideo: it.isChannelVideo,
   };
 }
 
@@ -110,9 +111,13 @@ export function FollowView(): JSX.Element {
 
   // --- UI state ---
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  /** フォロー外ユーザーの一時表示用 (pendingFollowUser経由)。followUsersには追加しない */
+  const [extraUser, setExtraUser] = useState<FollowingUser | null>(null);
   const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
   const globalMode = useAppStore((s) => s.contentViewMode);
   const showToast = useAppStore((s) => s.showToast);
+  const pendingFollowUser = useAppStore((s) => s.pendingFollowUser);
+  const setPendingFollowUser = useAppStore((s) => s.setPendingFollowUser);
   const [displayMode, setDisplayMode] = useState<'grid' | 'list'>(globalMode);
   const LIMIT = 32;
 
@@ -177,6 +182,22 @@ export function FollowView(): JSX.Element {
     }
   };
 
+  /** followUsers と extraUser (一時フォロー外ユーザー) の両方から id でユーザーを解決 */
+  const resolveUser = useCallback(
+    (id: string | null): FollowingUser | undefined =>
+      id ? (followUsers.find((u) => u.id === id) ?? (extraUser?.id === id ? extraUser : undefined)) : undefined,
+    [followUsers, extraUser]
+  );
+
+  // プレイヤーからのユーザー指定ナビゲーション: フォロー外でも一時的に絞り込み表示
+  useEffect(() => {
+    if (!pendingFollowUser) return;
+    const user = pendingFollowUser;
+    setPendingFollowUser(null);
+    setExtraUser(user);
+    setSelectedUserId(user.id);
+  }, [pendingFollowUser, setPendingFollowUser]);
+
   // selectedUserId 変化時: ユーザーフィードをリセットして page=1 取得
   useEffect(() => {
     if (!selectedUserId) {
@@ -184,9 +205,10 @@ export function FollowView(): JSX.Element {
       setUserTotalCount(0);
       setUserApiPage(1);
       setUserError(null);
+      setExtraUser(null);
       return;
     }
-    const user = followUsers.find((u) => u.id === selectedUserId);
+    const user = resolveUser(selectedUserId);
     if (!user) return;
     void fetchUserPage(user, 1);
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -196,7 +218,7 @@ export function FollowView(): JSX.Element {
   const handleNext = async (): Promise<void> => {
     if (selectedUserId !== null) {
       if (!userHasNext || userLoading) return;
-      const user = followUsers.find((u) => u.id === selectedUserId);
+      const user = resolveUser(selectedUserId);
       if (!user) return;
       await fetchUserPage(user, userApiPage + 1);
     } else {
@@ -214,7 +236,7 @@ export function FollowView(): JSX.Element {
   const handlePrev = (): void => {
     if (selectedUserId !== null) {
       if (userApiPage <= 1 || userLoading) return;
-      const user = followUsers.find((u) => u.id === selectedUserId);
+      const user = resolveUser(selectedUserId);
       if (user) void fetchUserPage(user, userApiPage - 1);
     } else {
       if (allPageIdx <= 0) return;
@@ -289,7 +311,7 @@ export function FollowView(): JSX.Element {
   };
 
   const headerLabel = isUserMode
-    ? `${sortedFollowUsers.find((u) => u.id === selectedUserId)?.nickname ?? selectedUserId} の動画`
+    ? `${resolveUser(selectedUserId)?.nickname ?? selectedUserId} の動画`
     : 'フォロー中の新着動画';
 
   return (

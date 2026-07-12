@@ -722,6 +722,7 @@ function itemToCard(it: MyListItem) {
     mylistCount: it.mylistCount,
     likeCount: it.likeCount,
     registeredAt: it.pubDate,   // 投稿日
+    isChannelVideo: it.isChannelVideo,
   };
 }
 

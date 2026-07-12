@@ -377,7 +377,8 @@ export function SearchView(): JSX.Element {
                         commentCount: r.commentCount,
                         mylistCount: r.mylistCount,
                         likeCount: r.likeCount,
-                        registeredAt: r.registeredAt
+                        registeredAt: r.registeredAt,
+                        isChannelVideo: r.isChannelVideo
                       }}
                       onPlay={handlePlay}
                       onDownload={handleDownload}
@@ -401,7 +402,8 @@ export function SearchView(): JSX.Element {
                         commentCount: r.commentCount,
                         mylistCount: r.mylistCount,
                         likeCount: r.likeCount,
-                        registeredAt: r.registeredAt
+                        registeredAt: r.registeredAt,
+                        isChannelVideo: r.isChannelVideo
                       }}
                       onPlay={handlePlay}
                       onDownload={handleDownload}

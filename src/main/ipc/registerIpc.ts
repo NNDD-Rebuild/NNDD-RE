@@ -71,6 +71,9 @@ export function registerIpcHandlers(
   const scheduler = new ScheduleManager(library, autoDl);
   scheduler.start();
 
+  // VIDEO_OPEN_PLAYER 時点でプリフェッチした WatchInfo を一時保持するキャッシュ
+  const watchInfoPrefetchCache = new Map<string, Promise<WatchPageInfo>>();
+
   // 全レンダラーに進捗イベントをブロードキャスト
   dlManager.on('change', (item) => {
     for (const wc of webContents.getAllWebContents()) {
@@ -459,6 +462,11 @@ export function registerIpcHandlers(
 
   // --- 動画 ---
   ipcMain.handle(IpcChannel.VIDEO_GET_WATCH_INFO, async (_e, videoId: string) => {
+    const prefetched = watchInfoPrefetchCache.get(videoId);
+    if (prefetched) {
+      watchInfoPrefetchCache.delete(videoId);
+      return prefetched;
+    }
     return WatchInfoHandler.fetchWatchInfo(videoId);
   });
 
@@ -493,6 +501,13 @@ export function registerIpcHandlers(
           }
         }
       }
+      // BrowserWindow生成と並列でWatchInfo取得を開始（レンダラー準備完了前に先行）
+      if (params.videoId) {
+        watchInfoPrefetchCache.set(
+          params.videoId,
+          WatchInfoHandler.fetchWatchInfo(params.videoId)
+        );
+      }
       PlayerManager.get().open(params);
       return true;
     }
@@ -526,10 +541,9 @@ export function registerIpcHandlers(
 
     // --- native モード: hls.js でニコニコCDNに直接アクセス ---
     if (mode === 'native') {
-      const info = watchInfo ?? await WatchInfoHandler.fetchWatchInfo(videoId);
       let session: { contentUrl: string; isDMS: boolean };
       try {
-        session = await new WatchSession(info).ensure(audioOnly, videoQualityId);
+        session = await ensureStreamSession(videoId, watchInfo, audioOnly, videoQualityId);
       } catch (e) {
         return { contentUrl: null, isDMS: false, error: String(e) };
       }
@@ -539,10 +553,9 @@ export function registerIpcHandlers(
 
     // --- hls モード: HLS プロキシで即時再生 (yt-dlp ベース) ---
     if (mode === 'hls') {
-      const info = watchInfo ?? await WatchInfoHandler.fetchWatchInfo(videoId);
       let session: { contentUrl: string; isDMS: boolean };
       try {
-        session = await new WatchSession(info).ensure(audioOnly, videoQualityId);
+        session = await ensureStreamSession(videoId, watchInfo, audioOnly, videoQualityId);
       } catch (e) {
         return { contentUrl: null, isDMS: false, error: String(e) };
       }
@@ -707,9 +720,17 @@ export function registerIpcHandlers(
   // --- 過去コメント ---
   ipcMain.handle(
     IpcChannel.PAST_COMMENT_FETCH,
-    async (_e, videoId: string, whenUnixSec: number) => {
+    async (e, videoId: string, whenUnixSec: number, maxCount?: number) => {
       const watch = await WatchInfoHandler.fetchWatchInfo(videoId);
-      return CommentClient.fetchPastComments(watch, whenUnixSec);
+      return CommentClient.fetchAllComments(watch, {
+        startWhenUnixSec: whenUnixSec,
+        maxTotalCount: maxCount ?? 10_000,
+        includeEasy: false,
+        comment429RetryWaitSec: getConfigStore().get('comment429RetryWaitSec') ?? 60,
+        onProgress: (msg) => {
+          if (!e.sender.isDestroyed()) e.sender.send(IpcChannel.PAST_COMMENT_FETCH_PROGRESS, msg);
+        }
+      });
     }
   );
   ipcMain.handle(
@@ -1227,6 +1248,25 @@ export function registerIpcHandlers(
     }
   });
 
+  // プレイヤーウィンドウ → メインウィンドウへのフォローユーザーナビゲーション
+  ipcMain.handle(
+    IpcChannel.NAV_FOLLOW_USER,
+    (_e, payload: { userId: string; nickname: string; iconUrl: string }) => {
+      const mainWin = mainWindowGetter?.();
+      if (mainWin && !mainWin.isDestroyed()) {
+        mainWin.show();
+        mainWin.focus();
+        mainWin.webContents.send(IpcChannel.NAV_FOLLOW_USER, payload);
+      } else {
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) {
+            win.webContents.send(IpcChannel.NAV_FOLLOW_USER, payload);
+          }
+        }
+      }
+    }
+  );
+
   // ライブラリ フォルダ操作
   ipcMain.handle(IpcChannel.LIBRARY_CHECK_BATCH, (_e, videoIds: string[]) => {
     const root = path.resolve(library.videoDir);
@@ -1380,9 +1420,10 @@ export function registerIpcHandlers(
   });
   ipcMain.on(IpcChannel.WIN_CLOSE, () => mainWindowGetter?.()?.close());
 
-  // セッション定期チェック (30分ごと)
-  // 切れていたら自動再ログイン、失敗時はrendererに通知
-  setInterval(() => {
+  // セッションチェック。切れていたら自動再ログイン、失敗時はrendererに通知。
+  // 起動直後に1回 + 以後30分ごと (起動直後チェックがないと、数日放置後の起動でセッション切れに
+  // 気付かないまま最初の動画再生を試みて失敗する)
+  const checkSession = (): void => {
     void (async (): Promise<void> => {
       if (AuthManager.isLoggedOut) return;
       try {
@@ -1405,9 +1446,39 @@ export function registerIpcHandlers(
         log.warn('session check error:', e);
       }
     })();
-  }, 30 * 60 * 1000);
+  };
+  checkSession();
+  setInterval(checkSession, 30 * 60 * 1000);
 
   log.info('IPC handlers registered');
+}
+
+/**
+ * WatchSession を確立する。ログイン切れが疑われる失敗時は自動再ログインを試み、
+ * 成功したら watchInfo を取り直して1回だけリトライする。
+ * (数日放置後の起動直後など、セッション定期チェックが間に合わないケースの保険)
+ */
+async function ensureStreamSession(
+  videoId: string,
+  watchInfo: WatchPageInfo | undefined,
+  audioOnly: boolean | undefined,
+  videoQualityId: string | undefined
+): Promise<{ contentUrl: string; isDMS: boolean }> {
+  const info = watchInfo ?? (await WatchInfoHandler.fetchWatchInfo(videoId));
+  try {
+    return await new WatchSession(info).ensure(audioOnly, videoQualityId);
+  } catch (e) {
+    const stillLoggedIn = await AuthManager.checkLoggedIn();
+    if (stillLoggedIn) throw e;
+
+    log.warn('stream session failed, session may have expired. trying auto relogin:', videoId, e);
+    const relogin = await AuthManager.autoRelogin();
+    if (!relogin.ok) throw e;
+
+    log.info('auto relogin succeeded, retrying stream session:', videoId);
+    const freshInfo = await WatchInfoHandler.fetchWatchInfo(videoId);
+    return await new WatchSession(freshInfo).ensure(audioOnly, videoQualityId);
+  }
 }
 
 function getLanIp(): string | undefined {

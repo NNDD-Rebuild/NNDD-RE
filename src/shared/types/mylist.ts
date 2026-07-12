@@ -51,6 +51,8 @@ export interface MyListItem {
   mylistCount: number;
   /** いいね数 */
   likeCount?: number;
+  /** チャンネル動画かどうか (未加入だと再生できない場合がある) */
+  isChannelVideo?: boolean;
 }
 
 /**

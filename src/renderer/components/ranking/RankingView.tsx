@@ -136,6 +136,7 @@ export function RankingView(): JSX.Element {
                     registeredAt: r.registeredAt,
                     rank: r.rank,
                     description: r.description,
+                    isChannelVideo: r.isChannelVideo,
                   }}
                   onPlay={handlePlay}
                   onDownload={handleDownload}
@@ -163,6 +164,7 @@ export function RankingView(): JSX.Element {
                     registeredAt: r.registeredAt,
                     rank: r.rank,
                     description: r.description,
+                    isChannelVideo: r.isChannelVideo,
                   }}
                   onPlay={handlePlay}
                   onDownload={handleDownload}

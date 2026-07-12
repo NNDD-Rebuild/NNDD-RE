@@ -42,6 +42,9 @@ export default function CommentApp(): JSX.Element {
   const [pastTime, setPastTime] = useState(localTimeStr);
   const [pastLoading, setPastLoading] = useState(false);
   const [pastError, setPastError] = useState<string | null>(null);
+  // ストリーミング時の過去コメント取得件数上限
+  const [pastFetchMaxCount, setPastFetchMaxCount] = useState(10_000);
+  const [pastProgressMsg, setPastProgressMsg] = useState<string | null>(null);
 
   // テーマ適用
   useEffect(() => {
@@ -56,6 +59,13 @@ export default function CommentApp(): JSX.Element {
       .invoke<NgListItem[]>(IpcChannel.NG_LIST_COMMENT)
       .then(setNgList)
       .catch(() => {});
+  }, []);
+
+  // 過去コメント取得 (ストリーミング時) の進捗通知を購読
+  useEffect(() => {
+    return window.nndd.on(IpcChannel.PAST_COMMENT_FETCH_PROGRESS, (...args: unknown[]) => {
+      setPastProgressMsg(args[0] as string);
+    });
   }, []);
 
   // 初期化データ受信 (ウィンドウ起動 / 動画切替)
@@ -168,8 +178,36 @@ export default function CommentApp(): JSX.Element {
   }, [pastDateFrom, pastTimeFrom]);
 
   /**
+   * 取得済みコメントを CHUNK_SIZE ずつ非同期で state に積み込む (大量データの表示用)。
+   * 過去コメントタブが開いている間はプレイヤー側にも描画用にプッシュする。
+   */
+  const loadPastCommentsChunked = useCallback((cs: NNDDREComment[]): void => {
+    const resolved = cs.map(ensureCommandResolved);
+
+    if (resolved.length <= CHUNK_SIZE) {
+      setPastComments(resolved);
+      if (tab === 'pastComments') {
+        window.nndd.send(IpcChannel.COMMENT_WINDOW_PAST_PUSH, resolved);
+      }
+    } else {
+      setPastComments(resolved.slice(0, CHUNK_SIZE));
+      let offset = CHUNK_SIZE;
+      const loadNext = (): void => {
+        offset += CHUNK_SIZE;
+        const chunk = resolved.slice(offset - CHUNK_SIZE, offset);
+        setPastComments((prev) => [...prev, ...chunk]);
+        if (offset < resolved.length) {
+          setTimeout(loadNext, 16);
+        } else if (tab === 'pastComments') {
+          window.nndd.send(IpcChannel.COMMENT_WINDOW_PAST_PUSH, resolved);
+        }
+      };
+      setTimeout(loadNext, 16);
+    }
+  }, [tab]);
+
+  /**
    * ローカルXMLを日時フィルタして過去コメント取得。
-   * 大量データは CHUNK_SIZE ずつ非同期で state に積み込む。
    */
   const handleFilterFromLocal = useCallback(async (): Promise<void> => {
     if (!localXmlPath) return;
@@ -183,36 +221,43 @@ export default function CommentApp(): JSX.Element {
         getWhenUnixSec(),
         getFromUnixSec()
       );
-      const resolved = cs.map(ensureCommandResolved);
-
-      if (resolved.length <= CHUNK_SIZE) {
-        setPastComments(resolved);
-        if (tab === 'pastComments') {
-          window.nndd.send(IpcChannel.COMMENT_WINDOW_PAST_PUSH, resolved);
-        }
-      } else {
-        setPastComments(resolved.slice(0, CHUNK_SIZE));
-        let offset = CHUNK_SIZE;
-        const loadNext = (): void => {
-          offset += CHUNK_SIZE;
-          const chunk = resolved.slice(offset - CHUNK_SIZE, offset);
-          setPastComments((prev) => [...prev, ...chunk]);
-          if (offset < resolved.length) {
-            setTimeout(loadNext, 16);
-          } else {
-            if (tab === 'pastComments') {
-              window.nndd.send(IpcChannel.COMMENT_WINDOW_PAST_PUSH, resolved);
-            }
-          }
-        };
-        setTimeout(loadNext, 16);
-      }
+      loadPastCommentsChunked(cs);
     } catch (e) {
       setPastError(e instanceof Error ? e.message : String(e));
     } finally {
       setPastLoading(false);
     }
-  }, [localXmlPath, getWhenUnixSec, tab]);
+  }, [localXmlPath, getWhenUnixSec, loadPastCommentsChunked]);
+
+  /**
+   * ストリーミング再生時、ニコニコから直接過去コメントを取得。
+   * 件数上限(pastFetchMaxCount)まで取得するため、取得中は進捗を表示する。
+   * From指定がある場合は取得後にクライアント側で絞り込む。
+   */
+  const handleFetchPastCommentsFromNico = useCallback(async (): Promise<void> => {
+    if (!videoId) return;
+    setPastLoading(true);
+    setPastError(null);
+    setPastComments([]);
+    setPastProgressMsg(null);
+    try {
+      const whenSec = getWhenUnixSec();
+      const cs = await window.nndd.invoke<NNDDREComment[]>(
+        IpcChannel.PAST_COMMENT_FETCH,
+        videoId,
+        whenSec,
+        pastFetchMaxCount
+      );
+      const fromSec = getFromUnixSec();
+      const filtered = fromSec ? cs.filter((c) => c.date >= fromSec) : cs;
+      loadPastCommentsChunked(filtered);
+    } catch (e) {
+      setPastError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPastLoading(false);
+      setPastProgressMsg(null);
+    }
+  }, [videoId, getWhenUnixSec, getFromUnixSec, pastFetchMaxCount, loadPastCommentsChunked]);
 
   // handleFilterFromLocal の最新参照 (タブ自動ロード用)
   const handleFilterRef = useRef(handleFilterFromLocal);
@@ -325,9 +370,31 @@ export default function CommentApp(): JSX.Element {
                   >
                     {pastLoading ? '読込中…' : 'フィルタ'}
                   </button>
+                ) : videoId ? (
+                  <>
+                    <select
+                      value={pastFetchMaxCount}
+                      onChange={(e) => setPastFetchMaxCount(Number(e.target.value))}
+                      disabled={pastLoading}
+                      title="取得する過去コメントの最大件数"
+                      className="text-xs bg-nndd-bg border border-nndd-border rounded px-1 py-0.5 text-nndd-text disabled:opacity-50"
+                    >
+                      {[1000, 5000, 10000, 30000, 50000].map((n) => (
+                        <option key={n} value={n}>{n.toLocaleString()}件まで</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={handleFetchPastCommentsFromNico}
+                      disabled={pastLoading}
+                      title="ニコニコから直接、指定日時以前の過去コメントを取得します(時間がかかる場合があります)"
+                      className="text-xs px-2 py-0.5 bg-nndd-accent text-white rounded hover:opacity-80 disabled:opacity-50"
+                    >
+                      {pastLoading ? '取得中…' : '取得'}
+                    </button>
+                  </>
                 ) : (
                   <span className="text-xs text-nndd-subtext">
-                    ローカルファイルがありません (ダウンロード後に利用可)
+                    過去コメントを取得できません
                   </span>
                 )}
                 {pastError && (
@@ -336,6 +403,9 @@ export default function CommentApp(): JSX.Element {
                   </span>
                 )}
               </div>
+              {pastLoading && pastProgressMsg && (
+                <div className="text-xs text-nndd-subtext mt-0.5 truncate">{pastProgressMsg}</div>
+              )}
             </div>
 
             <div className="flex-1 min-h-0 overflow-hidden">

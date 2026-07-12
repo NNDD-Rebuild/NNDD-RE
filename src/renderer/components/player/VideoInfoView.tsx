@@ -4,6 +4,7 @@ import type { WatchPageInfo, NNDDREComment, NgListItem, MyListItem } from '@shar
 import { IpcChannel, NgListItemType } from '@shared/types';
 import { CommentList } from './CommentList';
 import { ensureCommandResolved } from '../../util/commentCommands';
+import { ContextMenuPopup, MenuItem } from '../common/VideoCard';
 
 interface Props {
   watch: WatchPageInfo | null;
@@ -31,6 +32,8 @@ interface Props {
   onAutoNextChange?: (v: boolean) => void;
   /** シリーズページ読み込み完了 */
   onSeriesPageLoaded?: (items: MyListItem[], page: number, totalPages: number, seriesId: string) => void;
+  /** タブバーがペイン幅に収まらない時、必要な幅(px)を通知 (スクロールでなくペイン幅拡大で対応するため) */
+  onTabsOverflow?: (neededWidth: number) => void;
 }
 
 type Tab = 'info' | 'comments' | 'pastComments' | 'series';
@@ -57,7 +60,8 @@ export function VideoInfoView({
   onPastCommentTabActive,
   autoNextSeries = false,
   onAutoNextChange,
-  onSeriesPageLoaded
+  onSeriesPageLoaded,
+  onTabsOverflow
 }: Props): JSX.Element {
   const [tab, setTab] = useState<Tab>('info');
   const [controlUiSize] = useConfig<'small' | 'normal' | 'large'>('player.controlUiSize', 'small');
@@ -75,6 +79,9 @@ export function VideoInfoView({
   const localTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
   const [pastDate, setPastDate] = useState(localDateStr);
   const [pastTime, setPastTime] = useState(localTimeStr);
+  // ストリーミング時の過去コメント取得件数上限
+  const [pastFetchMaxCount, setPastFetchMaxCount] = useState(10_000);
+  const [pastProgressMsg, setPastProgressMsg] = useState<string | null>(null);
 
   // NG リストを初回ロード
   useEffect(() => {
@@ -82,6 +89,13 @@ export function VideoInfoView({
       .invoke<NgListItem[]>(IpcChannel.NG_LIST_COMMENT)
       .then(setNgList)
       .catch(() => {});
+  }, []);
+
+  // 過去コメント取得 (ストリーミング時) の進捗通知を購読
+  useEffect(() => {
+    return window.nndd.on(IpcChannel.PAST_COMMENT_FETCH_PROGRESS, (...args: unknown[]) => {
+      setPastProgressMsg(args[0] as string);
+    });
   }, []);
 
   // 再生位置追跡
@@ -102,6 +116,33 @@ export function VideoInfoView({
     if (!watch?.series && tab === 'series') setTab('info');
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watch?.series]);
+
+  // タブバーがペイン幅に収まらない時、必要な幅を親に通知 (スクロールでなくペイン幅拡大で対応)
+  // outer: overflow-x-auto なスクロールコンテナ。CSSの zoom は「zoom適用要素自身の
+  // scrollWidth」には反映されず zoom未適用の内部座標系の値を返す一方、
+  // 「zoom非適用の親から見た占有幅」には反映される (実測: zoom=1.5 で inner.scrollWidth=304,
+  // outer.scrollWidth=456=304*1.5)。そのため判定・必要幅の計算は必ず outer 側の値を使う。
+  // inner(zoom適用+w-max)は、タブ増減による中身のサイズ変化を ResizeObserver に伝える
+  // トリガーとしてのみ用いる。
+  const tabBarOuterRef = useRef<HTMLDivElement>(null);
+  const tabBarInnerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const outer = tabBarOuterRef.current;
+    const inner = tabBarInnerRef.current;
+    if (!outer || !inner || !onTabsOverflow) return;
+
+    const checkOverflow = (): void => {
+      if (outer.scrollWidth > outer.clientWidth) {
+        onTabsOverflow(outer.scrollWidth);
+      }
+    };
+
+    const ro = new ResizeObserver(checkOverflow);
+    ro.observe(outer);
+    ro.observe(inner);
+    checkOverflow();
+    return () => ro.disconnect();
+  }, [onTabsOverflow]);
 
   // タブ変更時に過去コメントタブのアクティブ状態を親に通知
   const prevTabRef = useRef<Tab>(tab);
@@ -179,8 +220,34 @@ export function VideoInfoView({
   }, [pastDate, pastTime]);
 
   /**
+   * 取得済みコメントを CHUNK_SIZE ずつ非同期で state に積み込む (大量データの表示用)。
+   */
+  const loadPastCommentsChunked = useCallback((cs: NNDDREComment[]): void => {
+    const resolved = cs.map(ensureCommandResolved);
+
+    if (resolved.length <= CHUNK_SIZE) {
+      setPastComments(resolved);
+      onPastCommentsLoaded?.(resolved);
+    } else {
+      // 初回チャンクを即座に表示し、残りを非同期で追加
+      setPastComments(resolved.slice(0, CHUNK_SIZE));
+      let offset = CHUNK_SIZE;
+      const loadNext = (): void => {
+        offset += CHUNK_SIZE;
+        const chunk = resolved.slice(offset - CHUNK_SIZE, offset);
+        setPastComments((prev) => [...prev, ...chunk]);
+        if (offset < resolved.length) {
+          setTimeout(loadNext, 16);
+        } else {
+          onPastCommentsLoaded?.(resolved);
+        }
+      };
+      setTimeout(loadNext, 16);
+    }
+  }, [onPastCommentsLoaded]);
+
+  /**
    * ローカルXMLを日時フィルタして過去コメント取得。
-   * 大量データは CHUNK_SIZE ずつ非同期で state に積み込む。
    */
   const handleFilterFromLocal = useCallback(async (): Promise<void> => {
     const xmlPath = localCommentXmlPath;
@@ -195,33 +262,40 @@ export function VideoInfoView({
         xmlPath,
         whenSec
       );
-      const resolved = cs.map(ensureCommandResolved);
-
-      if (resolved.length <= CHUNK_SIZE) {
-        setPastComments(resolved);
-        onPastCommentsLoaded?.(resolved);
-      } else {
-        // 初回チャンクを即座に表示し、残りを非同期で追加
-        setPastComments(resolved.slice(0, CHUNK_SIZE));
-        let offset = CHUNK_SIZE;
-        const loadNext = (): void => {
-          offset += CHUNK_SIZE;
-          const chunk = resolved.slice(offset - CHUNK_SIZE, offset);
-          setPastComments((prev) => [...prev, ...chunk]);
-          if (offset < resolved.length) {
-            setTimeout(loadNext, 16);
-          } else {
-            onPastCommentsLoaded?.(resolved);
-          }
-        };
-        setTimeout(loadNext, 16);
-      }
+      loadPastCommentsChunked(cs);
     } catch (e) {
       setPastError(e instanceof Error ? e.message : String(e));
     } finally {
       setPastLoading(false);
     }
-  }, [localCommentXmlPath, getWhenUnixSec, onPastCommentsLoaded]);
+  }, [localCommentXmlPath, getWhenUnixSec, loadPastCommentsChunked]);
+
+  /**
+   * ストリーミング再生時、ニコニコから直接過去コメントを取得。
+   * 件数上限(pastFetchMaxCount)まで取得するため、取得中は進捗を表示する。
+   */
+  const handleFetchPastCommentsFromNico = useCallback(async (): Promise<void> => {
+    if (!videoId) return;
+    setPastLoading(true);
+    setPastError(null);
+    setPastComments([]);
+    setPastProgressMsg(null);
+    try {
+      const whenSec = getWhenUnixSec();
+      const cs = await window.nndd.invoke<NNDDREComment[]>(
+        IpcChannel.PAST_COMMENT_FETCH,
+        videoId,
+        whenSec,
+        pastFetchMaxCount
+      );
+      loadPastCommentsChunked(cs);
+    } catch (e) {
+      setPastError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPastLoading(false);
+      setPastProgressMsg(null);
+    }
+  }, [videoId, getWhenUnixSec, pastFetchMaxCount, loadPastCommentsChunked]);
 
   // handleFilterFromLocal の最新参照 (タブ自動ロード用)
   const handleFilterRef = useRef(handleFilterFromLocal);
@@ -246,41 +320,43 @@ export function VideoInfoView({
 
   return (
     <div className="flex flex-col h-full">
-      {/* タブバー */}
-      <div className="flex shrink-0 border-b border-nndd-border overflow-x-auto" style={{ zoom: tabZoom }}>
-        <TabButton
-          label="動画情報"
-          active={tab === 'info'}
-          onClick={() => setTab('info')}
-        />
-        {showCommentTab && (
+      {/* タブバー: outer=生px幅のスクロールコンテナ, inner=zoom適用+content-fit幅 */}
+      <div ref={tabBarOuterRef} className="shrink-0 border-b border-nndd-border overflow-x-auto">
+        <div ref={tabBarInnerRef} className="flex w-max" style={{ zoom: tabZoom }}>
           <TabButton
-            label={`コメントリスト${comments.length > 0 ? ` (${comments.length.toLocaleString()})` : ''}`}
-            active={tab === 'comments'}
-            onClick={() => setTab('comments')}
+            label="動画情報"
+            active={tab === 'info'}
+            onClick={() => setTab('info')}
           />
-        )}
-        {showCommentTab && (
-          <TabButton
-            label={`過去コメント${pastComments.length > 0 ? ` (${pastComments.length.toLocaleString()})` : ''}`}
-            active={tab === 'pastComments'}
-            onClick={() => setTab('pastComments')}
-            tooltip="過去コメントを表示します。このタブが開いている間だけ過去コメントが動画に描画されます。"
-          />
-        )}
-        {watch?.series && (
-          <TabButton
-            label="シリーズ"
-            active={tab === 'series'}
-            onClick={() => setTab('series')}
-          />
-        )}
+          {showCommentTab && (
+            <TabButton
+              label={`コメントリスト${comments.length > 0 ? ` (${comments.length.toLocaleString()})` : ''}`}
+              active={tab === 'comments'}
+              onClick={() => setTab('comments')}
+            />
+          )}
+          {showCommentTab && (
+            <TabButton
+              label={`過去コメント${pastComments.length > 0 ? ` (${pastComments.length.toLocaleString()})` : ''}`}
+              active={tab === 'pastComments'}
+              onClick={() => setTab('pastComments')}
+              tooltip="過去コメントを表示します。このタブが開いている間だけ過去コメントが動画に描画されます。"
+            />
+          )}
+          {watch?.series && (
+            <TabButton
+              label="シリーズ"
+              active={tab === 'series'}
+              onClick={() => setTab('series')}
+            />
+          )}
+        </div>
       </div>
 
       {/* コンテンツ */}
       <div className="flex-1 min-h-0 overflow-hidden">
         {tab === 'info' ? (
-          <InfoContent watch={watch} ichibaHtmlPath={ichibaHtmlPath} onAddNg={handleAddNg} ngList={ngList} />
+          <InfoContent watch={watch} ichibaHtmlPath={ichibaHtmlPath} />
         ) : tab === 'series' && watch?.series ? (
           <SeriesTabContent
             seriesId={watch.series.id}
@@ -336,9 +412,31 @@ export function VideoInfoView({
                   >
                     {pastLoading ? '読込中…' : 'フィルタ'}
                   </button>
+                ) : videoId ? (
+                  <>
+                    <select
+                      value={pastFetchMaxCount}
+                      onChange={(e) => setPastFetchMaxCount(Number(e.target.value))}
+                      disabled={pastLoading}
+                      title="取得する過去コメントの最大件数"
+                      className="text-xs bg-nndd-bg border border-nndd-border rounded px-1 py-0.5 text-nndd-text disabled:opacity-50"
+                    >
+                      {[1000, 5000, 10000, 30000, 50000].map((n) => (
+                        <option key={n} value={n}>{n.toLocaleString()}件まで</option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={handleFetchPastCommentsFromNico}
+                      disabled={pastLoading}
+                      title="ニコニコから直接、指定日時以前の過去コメントを取得します(時間がかかる場合があります)"
+                      className="text-xs px-2 py-0.5 bg-nndd-accent text-white rounded hover:opacity-80 disabled:opacity-50"
+                    >
+                      {pastLoading ? '取得中…' : '取得'}
+                    </button>
+                  </>
                 ) : (
                   <span className="text-xs text-nndd-subtext">
-                    ローカルファイルがありません (ダウンロード後に利用可)
+                    過去コメントを取得できません
                   </span>
                 )}
                 {pastError && (
@@ -347,6 +445,9 @@ export function VideoInfoView({
                   </span>
                 )}
               </div>
+              {pastLoading && pastProgressMsg && (
+                <div className="text-xs text-nndd-subtext mt-0.5 truncate">{pastProgressMsg}</div>
+              )}
             </div>
 
             {/* 過去コメント一覧 */}
@@ -400,8 +501,9 @@ function TabButton({
   );
 }
 
-function InfoContent({ watch, ichibaHtmlPath, onAddNg, ngList }: { watch: WatchPageInfo | null; ichibaHtmlPath?: string; onAddNg?: (item: NgListItem) => void; ngList?: NgListItem[] }): JSX.Element {
+function InfoContent({ watch, ichibaHtmlPath }: { watch: WatchPageInfo | null; ichibaHtmlPath?: string }): JSX.Element {
   const [openVideoLinkInPlayer] = useConfig<boolean>('player.openVideoLinkInPlayer', false);
+  const [ownerCtxMenu, setOwnerCtxMenu] = useState<{ x: number; y: number } | null>(null);
 
   if (!watch) {
     return (
@@ -482,35 +584,40 @@ function InfoContent({ watch, ichibaHtmlPath, onAddNg, ngList }: { watch: WatchP
           )}
           <button
             onClick={() =>
-              window.nndd.invoke(
-                window.nndd.channels.SYS_OPEN_PATH,
-                `https://www.nicovideo.jp/user/${watch.owner!.id}`
-              )
+              window.nndd.invoke(IpcChannel.NAV_FOLLOW_USER, {
+                userId: String(watch.owner!.id),
+                nickname: watch.owner!.nickname,
+                iconUrl: watch.owner!.iconUrl
+              })
             }
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setOwnerCtxMenu({ x: e.clientX, y: e.clientY });
+            }}
             className="text-sm hover:text-nndd-accent hover:underline"
-            title="ユーザーページを開く"
+            title="クリック: フォロー中タブでこの投稿者の動画を表示 (右クリックでメニュー)"
           >
             {watch.owner.nickname}
           </button>
-          {onAddNg && (() => {
-            const ownerId = String(watch.owner!.id);
-            const isNg = ngList?.some((n) => n.type === NgListItemType.USER_ID && n.value === ownerId);
-            return (
-              <button
-                onClick={() => onAddNg({ type: NgListItemType.USER_ID, value: ownerId })}
-                className={[
-                  'text-xs px-1.5 py-0.5 rounded border transition-colors',
-                  isNg
-                    ? 'border-red-500 text-red-500 cursor-not-allowed opacity-60'
-                    : 'border-nndd-border text-nndd-subtext hover:border-red-500 hover:text-red-500'
-                ].join(' ')}
-                title={isNg ? '投稿者IDをNG済み' : '投稿者のコメントをNGに追加'}
-                disabled={isNg}
+          {ownerCtxMenu && (
+            <ContextMenuPopup
+              x={ownerCtxMenu.x}
+              y={ownerCtxMenu.y}
+              onClose={() => setOwnerCtxMenu(null)}
+            >
+              <MenuItem
+                onClick={() => {
+                  window.nndd.invoke(
+                    window.nndd.channels.SYS_OPEN_PATH,
+                    `https://www.nicovideo.jp/user/${watch.owner!.id}`
+                  );
+                  setOwnerCtxMenu(null);
+                }}
               >
-                {isNg ? 'NG済' : 'コメントNG'}
-              </button>
-            );
-          })()}
+                🌐 ユーザーページを開く
+              </MenuItem>
+            </ContextMenuPopup>
+          )}
         </div>
       )}
 
