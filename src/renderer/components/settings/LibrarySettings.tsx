@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useConfig } from '@renderer/hooks/useConfig';
 import { useAppStore } from '@renderer/store/useAppStore';
+import { IpcChannel } from '@shared/types';
+import type { BinaryStatuses } from './ExternalToolsSettings';
 
 type LibraryDisplayMode = 'table' | 'grid';
 type SortCol = 'videoName' | 'time' | 'playCount' | 'pubDate' | 'creationDate';
@@ -36,10 +38,22 @@ export function LibrarySettings(): JSX.Element {
     'comment429RetryWaitSec',
     60
   );
+  const [useNativeVideoDownloader, setUseNativeVideoDownloader] = useConfig<boolean>(
+    'useNativeVideoDownloader',
+    true
+  );
+  const [muxImplementation, setMuxImplementation] = useConfig<'ffmpeg' | 'mediabunny'>(
+    'downloadMuxImplementation',
+    'ffmpeg'
+  );
   const [librarySortCol, setLibrarySortCol] = useConfig<SortCol>('ui.librarySortCol', 'pubDate');
   const [librarySortDir, setLibrarySortDir] = useConfig<SortDir>('ui.librarySortDir', 'asc');
   const [libraryDisplayMode, setLibraryDisplayModeLocal] = useState<LibraryDisplayMode>('table');
+  const [binaryStatus, setBinaryStatus] = useState<BinaryStatuses | null>(null);
   const setLibraryViewModeStore = useAppStore((s) => s.setLibraryViewMode);
+  const setPendingSettingsTab = useAppStore((s) => s.setPendingSettingsTab);
+  const ytDlpMissing = binaryStatus !== null && !binaryStatus.ytDlp.found;
+  const ffmpegMissing = binaryStatus !== null && !binaryStatus.ffmpeg.found;
   const setLibraryDisplayMode = (mode: LibraryDisplayMode): void => {
     setLibraryDisplayModeLocal(mode);
     setLibraryViewModeStore(mode);
@@ -51,6 +65,10 @@ export function LibrarySettings(): JSX.Element {
       .invoke<LibraryDisplayMode>(window.nndd.channels.CONFIG_GET, 'ui.libraryViewMode')
       .then((v) => { if (v === 'table' || v === 'grid') setLibraryDisplayModeLocal(v); })
       .catch(() => {/* ignore */});
+  }, []);
+
+  useEffect(() => {
+    window.nndd.invoke<BinaryStatuses>(IpcChannel.BINARY_STATUS).then(setBinaryStatus).catch(() => {});
   }, []);
 
   return (
@@ -128,6 +146,49 @@ export function LibrarySettings(): JSX.Element {
             (DL時間が大幅増加する場合あり)
           </span>
         </Row>
+        <Row label="動画DL方式">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={useNativeVideoDownloader}
+              disabled={ytDlpMissing && useNativeVideoDownloader}
+              onChange={(e) => setUseNativeVideoDownloader(e.target.checked)}
+            />
+            <span className="text-sm">ネイティブHLSダウンロードを優先する</span>
+          </label>
+          <span className="text-xs text-nndd-subtext ml-2">
+            (オフにすると常にyt-dlpを使用。失敗時は自動的にyt-dlpへフォールバック)
+          </span>
+        </Row>
+        {ytDlpMissing && (
+          <WarningBanner
+            message={
+              useNativeVideoDownloader
+                ? 'yt-dlpが見つかりません。フォールバックが使えないため、外部ツールからインストールしてください。'
+                : 'yt-dlpが見つかりません。このままではダウンロードができません。'
+            }
+            onOpenTools={() => setPendingSettingsTab('tools')}
+          />
+        )}
+        <Row label="mux実装">
+          <select
+            value={muxImplementation}
+            onChange={(e) => setMuxImplementation(e.target.value as 'ffmpeg' | 'mediabunny')}
+            className="bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
+          >
+            <option value="ffmpeg" disabled={ffmpegMissing}>ffmpeg (デフォルト)</option>
+            <option value="mediabunny">mediabunny (JS実装、ffmpeg不要・実験的機能)</option>
+          </select>
+          <span className="text-xs text-nndd-subtext ml-2">
+            (ネイティブHLS DL時の映像/音声結合方式。mediabunny選択時は失敗してもyt-dlpへフォールバックしません)
+          </span>
+        </Row>
+        {ffmpegMissing && muxImplementation === 'ffmpeg' && (
+          <WarningBanner
+            message="ffmpegが見つかりません。mediabunnyに切り替えるか、外部ツールからインストールしてください。"
+            onOpenTools={() => setPendingSettingsTab('tools')}
+          />
+        )}
         <Row label="429待機時間">
           <input
             type="number"
@@ -220,6 +281,26 @@ function Section({
         {title}
       </div>
       <div className="pl-3">{children}</div>
+    </div>
+  );
+}
+
+function WarningBanner({
+  message,
+  onOpenTools
+}: {
+  message: string;
+  onOpenTools: () => void;
+}): JSX.Element {
+  return (
+    <div className="flex items-center justify-between gap-3 mb-2 px-3 py-2 bg-red-500/10 border border-red-500/40 rounded text-xs text-red-500 dark:text-red-400">
+      <span>{message}</span>
+      <button
+        onClick={onOpenTools}
+        className="shrink-0 px-2 py-1 text-xs bg-nndd-border rounded hover:bg-nndd-accent hover:text-white"
+      >
+        外部ツールタブを開く
+      </button>
     </div>
   );
 }

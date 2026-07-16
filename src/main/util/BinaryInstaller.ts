@@ -33,11 +33,6 @@ export class BinaryInstaller {
     return path.join(this.binDir(), name);
   }
 
-  static ffplayLocalPath(): string {
-    const name = process.platform === 'win32' ? 'ffplay.exe' : 'ffplay';
-    return path.join(this.binDir(), name);
-  }
-
   static async checkWinget(): Promise<boolean> {
     if (process.platform !== 'win32') return false;
     try {
@@ -86,23 +81,6 @@ export class BinaryInstaller {
     try {
       await execAsync('ffmpeg -version', { timeout: 5000 });
       return { found: true, path: 'ffmpeg', version: await getFfmpegVersion('ffmpeg') };
-    } catch {
-      return { found: false, path: null, version: null };
-    }
-  }
-
-  static async checkFfplay(): Promise<BinaryStatus> {
-    const configured = getConfigStore().get('ffplayPath');
-    if (configured && fs.existsSync(configured)) {
-      return { found: true, path: configured, version: await getFfmpegVersion(configured) };
-    }
-    const local = this.ffplayLocalPath();
-    if (fs.existsSync(local)) {
-      return { found: true, path: local, version: await getFfmpegVersion(local) };
-    }
-    try {
-      await execAsync('ffplay -version', { timeout: 5000 });
-      return { found: true, path: 'ffplay', version: await getFfmpegVersion('ffplay') };
     } catch {
       return { found: false, path: null, version: null };
     }
@@ -224,14 +202,6 @@ export class BinaryInstaller {
       const ffmpegDest = this.ffmpegLocalPath();
       fs.copyFileSync(ffmpegSrc, ffmpegDest);
       if (platform !== 'win32') fs.chmodSync(ffmpegDest, 0o755);
-
-      const ffplaySrc = path.join(extractedBinDir, `ffplay${ext}`);
-      if (fs.existsSync(ffplaySrc)) {
-        const ffplayDest = this.ffplayLocalPath();
-        fs.copyFileSync(ffplaySrc, ffplayDest);
-        if (platform !== 'win32') fs.chmodSync(ffplayDest, 0o755);
-        log.info('ffplay also installed:', ffplayDest);
-      }
 
       log.info('ffmpeg download complete:', ffmpegDest);
     } finally {

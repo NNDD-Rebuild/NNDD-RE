@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { SubTab } from '../components/settings/SettingsView';
 
 /**
  * メインウィンドウの主要状態。
@@ -51,6 +52,10 @@ interface AppState {
   pendingFollowUser: { id: string; nickname: string; iconUrl: string } | null;
   setPendingFollowUser: (user: { id: string; nickname: string; iconUrl: string } | null) => void;
 
+  /** 他画面から設定の特定サブタブを開く際に使用。SettingsViewが処理後 null にクリア */
+  pendingSettingsTab: SubTab | null;
+  setPendingSettingsTab: (tab: SubTab | null) => void;
+
   /**
    * ランキング・検索・マイリスト・フォロー共通の表示モード。
    * 設定変更で即時反映するためにZustandで管理。
@@ -84,6 +89,8 @@ export const useAppStore = create<AppState>((set) => ({
   setPendingSearchTag: (tag) => set({ pendingSearchTag: tag }),
   pendingFollowUser: null,
   setPendingFollowUser: (user) => set({ pendingFollowUser: user }),
+  pendingSettingsTab: null,
+  setPendingSettingsTab: (tab) => set({ pendingSettingsTab: tab }),
   contentViewMode: 'grid',
   setContentViewMode: (mode) => set({ contentViewMode: mode }),
   libraryViewMode: 'table',

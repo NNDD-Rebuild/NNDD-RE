@@ -1,6 +1,5 @@
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { cancelAllWaitDownloads } from './StreamProtocol';
 import { handleProxyRequest, decodeProxyUrl, type HlsProxyType } from './HlsProxy';
 import { createLogger } from '../util/Logger';
 
@@ -62,13 +61,7 @@ export async function startStreamServer(): Promise<void> {
   });
 }
 
-/** プレイヤーウィンドウ閉時に呼ぶ */
-export function cancelAllStreams(): void {
-  cancelAllWaitDownloads();
-}
-
 export function stopStreamServer(): void {
-  cancelAllStreams();
   server?.close();
   server = null;
   serverPort = 0;

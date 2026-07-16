@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useAppStore } from '@renderer/store/useAppStore';
 import { GeneralSettings } from './GeneralSettings';
 import { PlayerSettings } from './PlayerSettings';
 import { LibrarySettings } from './LibrarySettings';
@@ -10,6 +11,7 @@ import { UpdateSettings } from './UpdateSettings';
 import { ExternalToolsSettings } from './ExternalToolsSettings';
 import { DebugSettings } from './DebugSettings';
 import { NgCommentSettings } from './NgCommentSettings';
+import { BackupSettings } from './BackupSettings';
 
 /**
  * 設定タブ。
@@ -23,7 +25,7 @@ import { NgCommentSettings } from './NgCommentSettings';
  *  - ログ
  *  - 更新
  */
-type SubTab =
+export type SubTab =
   | 'general'
   | 'nico'
   | 'library'
@@ -34,6 +36,7 @@ type SubTab =
   | 'connection'
   | 'log'
   | 'update'
+  | 'backup'
   | 'debug';
 
 const SUBTABS: { id: SubTab; label: string }[] = [
@@ -46,12 +49,15 @@ const SUBTABS: { id: SubTab; label: string }[] = [
   { id: 'tools', label: '外部ツール' },
   { id: 'connection', label: '接続診断' },
   { id: 'log', label: 'ログ' },
-  { id: 'update', label: '情報' }
+  { id: 'update', label: '情報' },
+  { id: 'backup', label: 'バックアップ' }
 ];
 
 export function SettingsView(): JSX.Element {
   const [active, setActive] = useState<SubTab>('general');
   const [developerEnabled, setDeveloperEnabled] = useState(false);
+  const pendingSettingsTab = useAppStore((s) => s.pendingSettingsTab);
+  const setPendingSettingsTab = useAppStore((s) => s.setPendingSettingsTab);
 
   useEffect(() => {
     window.nndd
@@ -59,6 +65,13 @@ export function SettingsView(): JSX.Element {
       .then((v) => setDeveloperEnabled(v !== false))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (pendingSettingsTab) {
+      setActive(pendingSettingsTab);
+      setPendingSettingsTab(null);
+    }
+  }, [pendingSettingsTab, setPendingSettingsTab]);
 
   return (
     <div className="h-full flex">
@@ -104,6 +117,7 @@ export function SettingsView(): JSX.Element {
         {active === 'connection' && <ConnectionDiagnostics />}
         {active === 'log' && <LogViewer />}
         {active === 'update' && <UpdateSettings />}
+        {active === 'backup' && <BackupSettings />}
         {active === 'debug' && <DebugSettings />}
       </main>
     </div>

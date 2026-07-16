@@ -88,6 +88,25 @@ export const IpcChannel = {
   HISTORY_ADD: 'nndd:history:add',
   HISTORY_CLEAR: 'nndd:history:clear',
 
+  // プレイリスト (完全ローカル、サーバー同期なし)
+  PLAYLIST_LIST: 'nndd:playlist:list',
+  PLAYLIST_CREATE: 'nndd:playlist:create',
+  PLAYLIST_RENAME: 'nndd:playlist:rename',
+  PLAYLIST_REMOVE: 'nndd:playlist:remove',
+  PLAYLIST_GET_ITEMS: 'nndd:playlist:getItems',
+  PLAYLIST_ADD_VIDEO: 'nndd:playlist:addVideo',
+  PLAYLIST_REMOVE_VIDEO: 'nndd:playlist:removeVideo',
+  PLAYLIST_REORDER: 'nndd:playlist:reorder',
+  /** 動画が登録済みのプレイリストID一覧 (追加メニューのチェック表示用) */
+  PLAYLIST_LIST_CONTAINING: 'nndd:playlist:listContaining',
+
+  // 再生位置レジューム
+  RESUME_GET: 'nndd:resume:get',
+  RESUME_SAVE: 'nndd:resume:save',
+  RESUME_CLEAR: 'nndd:resume:clear',
+  /** 複数動画IDのレジューム情報をまとめて取得 (VideoCard等でのバッジ表示用) */
+  RESUME_LIST_BATCH: 'nndd:resume:listBatch',
+
   // スケジュール
   SCHEDULE_LIST: 'nndd:schedule:list',
   SCHEDULE_ADD: 'nndd:schedule:add',
@@ -263,11 +282,11 @@ export const IpcChannel = {
   LIBRARY_FOLDER_VIDEOS: 'nndd:library:folder:videos',
 
   // 外部ツール (バイナリ管理)
-  /** yt-dlp / ffplay の検出状態を返す → { ytDlp: BinaryStatus, ffplay: BinaryStatus } */
+  /** yt-dlp / ffmpeg の検出状態を返す → { ytDlp: BinaryStatus, ffmpeg: BinaryStatus } */
   BINARY_STATUS: 'nndd:binary:status',
   /** yt-dlp を userData/bin にダウンロードする → installPath: string */
   BINARY_INSTALL_YT_DLP: 'nndd:binary:install:yt-dlp',
-  /** ffmpeg スイート (ffmpeg + ffplay) を userData/bin にダウンロード → installPath: string */
+  /** ffmpeg を userData/bin にダウンロード → installPath: string */
   BINARY_INSTALL_FFMPEG: 'nndd:binary:install:ffmpeg',
   /** ダウンロード進捗イベント (main → renderer) { tool: string; pct: number } */
   BINARY_INSTALL_PROGRESS: 'nndd:binary:install:progress',
@@ -278,7 +297,41 @@ export const IpcChannel = {
   WIN_CLOSE: 'nndd:win:close',
   WIN_IS_MAXIMIZED: 'nndd:win:isMaximized',
   /** Main→Renderer: 最大化状態変化通知 (maximized: boolean) */
-  WIN_MAXIMIZE_CHANGED: 'nndd:win:maximizeChanged'
+  WIN_MAXIMIZE_CHANGED: 'nndd:win:maximizeChanged',
+
+  // GitHub OAuth Device Flow
+  /** → GitHubStatus */
+  GITHUB_STATUS: 'nndd:github:status',
+  /** Device Flow開始 → DeviceFlowStartResult | { error: string } */
+  GITHUB_START_DEVICE_FLOW: 'nndd:github:startDeviceFlow',
+  /** Main→Renderer: Device Flow進捗通知 → DeviceFlowEvent */
+  GITHUB_DEVICE_FLOW_EVENT: 'nndd:github:deviceFlowEvent',
+  GITHUB_CANCEL_DEVICE_FLOW: 'nndd:github:cancelDeviceFlow',
+  GITHUB_LOGOUT: 'nndd:github:logout',
+
+  // バックアップ・同期 (GitHub Gist)
+  /** → SyncProfile[] */
+  BACKUP_LIST_PROFILES: 'nndd:backup:listProfiles',
+  /** → string | null (自動アップロード対象のアクティブプロファイルID) */
+  BACKUP_GET_ACTIVE_PROFILE_ID: 'nndd:backup:getActiveProfileId',
+  /** (name: string) → SyncProfile */
+  BACKUP_ADD_PROFILE: 'nndd:backup:addProfile',
+  /** (id: string, patch: Partial<SyncProfile>) → SyncProfile */
+  BACKUP_UPDATE_PROFILE: 'nndd:backup:updateProfile',
+  /** (id: string) → void */
+  BACKUP_REMOVE_PROFILE: 'nndd:backup:removeProfile',
+  /** (id: string | null) → void */
+  BACKUP_SET_ACTIVE_PROFILE: 'nndd:backup:setActiveProfile',
+  /** (profileId: string, gistId: string) → SyncProfile */
+  BACKUP_LINK_EXISTING_GIST: 'nndd:backup:linkExistingGist',
+  /** → GistSummary[] (自アプリ作成のGistのみ) */
+  BACKUP_LIST_CANDIDATE_GISTS: 'nndd:backup:listCandidateGists',
+  /** (profileId: string) → BackupResult */
+  BACKUP_UPLOAD: 'nndd:backup:upload',
+  /** (profileId: string) → BackupResult */
+  BACKUP_DOWNLOAD: 'nndd:backup:download',
+  /** (profileId: string) → BackupPayload | null */
+  BACKUP_PREVIEW: 'nndd:backup:preview'
 } as const;
 
 export type IpcChannelValue = typeof IpcChannel[keyof typeof IpcChannel];

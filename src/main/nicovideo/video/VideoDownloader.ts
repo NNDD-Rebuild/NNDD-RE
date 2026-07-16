@@ -6,8 +6,10 @@ import { WatchSession } from './WatchSession';
 import { M3U8Parser } from './M3U8Parser';
 import { SegmentDownloader } from './SegmentDownloader';
 import { FFmpegManager } from './FFmpegManager';
+import { MediabunnyMuxer } from './MediabunnyMuxer';
 import { StreamJsonWriter } from './StreamJsonWriter';
 import { createLogger } from '../../util/Logger';
+import { getConfigStore } from '../../config/ConfigStore';
 
 const log = createLogger('VideoDownloader');
 
@@ -183,10 +185,11 @@ export class VideoDownloader {
       };
       StreamJsonWriter.write(opts.tempDir, variantData);
 
-      // FFmpegで結合
+      // 結合 (ffmpeg or mediabunny)
       opts.onPhaseChange?.('merge');
       fs.mkdirSync(path.dirname(opts.outputPath), { recursive: true });
-      await FFmpegManager.merge({
+      const muxImpl = getConfigStore().get('downloadMuxImplementation') ?? 'ffmpeg';
+      const mergeOpts = {
         videoInitPath,
         videoSegmentPaths: videoVariant.segments.map((s) =>
           path.join(videoDir, s.filename)
@@ -198,7 +201,13 @@ export class VideoDownloader {
         outputPath: opts.outputPath,
         tempDir: opts.tempDir,
         signal: opts.signal
-      });
+      };
+      log.info('mux implementation:', muxImpl);
+      if (muxImpl === 'mediabunny') {
+        await MediabunnyMuxer.merge(mergeOpts);
+      } else {
+        await FFmpegManager.merge(mergeOpts);
+      }
 
       opts.onPhaseChange?.('done');
     } finally {

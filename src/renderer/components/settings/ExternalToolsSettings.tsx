@@ -2,20 +2,19 @@ import { useEffect, useState } from 'react';
 import { useConfig } from '@renderer/hooks/useConfig';
 import { IpcChannel } from '@shared/types';
 
-interface BinaryStatus {
+export interface BinaryStatus {
   found: boolean;
   path: string | null;
   version: string | null;
 }
 
-interface BinaryStatuses {
+export interface BinaryStatuses {
   ytDlp: BinaryStatus;
   ffmpeg: BinaryStatus;
-  ffplay: BinaryStatus;
   canAutoInstallFfmpeg: boolean;
   hasWinget: boolean;
   platform: string;
-  localPaths: { ytDlp: string; ffmpeg: string; ffplay: string };
+  localPaths: { ytDlp: string; ffmpeg: string };
 }
 
 function ffmpegInstallHint(platform: string): string {
@@ -132,11 +131,9 @@ export function ExternalToolsSettings(): JSX.Element {
 
   const [ytDlpPath, setYtDlpPath] = useConfig<string>('ytDlpPath', '');
   const [ffmpegPath, setFfmpegPath] = useConfig<string>('ffmpegPath', '');
-  const [ffplayPath, setFfplayPath] = useConfig<string>('ffplayPath', '');
 
   const [ytDlpInput, setYtDlpInput] = useState('');
   const [ffmpegInput, setFfmpegInput] = useState('');
-  const [ffplayInput, setFfplayInput] = useState('');
 
   const refreshStatus = (): void => {
     window.nndd.invoke<BinaryStatuses>(IpcChannel.BINARY_STATUS).then(setStatus).catch(() => {});
@@ -145,7 +142,6 @@ export function ExternalToolsSettings(): JSX.Element {
   useEffect(() => { refreshStatus(); }, []);
   useEffect(() => { setYtDlpInput(ytDlpPath ?? ''); }, [ytDlpPath]);
   useEffect(() => { setFfmpegInput(ffmpegPath ?? ''); }, [ffmpegPath]);
-  useEffect(() => { setFfplayInput(ffplayPath ?? ''); }, [ffplayPath]);
 
   useEffect(() => {
     const off = window.nndd.on(IpcChannel.BINARY_INSTALL_PROGRESS, (...args: unknown[]) => {
@@ -205,8 +201,8 @@ export function ExternalToolsSettings(): JSX.Element {
     : hasWinget ? 'winget でインストール' : 'ダウンロード';
 
   const ffmpegInstallLabel = hasWinget
-    ? (status?.ffmpeg.found ? 'winget で更新' : 'winget でインストール (ffplay も取得)')
-    : (status?.ffmpeg.found ? '再ダウンロード' : 'ダウンロード (ffplay も取得)');
+    ? (status?.ffmpeg.found ? 'winget で更新' : 'winget でインストール')
+    : (status?.ffmpeg.found ? '再ダウンロード' : 'ダウンロード');
 
   return (
     <div className="p-6 max-w-2xl space-y-6">
@@ -243,24 +239,6 @@ export function ExternalToolsSettings(): JSX.Element {
         onInstall={handleInstallFfmpeg}
         installLabel={ffmpegInstallLabel}
         noInstallNote="ffmpeg をインストール後、再起動してください:"
-        platform={platform}
-      />
-
-      <BinaryRow
-        label="ffplay"
-        status={status?.ffplay ?? null}
-        localPath={status?.localPaths.ffplay ?? ''}
-        pathValue={ffplayInput}
-        onPathChange={setFfplayInput}
-        onPathBlur={() => saveAndRefresh(setFfplayPath, ffplayInput)}
-        onBrowse={() => browse(setFfplayPath, setFfplayInput)}
-        canAutoInstall={false}
-        installing={false}
-        installPct={0}
-        installError={null}
-        onInstall={() => {}}
-        installLabel=""
-        noInstallNote="ffmpeg インストール時に自動で取得されます:"
         platform={platform}
       />
     </div>

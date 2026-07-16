@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { BinaryInstaller } from '../../util/BinaryInstaller';
 import { createLogger } from '../../util/Logger';
+import { concatBinary } from './SegmentConcat';
 
 const log = createLogger('FFmpeg');
 
@@ -45,14 +46,14 @@ export class FFmpegManager {
     const audioCombined = path.join(opts.tempDir, '_audio.mp4');
 
     // 1. 映像セグメント結合 (init + segments のバイナリ連結)
-    this.concatBinary(
+    concatBinary(
       [opts.videoInitPath, ...opts.videoSegmentPaths],
       videoCombined
     );
     log.debug('video combined:', videoCombined);
 
     // 2. 音声セグメント結合
-    this.concatBinary(
+    concatBinary(
       [opts.audioInitPath, ...opts.audioSegmentPaths],
       audioCombined
     );
@@ -85,38 +86,7 @@ export class FFmpegManager {
    * (HLS用のfMP4は init + cmfv/cmfa を直接連結するだけで再生可能)。
    */
   static concatBinary(files: string[], output: string): void {
-    fs.mkdirSync(path.dirname(output), { recursive: true });
-    const writer = fs.openSync(output, 'w');
-    try {
-      for (const f of files) {
-        const data = fs.readFileSync(f);
-        fs.writeSync(writer, data, 0, data.length);
-      }
-    } finally {
-      fs.closeSync(writer);
-    }
-  }
-
-  /** concat demuxer で TS セグメントを MP4 に結合 */
-  static async runConcatDemuxer(fileListPath: string, outputPath: string): Promise<void> {
-    await this.runFfmpeg([
-      '-y', '-loglevel', 'error',
-      '-f', 'concat', '-safe', '0',
-      '-i', fileListPath,
-      '-c', 'copy',
-      outputPath
-    ], undefined, undefined);
-  }
-
-  /** 単一ファイルを stream copy で出力 */
-  static async runStreamCopy(inputPath: string, outputPath: string): Promise<void> {
-    await this.runFfmpeg([
-      '-y', '-loglevel', 'error',
-      '-i', inputPath,
-      '-c', 'copy',
-      '-movflags', '+faststart',
-      outputPath
-    ], undefined, undefined);
+    concatBinary(files, output);
   }
 
   /**

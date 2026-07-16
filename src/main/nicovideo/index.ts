@@ -14,6 +14,7 @@ export { SegmentDownloader } from './video/SegmentDownloader';
 export type { SegmentDownloadOptions } from './video/SegmentDownloader';
 export { FFmpegManager } from './video/FFmpegManager';
 export type { MergeSegmentsOptions } from './video/FFmpegManager';
+export { MediabunnyMuxer } from './video/MediabunnyMuxer';
 export { VideoDownloader } from './video/VideoDownloader';
 export type {
   VideoDownloadOptions,

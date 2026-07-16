@@ -6,7 +6,6 @@ import { is } from '@electron-toolkit/utils';
 import { getConfigStore } from '../config/ConfigStore';
 import { VideoFileSuffix } from '@shared/constants';
 import { createLogger } from '../util/Logger';
-import { cancelAllStreams } from './StreamServer';
 import { setupHlsSessionInterceptor } from './HlsSessionInterceptor';
 
 const log = createLogger('PlayerManager');
@@ -42,6 +41,8 @@ export interface OpenPlayerParams {
   autoNext?: boolean;
   /** 音声のみ再生モード */
   audioOnly?: boolean;
+  /** レジューム再生開始秒数 (VIDEO_OPEN_PLAYER ハンドラが DB から解決してセット) */
+  resumeSec?: number;
 }
 
 /**
@@ -140,7 +141,6 @@ export class PlayerManager {
       win.webContents.send('nndd:player:window:fullscreen', false);
     });
     win.on('closed', () => {
-      cancelAllStreams();
       CommentWindowManager.get().close();
       this.windows.delete(win.id);
     });

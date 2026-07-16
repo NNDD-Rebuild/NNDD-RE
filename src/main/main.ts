@@ -20,6 +20,7 @@ import {
 import { PlayerManager } from './player/PlayerManager';
 import { NnddHttpServer } from './server/NnddHttpServer';
 import { TrayManager } from './tray/TrayManager';
+import { BackupManager } from './githubSync/BackupManager';
 
 const log = createLogger('Main');
 
@@ -27,6 +28,7 @@ let mainWindow: BrowserWindow | null = null;
 let library: LibraryManager | null = null;
 let httpServer: NnddHttpServer | null = null;
 let trayManager: TrayManager | null = null;
+let backupManager: BackupManager | null = null;
 
 // Windows: setZoomFactor後にGPUデコード動画が黒くなるバグ対策 (Electron 33 / Chromium 130)
 if (process.platform === 'win32') {
@@ -185,6 +187,8 @@ app.whenReady().then(async () => {
   }
   log.info('Library root:', library.rootDir, '/ videoDir:', library.videoDir);
 
+  backupManager = new BackupManager(library);
+
   // ローカル動画再生プロトコルを設定
   const cacheRoot = config.get('cacheRoot');
   const extraPaths = [library.libraryDir, library.rootDir, library.videoDir];
@@ -217,8 +221,8 @@ app.whenReady().then(async () => {
   trayManager = new TrayManager(() => mainWindow);
   trayManager.initialize();
 
-  // IPC 登録 (トレイ参照・メインウィンドウ参照を渡して通知連携)
-  registerIpcHandlers(library, trayManager, () => mainWindow);
+  // IPC 登録 (トレイ参照・メインウィンドウ参照・バックアップマネージャーを渡して連携)
+  registerIpcHandlers(library, trayManager, () => mainWindow, backupManager);
 
   // 内蔵HTTPサーバー起動 (設定が有効な場合)
   const httpCfg = config.get('httpServer');
@@ -230,6 +234,9 @@ app.whenReady().then(async () => {
       log.warn('HTTP server start failed:', e);
     }
   }
+
+  // 起動時自動アップロード: バックグラウンド実行、起動処理(ウィンドウ表示等)をブロックしない
+  void backupManager.autoUploadActiveProfile();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -249,21 +256,47 @@ app.on('window-all-closed', () => {
   }
 });
 
-app.on('before-quit', async () => {
+let quitCleanupStarted = false;
+
+// before-quit はリスナーが Promise を返しても Electron 自身は完了を待たないため、
+// event.preventDefault() で一旦終了をキャンセルし、非同期クリーンアップ完了後に
+// 改めて app.quit() を呼ぶ (2回目の発火は quitCleanupStarted で素通りさせる)。
+app.on('before-quit', (event) => {
   (app as unknown as { isQuiting?: boolean }).isQuiting = true;
-  stopStreamServer();
-  PlayerManager.get().closeAll();
-  // ストリーミングキャッシュ (userData/cache/movie) は次回シーク再生のため保持する
-  if (httpServer) {
-    await httpServer.stop().catch(() => undefined);
-    httpServer = null;
-  }
-  if (trayManager) {
-    trayManager.destroy();
-    trayManager = null;
-  }
-  if (library) {
-    library.close();
-    library = null;
-  }
+
+  if (quitCleanupStarted) return;
+  event.preventDefault();
+  quitCleanupStarted = true;
+
+  void (async () => {
+    stopStreamServer();
+    PlayerManager.get().closeAll();
+    // ストリーミングキャッシュ (userData/cache/movie) は次回シーク再生のため保持する
+    if (httpServer) {
+      await httpServer.stop().catch(() => undefined);
+      httpServer = null;
+    }
+    if (trayManager) {
+      trayManager.destroy();
+      trayManager = null;
+    }
+
+    // 終了時自動アップロード: library.close() より前に実行。前回アップロード時から
+    // 変更がなければ内部でスキップされる (無駄なアップロードの積み重ねを防ぐ)。
+    // ネットワーク遅延で終了処理がハングしないよう、最大8秒でタイムアウトして先へ進む。
+    if (backupManager) {
+      await Promise.race([
+        backupManager.autoUploadActiveProfile(),
+        new Promise<void>((resolve) => setTimeout(resolve, 8000))
+      ]);
+      backupManager = null;
+    }
+
+    if (library) {
+      library.close();
+      library = null;
+    }
+
+    app.quit();
+  })();
 });

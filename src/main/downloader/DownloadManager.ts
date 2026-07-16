@@ -1,16 +1,20 @@
 import { EventEmitter } from 'node:events';
 import path from 'node:path';
 import fs from 'node:fs';
+import os from 'node:os';
 import { v4 as uuidv4 } from 'uuid';
 import type {
   DownloadQueueItem,
   DownloadStatusTypeValue,
-  NNDDREVideo
+  NNDDREVideo,
+  WatchPageInfo
 } from '@shared/types';
 import { DownloadStatusType } from '@shared/types';
 import { WatchInfoHandler } from '../nicovideo/watch/WatchInfoHandler';
 import { CommentClient } from '../nicovideo/comment/CommentClient';
 import { YtDlpDownloader } from '../nicovideo/video/YtDlpDownloader';
+import { VideoDownloader } from '../nicovideo/video/VideoDownloader';
+import type { VideoDownloadPhase } from '../nicovideo/video/VideoDownloader';
 import {
   LocalFileHandler,
   LocalFileNaming
@@ -20,6 +24,26 @@ import { getConfigStore } from '../config/ConfigStore';
 import { createLogger } from '../util/Logger';
 
 const log = createLogger('DownloadManager');
+
+const NATIVE_PHASE_LABEL: Record<VideoDownloadPhase, string> = {
+  session: 'セッション確立中',
+  master_playlist: 'マスタープレイリスト解析中',
+  variant_playlist: 'ストリーム選択中',
+  key: '暗号鍵取得中',
+  video_segments: '映像セグメントDL中',
+  audio_segments: '音声セグメントDL中',
+  merge: 'FFmpegで結合中',
+  done: '完了'
+};
+
+const NATIVE_PHASE_STATUS: Partial<Record<VideoDownloadPhase, DownloadStatusTypeValue>> = {
+  master_playlist: DownloadStatusType.MASTER_PLAYLIST,
+  variant_playlist: DownloadStatusType.MASTER_PLAYLIST,
+  key: DownloadStatusType.KEY,
+  video_segments: DownloadStatusType.SEGMENT,
+  audio_segments: DownloadStatusType.SEGMENT,
+  merge: DownloadStatusType.MERGE
+};
 
 export interface EnqueueOptions {
   videoId: string;
@@ -100,7 +124,10 @@ export class DownloadManager extends EventEmitter {
       item.status === DownloadStatusType.LOGIN ||
       item.status === DownloadStatusType.WATCH ||
       item.status === DownloadStatusType.VIDEO ||
-      item.status === DownloadStatusType.SEGMENT
+      item.status === DownloadStatusType.MASTER_PLAYLIST ||
+      item.status === DownloadStatusType.KEY ||
+      item.status === DownloadStatusType.SEGMENT ||
+      item.status === DownloadStatusType.MERGE
     ) {
       return false; // 実行中は削除不可
     }
@@ -262,15 +289,7 @@ export class DownloadManager extends EventEmitter {
         );
 
         this.updateStatus(item, DownloadStatusType.VIDEO);
-        await YtDlpDownloader.download(watch.videoId, {
-          outputPath,
-          signal: ac.signal,
-          onProgress: (percent, speed, eta) => {
-            item.progress = percent / 100;
-            item.message = speed ? `${percent.toFixed(1)}% ${speed} ETA ${eta}` : `${percent.toFixed(1)}%`;
-            this.emit('change', item);
-          }
-        });
+        await this.downloadVideoWithFallback(item, watch, outputPath, ac.signal);
 
         // ライブラリに登録
         const video: NNDDREVideo = {
@@ -350,6 +369,80 @@ export class DownloadManager extends EventEmitter {
       }
       this.tick();
     }
+  }
+
+  /**
+   * 動画本体のダウンロード。
+   * useNativeVideoDownloader が有効ならまずネイティブHLS実装 (yt-dlp非依存) を試し、
+   * 失敗時 (キャンセルを除く) は yt-dlp にフォールバックする。
+   */
+  private async downloadVideoWithFallback(
+    item: DownloadQueueItem,
+    watch: WatchPageInfo,
+    outputPath: string,
+    signal: AbortSignal
+  ): Promise<void> {
+    const useNative = getConfigStore().get('useNativeVideoDownloader') ?? true;
+
+    if (useNative) {
+      const tempDir = path.join(os.tmpdir(), 'nndd-video-dl', item.id);
+      const muxImpl = getConfigStore().get('downloadMuxImplementation') ?? 'ffmpeg';
+      let currentPhase: VideoDownloadPhase = 'session';
+      try {
+        await VideoDownloader.download(watch, {
+          outputPath,
+          tempDir,
+          signal,
+          onPhaseChange: (phase) => {
+            currentPhase = phase;
+            item.message = phase === 'merge'
+              ? (muxImpl === 'mediabunny' ? 'mediabunnyで結合中' : NATIVE_PHASE_LABEL[phase])
+              : NATIVE_PHASE_LABEL[phase];
+            const status = NATIVE_PHASE_STATUS[phase];
+            if (status) {
+              this.updateStatus(item, status);
+            } else {
+              this.emit('change', item);
+            }
+            if (phase === 'merge') item.progress = 0.95;
+          },
+          onProgress: (done, total) => {
+            if (total <= 0) return;
+            const pct = done / total;
+            item.progress = currentPhase === 'audio_segments' ? 0.5 + pct * 0.5 : pct * 0.5;
+            item.message = `${NATIVE_PHASE_LABEL[currentPhase]} ${(item.progress * 100).toFixed(1)}% (${done}/${total})`;
+            this.emit('change', item);
+          }
+        });
+        return;
+      } catch (e) {
+        if (signal.aborted) throw e;
+        if (muxImpl === 'mediabunny') {
+          log.error(`native video download (mediabunny mux) failed for ${item.videoId}:`, e);
+          throw e; // 動作検証中はyt-dlpフォールバックさせず原因を明示する
+        }
+        const msg = e instanceof Error ? e.message : String(e);
+        log.warn(`native video download failed for ${item.videoId}, falling back to yt-dlp:`, msg);
+        item.message = `ネイティブDL失敗 (${msg}) → yt-dlpにフォールバック`;
+        item.progress = 0;
+        this.updateStatus(item, DownloadStatusType.VIDEO);
+        try { fs.unlinkSync(outputPath); } catch { /* なければ無視 */ }
+      } finally {
+        fs.promises.rm(tempDir, { recursive: true, force: true }).catch((e) => {
+          log.warn('native download tempDir cleanup failed:', e);
+        });
+      }
+    }
+
+    await YtDlpDownloader.download(watch.videoId, {
+      outputPath,
+      signal,
+      onProgress: (percent, speed, eta) => {
+        item.progress = percent / 100;
+        item.message = speed ? `${percent.toFixed(1)}% ${speed} ETA ${eta}` : `${percent.toFixed(1)}%`;
+        this.emit('change', item);
+      }
+    });
   }
 
   private updateStatus(

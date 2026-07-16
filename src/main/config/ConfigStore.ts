@@ -1,4 +1,5 @@
 import Store from 'electron-store';
+import type { GitHubSyncConfig } from '@shared/types';
 
 /**
  * アプリ全体の設定。
@@ -21,11 +22,23 @@ export interface NnddConfig {
   /** yt-dlp 実行ファイルのパス (空なら自動探索) */
   ytDlpPath: string;
 
+  /**
+   * 動画DLにネイティブHLS実装 (yt-dlp非依存) を優先的に使うか。
+   * true (デフォルト): まずネイティブ実装 (WatchSession+M3U8Parser+SegmentDownloader+FFmpegManager) を試し、
+   *                    失敗時のみ yt-dlp にフォールバックする。
+   * false: 常に yt-dlp を使用する (ネイティブ実装を無効化。トラブル時の緊急回避用)。
+   */
+  useNativeVideoDownloader: boolean;
+
+  /**
+   * ネイティブHLS実装での映像/音声mux方式。
+   * 'ffmpeg' (デフォルト): ffmpeg外部プロセスでstream copy mux。
+   * 'mediabunny': JS実装 (mediabunnyライブラリ) でstream copy mux。ffmpeg非依存。実験的機能。
+   */
+  downloadMuxImplementation: 'ffmpeg' | 'mediabunny';
+
   /** ffmpeg 実行ファイルのパス (空なら自動探索) */
   ffmpegPath: string;
-
-  /** ffplay 実行ファイルのパス (空なら自動探索) */
-  ffplayPath: string;
 
   /**
    * fetchAllComments で easy スレッド (増量コメント) を取得するか。
@@ -58,18 +71,10 @@ export interface NnddConfig {
     volume: number;
     /**
      * ストリーミング再生モード。
-     *   - 'cache':     yt-dlp で完全DL → Electron <video> で再生 (シーク可、コメント描画あり、待ち時間あり)
-     *   - 'ffplay':    yt-dlp の stdout を ffplay 別ウィンドウ + キャッシュに同時書き込み
-     *                  (再生開始までほぼ待ち時間ゼロ、ただしコメント描画/コントロール不可)
-     *   - 'streaming': WatchSession で HLS URL を即取得 → hls.js でアプリ内即時再生 + バックグラウンドでyt-dlpキャッシュ作成
-     *                  (コメント描画あり、待ち時間ほぼゼロ、シークはバッファ内のみ / キャッシュ完成後は完全シーク可)
+     *   - 'native':    hls.js でニコニコCDNに直接アクセス (即時再生, Cookie/CORS は session.webRequest で処理)
+     *   - 'hls':       HLS プロキシで即時再生 (StreamServer+HlsProxy 経由、URL書き換えのみ)
      *   - 'niconico':  ニコニコ公式プレイヤーを webview で埋め込み表示
      *                  (公式機能フル利用可、コメント制御・シークバー制御不可)
-     */
-    /**
-     * 'native':    hls.js でニコニコCDNに直接アクセス (即時再生, Cookie/CORS は session.webRequest で処理)
-     * 'hls':       HLS プロキシで即時再生 (StreamServer+HlsProxy 経由, yt-dlp ベース)
-     * 'niconico':  ニコニコ公式プレイヤー埋め込み
      */
     streamingMode: 'hls' | 'native' | 'niconico';
     /** コメント表示 */
@@ -232,6 +237,9 @@ export interface NnddConfig {
     /** base64 encoded encrypted password */
     savedPasswordEnc?: string;
   };
+
+  /** GitHub Gist 設定バックアップ・同期 */
+  githubSync: GitHubSyncConfig;
 }
 
 const DEFAULTS: NnddConfig = {
@@ -240,8 +248,9 @@ const DEFAULTS: NnddConfig = {
   downloadRetryCount: 3,
   downloadCooldownMs: 0,
   ytDlpPath: '',
+  useNativeVideoDownloader: true,
+  downloadMuxImplementation: 'ffmpeg',
   ffmpegPath: '',
-  ffplayPath: '',
   downloadEasyComments: false,
   downloadAllComments: false,
   comment429RetryWaitSec: 60,
@@ -313,7 +322,11 @@ const DEFAULTS: NnddConfig = {
     apiDumpPath: undefined,
     apiDumpTargets: ['watch']
   },
-  auth: {}
+  auth: {},
+  githubSync: {
+    profiles: [],
+    activeProfileId: null
+  }
 };
 
 let store: Store<NnddConfig> | null = null;
