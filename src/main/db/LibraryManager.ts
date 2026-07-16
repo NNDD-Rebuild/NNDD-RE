@@ -8,7 +8,9 @@ import {
   HistoryDao,
   ScheduleDao,
   SearchDao,
-  NgListDao
+  NgListDao,
+  PlaylistDao,
+  ResumeDao
 } from './dao';
 import { NnddPaths } from '@shared/constants';
 
@@ -27,11 +29,14 @@ export class LibraryManager {
   readonly scheduleDao: ScheduleDao;
   readonly searchDao: SearchDao;
   readonly ngListDao: NgListDao;
+  readonly playlistDao: PlaylistDao;
+  readonly resumeDao: ResumeDao;
 
   readonly rootDir: string;
   readonly libraryDir: string;
   readonly systemDir: string;
   readonly tempDir: string;
+  /** 旧AIR版のファイルベース・プレイリスト実装の名残 (現在未使用、DBベースの playlistDao とは無関係) */
   readonly playlistDir: string;
   readonly logDir: string;
   /** 動画の保存・スキャン対象ディレクトリ。設定で変更可能。 */
@@ -60,6 +65,8 @@ export class LibraryManager {
     this.scheduleDao = new ScheduleDao(this.db);
     this.searchDao = new SearchDao(this.db);
     this.ngListDao = new NgListDao(this.db);
+    this.playlistDao = new PlaylistDao(this.db);
+    this.resumeDao = new ResumeDao(this.db);
   }
 
   /**

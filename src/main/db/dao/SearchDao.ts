@@ -41,4 +41,9 @@ export class SearchDao {
   remove(id: string): void {
     this.db.prepare(Q.DELETE_SAVED_SEARCH).run(id);
   }
+
+  /** 全保存検索を削除 */
+  clearAll(): void {
+    this.db.prepare(Q.DELETE_ALL_SAVED_SEARCH).run();
+  }
 }

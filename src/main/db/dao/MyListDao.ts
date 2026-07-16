@@ -51,4 +51,9 @@ export class MyListDao {
   remove(url: string): void {
     this.db.prepare(Q.DELETE_MYLIST).run(url);
   }
+
+  /** 全マイリスト登録を削除 */
+  clearAll(): void {
+    this.db.prepare(Q.DELETE_ALL_MYLIST).run();
+  }
 }

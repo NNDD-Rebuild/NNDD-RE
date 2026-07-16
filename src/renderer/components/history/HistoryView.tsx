@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import type { HistoryItem } from '@shared/types';
+import type { HistoryItem, ResumePosition } from '@shared/types';
+import { IpcChannel } from '@shared/types';
 
 /**
  * 履歴タブ。
@@ -9,11 +10,18 @@ import type { HistoryItem } from '@shared/types';
  */
 export function HistoryView(): JSX.Element {
   const [items, setItems] = useState<HistoryItem[]>([]);
+  const [resumes, setResumes] = useState<Record<string, ResumePosition>>({});
 
   const reload = (): void => {
     window.nndd
       .invoke<HistoryItem[]>(window.nndd.channels.HISTORY_LIST, 1000)
-      .then(setItems);
+      .then((list) => {
+        setItems(list);
+        window.nndd
+          .invoke<Record<string, ResumePosition>>(IpcChannel.RESUME_LIST_BATCH, list.map((it) => it.videoId))
+          .then(setResumes)
+          .catch(() => {});
+      });
   };
 
   useEffect(reload, []);
@@ -62,9 +70,21 @@ export function HistoryView(): JSX.Element {
               </tr>
             </thead>
             <tbody>
-              {items.map((it, i) => (
+              {items.map((it, i) => {
+                const resume = resumes[it.videoId];
+                return (
                 <tr key={i} onDoubleClick={() => handlePlay(it.videoId)} className="cursor-pointer">
-                  <td>{it.title}</td>
+                  <td>
+                    {it.title}
+                    {resume && resume.durationSec > 0 && (
+                      <span
+                        className="ml-2 text-[10px] text-nndd-accent align-middle"
+                        title={`${Math.floor(resume.positionSec)}秒 / ${Math.floor(resume.durationSec)}秒`}
+                      >
+                        ● 続きから ({Math.round((resume.positionSec / resume.durationSec) * 100)}%)
+                      </span>
+                    )}
+                  </td>
                   <td>{it.videoId}</td>
                   <td>{it.watchedAt.toLocaleString('ja-JP')}</td>
                   <td>
@@ -91,7 +111,8 @@ export function HistoryView(): JSX.Element {
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         )}

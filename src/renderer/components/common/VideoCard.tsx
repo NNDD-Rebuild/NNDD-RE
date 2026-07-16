@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { AddToPlaylistMenuItem } from './AddToPlaylistMenuItem';
 
 /**
  * 検索結果・ランキング・マイリストで共通利用する動画カード。
@@ -39,6 +40,8 @@ interface Props {
   layout?: 'grid' | 'list';
   /** ライブラリにDL済みかどうか */
   isDownloaded?: boolean;
+  /** 指定時のみ削除ボタンを表示 (プレイリストからの削除など汎用) */
+  onRemove?: (videoId: string) => void;
 }
 
 export function VideoCard({
@@ -50,7 +53,8 @@ export function VideoCard({
   onUserPage,
   onPlayAudioOnly,
   layout = 'grid',
-  isDownloaded = false
+  isDownloaded = false,
+  onRemove
 }: Props): JSX.Element {
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
 
@@ -79,6 +83,7 @@ export function VideoCard({
       {onNiconico && (
         <MenuItem onClick={() => { onNiconico(data.videoId); setCtxMenu(null); }}>🌐 ニコニコで開く</MenuItem>
       )}
+      <AddToPlaylistMenuItem data={data} />
     </ContextMenuPopup>
   );
 
@@ -98,6 +103,7 @@ export function VideoCard({
           onNiconico={onNiconico}
           onUserPage={onUserPage}
           isDownloaded={isDownloaded}
+          onRemove={onRemove}
         />
         {menu}
       </div>
@@ -197,7 +203,7 @@ function Title({
         </button>
       )}
       <div
-        className="text-sm font-medium line-clamp-2"
+        className="text-sm font-medium line-clamp-2 min-h-[2.5em]"
         title={data.title}
       >
         {data.title}
@@ -209,7 +215,7 @@ function Title({
 function Stats({ data }: { data: VideoCardData }): JSX.Element {
   const hasStats = data.viewCount !== 0 || data.commentCount !== 0 || data.mylistCount !== 0 || (data.likeCount !== undefined && data.likeCount !== 0);
   return (
-    <div className="text-xs text-nndd-subtext flex flex-wrap gap-x-2 gap-y-0.5">
+    <div className="text-xs text-nndd-subtext flex flex-wrap gap-x-2 gap-y-0.5 min-h-[1.25em]">
       {hasStats && <>
         <span>▶ {fmt(data.viewCount)}</span>
         <span>💬 {fmt(data.commentCount)}</span>
@@ -230,7 +236,8 @@ function Actions({
   onOpenInfo,
   onNiconico,
   onUserPage,
-  isDownloaded = false
+  isDownloaded = false,
+  onRemove
 }: {
   data: VideoCardData;
   onPlay?: (id: string) => void;
@@ -239,6 +246,7 @@ function Actions({
   onNiconico?: (id: string) => void;
   onUserPage?: (userId: string) => void;
   isDownloaded?: boolean;
+  onRemove?: (id: string) => void;
 }): JSX.Element {
   return (
     <div className="flex gap-1 flex-wrap">
@@ -287,6 +295,15 @@ function Actions({
           className="text-xs px-2 py-0.5 bg-nndd-border rounded hover:bg-nndd-accent hover:text-white"
         >
           情報
+        </button>
+      )}
+      {onRemove && (
+        <button
+          onClick={() => onRemove(data.videoId)}
+          className="text-xs px-2 py-0.5 bg-nndd-border rounded hover:bg-red-600 hover:text-white"
+          title="削除"
+        >
+          削除
         </button>
       )}
     </div>

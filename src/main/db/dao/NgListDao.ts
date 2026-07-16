@@ -59,4 +59,11 @@ export class NgListDao {
   removeUp(userId: string): void {
     this.db.prepare(Q.DELETE_NG_UP).run(userId);
   }
+
+  /** 全NGリスト (コメント/タグ/ユーザー) を削除 */
+  clearAll(): void {
+    this.db.prepare(Q.DELETE_ALL_NG_LIST).run();
+    this.db.prepare(Q.DELETE_ALL_NG_TAG).run();
+    this.db.prepare(Q.DELETE_ALL_NG_UP).run();
+  }
 }

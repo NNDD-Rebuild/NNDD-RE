@@ -38,10 +38,18 @@ interface InitParams {
   audioOnly?: boolean;
   /** 自動再生による遷移か */
   autoNext?: boolean;
+  /** レジューム再生開始秒数 */
+  resumeSec?: number;
 }
 
 /** 視聴履歴記録: 再生開始から 10 秒経過した時点で 1 度だけ書き込む */
 const HISTORY_RECORD_THRESHOLD_SEC = 10;
+/** レジューム保存: これ未満の視聴では保存しない */
+const RESUME_MIN_WATCH_SEC = 30;
+/** レジューム保存: 終了間際 (残りこの秒数以下) は見終わったとみなしクリア */
+const RESUME_SKIP_END_SEC = 15;
+/** レジューム保存の間引き間隔 */
+const RESUME_SAVE_INTERVAL_MS = 5000;
 
 /**
  * 動画プレイヤーウィンドウのルートコンポーネント。
@@ -200,6 +208,10 @@ export default function PlayerApp(): JSX.Element {
   const webviewWrapperRef = useRef<HTMLDivElement>(null);
   const hideTimerRef = useRef<number | null>(null);
   const historyRecordedRef = useRef(false);
+  /** レジューム位置保存の間引きタイマー */
+  const lastResumeSaveAtRef = useRef(0);
+  /** レジューム位置クリア (終了間際判定) を1回だけ発行するためのフラグ */
+  const resumeFinishedRef = useRef(false);
   /** src切替後に再生位置を復元するためのRef (nndd-stream→nndd-re-local自動切替時、および画質変更時に使用) */
   const pendingSeekRef = useRef(0);
   /** イベントリスナー内でstaleにならないようvideo stateをrefでも持つ */
@@ -336,9 +348,9 @@ export default function PlayerApp(): JSX.Element {
             setSearchPlaylist([]);
           }
           if (params.localPath) {
-            await initLocal(params.localPath, params.localFiles, params.folderPlaylist);
+            await initLocal(params.localPath, params.localFiles, params.folderPlaylist, params.resumeSec);
           } else if (params.videoId) {
-            await initStreaming(params.videoId, isAudioOnly);
+            await initStreaming(params.videoId, isAudioOnly, params.resumeSec);
           } else if (params.streamUrl) {
             initStreamUrl(params.streamUrl);
           } else {
@@ -397,7 +409,7 @@ export default function PlayerApp(): JSX.Element {
     }
   };
 
-  const initStreaming = async (videoId: string, isAudioOnly?: boolean): Promise<void> => {
+  const initStreaming = async (videoId: string, isAudioOnly?: boolean, resumeSec?: number): Promise<void> => {
     const cached = preloadRef.current?.videoId === videoId ? preloadRef.current : null;
     preloadRef.current = null;
 
@@ -420,6 +432,7 @@ export default function PlayerApp(): JSX.Element {
       throw new Error(`チャンネル限定動画です。「${w.channel.name}」への加入が必要です。`);
     }
     historyRecordedRef.current = false;
+    resumeFinishedRef.current = false;
     playInfoRef.current = {
       videoId,
       title: w?.title ?? videoId,
@@ -461,7 +474,7 @@ export default function PlayerApp(): JSX.Element {
     }
 
     consecutiveSkipRef.current = 0;
-    pendingSeekRef.current = 0;
+    pendingSeekRef.current = resumeSec && resumeSec > 0 ? resumeSec : 0;
     if (stream.niconico) {
       setNiconicoMode(true);
       setSrc('');
@@ -504,6 +517,8 @@ export default function PlayerApp(): JSX.Element {
     setSrc(url);
     setIsHls(false);
     historyRecordedRef.current = false;
+    resumeFinishedRef.current = false;
+    pendingSeekRef.current = 0;
     const m = url.match(/\/((?:sm|nm|so|ax|sd|ca|cd|cw|zb|ze|yo)\d+)\/?$/);
     playInfoRef.current = {
       videoId: m ? m[1] : '',
@@ -516,7 +531,8 @@ export default function PlayerApp(): JSX.Element {
   const initLocal = async (
     localPath: string,
     files?: InitParams['localFiles'],
-    folderPlaylist?: string[]
+    folderPlaylist?: string[],
+    resumeSec?: number
   ): Promise<void> => {
     setIsLocal(true);
     setWatch(null);
@@ -537,9 +553,11 @@ export default function PlayerApp(): JSX.Element {
     }
     // IPC不要: URL はレンダラー側で直接構築
     consecutiveSkipRef.current = 0;
+    pendingSeekRef.current = resumeSec && resumeSec > 0 ? resumeSec : 0;
     setSrc(buildLocalUrl(localPath));
     setIsHls(false);
     historyRecordedRef.current = false;
+    resumeFinishedRef.current = false;
     // ローカルの場合 videoId はファイル名から推測 (例: [sm12345]タイトル.mp4)
     const m = localPath.match(/\[((?:sm|nm|so|ax|sd|ca|cd|cw|zb|ze|yo)\d+)\]/);
     const guessId = m ? m[1] : localPath;
@@ -899,6 +917,31 @@ export default function PlayerApp(): JSX.Element {
       const v = videoElementRef.current;
       const t = v?.currentTime ?? 0;
       window.nndd.send(IpcChannel.COMMENT_WINDOW_TIME, t);
+
+      if (v && v.duration > 0 && !audioOnlyRef.current) {
+        const now = Date.now();
+        if (now - lastResumeSaveAtRef.current >= RESUME_SAVE_INTERVAL_MS) {
+          lastResumeSaveAtRef.current = now;
+          const info = playInfoRef.current;
+          const remaining = v.duration - t;
+          if (info?.videoId && t >= RESUME_MIN_WATCH_SEC) {
+            if (remaining <= RESUME_SKIP_END_SEC) {
+              if (!resumeFinishedRef.current) {
+                resumeFinishedRef.current = true;
+                window.nndd.invoke(IpcChannel.RESUME_CLEAR, info.videoId).catch(() => {});
+              }
+            } else {
+              window.nndd
+                .invoke(IpcChannel.RESUME_SAVE, {
+                  videoKey: info.videoId,
+                  positionSec: t,
+                  durationSec: v.duration
+                })
+                .catch(() => {});
+            }
+          }
+        }
+      }
 
       if (v && !isLocalRef.current && preloadRef.current === null && v.duration > 0) {
         const remaining = v.duration - t;

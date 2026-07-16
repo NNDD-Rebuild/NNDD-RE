@@ -113,6 +113,37 @@ export const CREATE_TABLES = [
   `CREATE TABLE IF NOT EXISTS ng_up (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     userId TEXT UNIQUE
+  );`,
+
+  /* 自作プレイリスト (ローカル完結、サーバー同期なし) */
+  `CREATE TABLE IF NOT EXISTS playlist (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    createdAt REAL,
+    updatedAt REAL
+  );`,
+
+  /* プレイリスト内動画 (追加時のタイトル等スナップショットを保持) */
+  `CREATE TABLE IF NOT EXISTS playlist_item (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    playlist_id INTEGER NOT NULL,
+    videoId TEXT NOT NULL,
+    title TEXT,
+    thumbnailUrl TEXT,
+    lengthSec REAL,
+    sortOrder INTEGER NOT NULL,
+    addedAt REAL,
+    UNIQUE(playlist_id, videoId)
+  );`,
+
+  `CREATE INDEX IF NOT EXISTS playlist_item_order_idx ON playlist_item (playlist_id, sortOrder);`,
+
+  /* 動画ごとの再生位置レジューム */
+  `CREATE TABLE IF NOT EXISTS resume_position (
+    videoKey TEXT PRIMARY KEY,
+    positionSec REAL,
+    durationSec REAL,
+    updatedAt REAL
   );`
 ];
 
@@ -187,9 +218,12 @@ export const Q = {
     INSERT OR REPLACE INTO mylist (url, name, type, isDir, unPlayCount, lastRenewed)
     VALUES (?, ?, ?, ?, ?, ?);`,
   DELETE_MYLIST: `DELETE FROM mylist WHERE url = ?;`,
+  DELETE_ALL_MYLIST: `DELETE FROM mylist;`,
 
   // 履歴
   SELECT_HISTORY: `SELECT * FROM history ORDER BY watchedAt DESC LIMIT ?;`,
+  /** バックアップ用: 上限付きで全件相当を取得 */
+  SELECT_HISTORY_ALL: `SELECT * FROM history ORDER BY watchedAt DESC LIMIT ?;`,
   INSERT_HISTORY: `
     INSERT INTO history (videoId, title, thumbnailUrl, watchedAt, isLocal)
     VALUES (?, ?, ?, ?, ?);`,
@@ -202,6 +236,7 @@ export const Q = {
       (id, name, targetMyListUrl, daysOfWeek, time, enabled, lastRun)
     VALUES (?, ?, ?, ?, ?, ?, ?);`,
   DELETE_SCHEDULE: `DELETE FROM schedule WHERE id = ?;`,
+  DELETE_ALL_SCHEDULE: `DELETE FROM schedule;`,
 
   // 保存検索
   SELECT_SAVED_SEARCHES: `SELECT * FROM saved_search;`,
@@ -209,17 +244,47 @@ export const Q = {
     INSERT OR REPLACE INTO saved_search (id, name, word, type, sortType)
     VALUES (?, ?, ?, ?, ?);`,
   DELETE_SAVED_SEARCH: `DELETE FROM saved_search WHERE id = ?;`,
+  DELETE_ALL_SAVED_SEARCH: `DELETE FROM saved_search;`,
 
   // NGリスト
   SELECT_NG_LIST: `SELECT * FROM ng_list;`,
   INSERT_NG_LIST: `INSERT OR IGNORE INTO ng_list (type, value) VALUES (?, ?);`,
   DELETE_NG_LIST: `DELETE FROM ng_list WHERE type = ? AND value = ?;`,
+  DELETE_ALL_NG_LIST: `DELETE FROM ng_list;`,
 
   SELECT_NG_TAGS: `SELECT tag FROM ng_tag;`,
   INSERT_NG_TAG: `INSERT OR IGNORE INTO ng_tag (tag) VALUES (?);`,
   DELETE_NG_TAG: `DELETE FROM ng_tag WHERE tag = ?;`,
+  DELETE_ALL_NG_TAG: `DELETE FROM ng_tag;`,
 
   SELECT_NG_UPS: `SELECT userId FROM ng_up;`,
   INSERT_NG_UP: `INSERT OR IGNORE INTO ng_up (userId) VALUES (?);`,
-  DELETE_NG_UP: `DELETE FROM ng_up WHERE userId = ?;`
+  DELETE_NG_UP: `DELETE FROM ng_up WHERE userId = ?;`,
+  DELETE_ALL_NG_UP: `DELETE FROM ng_up;`,
+
+  // プレイリスト (完全ローカル)
+  SELECT_PLAYLISTS: `SELECT * FROM playlist ORDER BY name;`,
+  INSERT_PLAYLIST: `INSERT INTO playlist (name, createdAt, updatedAt) VALUES (?, ?, ?);`,
+  UPDATE_PLAYLIST_NAME: `UPDATE playlist SET name = ?, updatedAt = ? WHERE id = ?;`,
+  DELETE_PLAYLIST: `DELETE FROM playlist WHERE id = ?;`,
+  DELETE_ALL_PLAYLIST: `DELETE FROM playlist;`,
+
+  SELECT_PLAYLIST_ITEMS: `SELECT * FROM playlist_item WHERE playlist_id = ? ORDER BY sortOrder;`,
+  SELECT_PLAYLIST_ITEM_MAX_ORDER: `SELECT MAX(sortOrder) AS maxOrder FROM playlist_item WHERE playlist_id = ?;`,
+  INSERT_PLAYLIST_ITEM: `
+    INSERT OR IGNORE INTO playlist_item
+      (playlist_id, videoId, title, thumbnailUrl, lengthSec, sortOrder, addedAt)
+    VALUES (?, ?, ?, ?, ?, ?, ?);`,
+  DELETE_PLAYLIST_ITEM: `DELETE FROM playlist_item WHERE playlist_id = ? AND videoId = ?;`,
+  DELETE_PLAYLIST_ITEMS: `DELETE FROM playlist_item WHERE playlist_id = ?;`,
+  DELETE_ALL_PLAYLIST_ITEM: `DELETE FROM playlist_item;`,
+  UPDATE_PLAYLIST_ITEM_ORDER: `UPDATE playlist_item SET sortOrder = ? WHERE playlist_id = ? AND videoId = ?;`,
+  SELECT_PLAYLISTS_CONTAINING_VIDEO: `SELECT playlist_id FROM playlist_item WHERE videoId = ?;`,
+
+  // 再生位置レジューム
+  SELECT_RESUME: `SELECT * FROM resume_position WHERE videoKey = ?;`,
+  UPSERT_RESUME: `
+    INSERT OR REPLACE INTO resume_position (videoKey, positionSec, durationSec, updatedAt)
+    VALUES (?, ?, ?, ?);`,
+  DELETE_RESUME: `DELETE FROM resume_position WHERE videoKey = ?;`
 } as const;

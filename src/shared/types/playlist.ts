@@ -31,3 +31,35 @@ export interface HistoryItem {
   /** ローカルファイルかどうか */
   isLocal: boolean;
 }
+
+/**
+ * 自作プレイリスト (ローカル完結、サーバー同期なし)
+ */
+export interface Playlist {
+  id: number;
+  name: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * プレイリスト内の動画項目 (追加時のタイトル等スナップショット)
+ */
+export interface PlaylistItem {
+  videoId: string;
+  title: string;
+  thumbnailUrl: string;
+  lengthSec: number;
+  sortOrder: number;
+  addedAt: Date;
+}
+
+/**
+ * 動画ごとの再生位置レジューム
+ */
+export interface ResumePosition {
+  videoKey: string;
+  positionSec: number;
+  durationSec: number;
+  updatedAt: Date;
+}

@@ -49,4 +49,9 @@ export class ScheduleDao {
   remove(id: string): void {
     this.db.prepare(Q.DELETE_SCHEDULE).run(id);
   }
+
+  /** 全スケジュールを削除 */
+  clearAll(): void {
+    this.db.prepare(Q.DELETE_ALL_SCHEDULE).run();
+  }
 }
