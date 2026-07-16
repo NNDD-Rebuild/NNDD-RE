@@ -22,21 +22,19 @@ export class AuthManager {
 
   /**
    * ログイン状態を確認 (保存済みCookieの有効性)。
-   * Niconicome同様、トップページに HEAD/GET し、リダイレクト先で判断する。
+   *
+   * トップページ (NicoApi.TOP) は未ログインでも 200 を返すため、
+   * それでの判定は「実際はセッションが切れているのにログイン中と誤判定し続ける」
+   * バグを生む (起動時にセッション切れを検知できず、自動再ログインが発動しない)。
+   * 代わりにログイン必須の実APIを叩き、ステータスコードで判定する。
+   * ここで受け取る Set-Cookie は破棄しない (user_session 延長の恩恵を受ける)。
    */
   static async checkLoggedIn(): Promise<boolean> {
     const ctx = NicoContext.get();
     if (!(await ctx.isLoggedIn())) return false;
     try {
-      const res = await ctx.http.fetch(NicoApi.TOP, {
-        method: 'GET',
-        redirect: 'manual',
-        noCookieReceive: true
-      });
-      // ログインしていれば 200、未ログインなら 302 で /login へ
-      if (res.status === 200) return true;
-      const loc = res.headers.get('location') ?? '';
-      return !loc.includes('login');
+      const res = await ctx.http.fetch(NicoApi.MYLIST_API_BASE);
+      return res.status === 200;
     } catch (e) {
       log.warn('checkLoggedIn failed:', e);
       return false;
