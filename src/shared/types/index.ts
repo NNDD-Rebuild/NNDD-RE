@@ -6,4 +6,5 @@ export * from './search';
 export * from './ranking';
 export * from './watch';
 export * from './playlist';
+export * from './backup';
 export * from './ipc';
