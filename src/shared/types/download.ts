@@ -61,6 +61,8 @@ export interface DownloadQueueItem {
   saveDir: string;
   /** コメントのみダウンロードか */
   isCommentOnly: boolean;
+  /** 音声のみダウンロードか */
+  isAudioOnly: boolean;
   /** 開始時刻 */
   startTime: Date | null;
   /** 終了時刻 */

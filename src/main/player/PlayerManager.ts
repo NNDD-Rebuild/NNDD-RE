@@ -65,6 +65,7 @@ export class PlayerManager {
    * プレイヤーウィンドウを開く。既存ウィンドウがあれば再利用して新しい動画パラメータを送信。
    */
   open(params: OpenPlayerParams): BrowserWindow {
+    params = this.applyAudioOnlyDetection(params);
     if (this.windows.size > 0) {
       const [, existing] = [...this.windows.entries()][0];
       const resolved: OpenPlayerParams = { ...params };
@@ -154,6 +155,16 @@ export class PlayerManager {
 
     this.windows.set(win.id, win);
     return win;
+  }
+
+  /**
+   * localPath の拡張子が .m4a (音声のみDL済みファイル) なら audioOnly を強制する。
+   */
+  private applyAudioOnlyDetection(params: OpenPlayerParams): OpenPlayerParams {
+    if (params.localPath && path.extname(params.localPath).toLowerCase() === '.m4a') {
+      return { ...params, audioOnly: true };
+    }
+    return params;
   }
 
   /**

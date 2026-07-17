@@ -38,6 +38,10 @@ export function LibrarySettings(): JSX.Element {
     'comment429RetryWaitSec',
     60
   );
+  const [skipCommentsOnAudioOnly, setSkipCommentsOnAudioOnly] = useConfig<boolean>(
+    'skipCommentsOnAudioOnly',
+    false
+  );
   const [useNativeVideoDownloader, setUseNativeVideoDownloader] = useConfig<boolean>(
     'useNativeVideoDownloader',
     true
@@ -145,6 +149,16 @@ export function LibrarySettings(): JSX.Element {
           <span className="text-xs text-nndd-subtext ml-2">
             (DL時間が大幅増加する場合あり)
           </span>
+        </Row>
+        <Row label="音声のみDL時のコメント">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={skipCommentsOnAudioOnly}
+              onChange={(e) => setSkipCommentsOnAudioOnly(e.target.checked)}
+            />
+            <span className="text-sm">音声のみダウンロード時はコメントを取得しない</span>
+          </label>
         </Row>
         <Row label="動画DL方式">
           <label className="flex items-center gap-2 cursor-pointer">

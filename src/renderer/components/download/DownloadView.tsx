@@ -161,6 +161,16 @@ export function DownloadView(): JSX.Element {
                   <td>{statusLabel(it.status)}</td>
                   <td title={it.videoId}>
                     {it.videoName || it.videoId}
+                    {it.isAudioOnly && (
+                      <span className="ml-1.5 text-xs px-1 py-0.5 rounded bg-purple-700 text-white" title="音声のみダウンロード">
+                        ♪ 音声のみ
+                      </span>
+                    )}
+                    {it.isCommentOnly && (
+                      <span className="ml-1.5 text-xs px-1 py-0.5 rounded bg-nndd-border" title="コメントのみ再取得">
+                        💬 コメントのみ
+                      </span>
+                    )}
                     <span className="text-nndd-subtext ml-2 text-xs">
                       ({it.videoId})
                     </span>

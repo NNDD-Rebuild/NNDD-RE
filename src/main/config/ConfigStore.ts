@@ -53,6 +53,12 @@ export interface NnddConfig {
   downloadAllComments: boolean;
 
   /**
+   * 音声のみダウンロード時はコメント (過去ログ・今コメ双方) を取得しないか。
+   * デフォルト false (通常DLと同様にコメントも取得する)。
+   */
+  skipCommentsOnAudioOnly: boolean;
+
+  /**
    * コメント取得で HTTP 429 が来た時の待機秒数。
    * 0 = リトライなし (即 break)。デフォルト 60。
    */
@@ -253,6 +259,7 @@ const DEFAULTS: NnddConfig = {
   ffmpegPath: '',
   downloadEasyComments: false,
   downloadAllComments: false,
+  skipCommentsOnAudioOnly: false,
   comment429RetryWaitSec: 60,
   cacheRoot: '',
   player: {

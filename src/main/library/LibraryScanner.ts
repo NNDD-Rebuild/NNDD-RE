@@ -22,7 +22,7 @@ export class LibraryScanner {
   /**
    * 動画ファイル拡張子
    */
-  static VIDEO_EXTS = ['.mp4', '.flv', '.swf', '.webm', '.mkv'];
+  static VIDEO_EXTS = ['.mp4', '.flv', '.swf', '.webm', '.mkv', '.m4a'];
 
   /**
    * ライブラリディレクトリ全体をスキャン。

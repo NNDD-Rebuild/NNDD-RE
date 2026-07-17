@@ -177,10 +177,14 @@ export function SearchView(): JSX.Element {
     window.nndd.invoke(window.nndd.channels.VIDEO_OPEN_PLAYER, { videoId, audioOnly: true });
   };
 
-  const handleDownload = (videoId: string): void => {
-    const commentOnly = downloadedIds.has(videoId);
-    window.nndd.invoke(window.nndd.channels.DOWNLOAD_ENQUEUE, { videoId, commentOnly });
-    showToast(commentOnly ? 'コメントのみDLリストに追加しました' : 'DLリストに追加しました');
+  const handleDownload = (videoId: string, audioOnly?: boolean): void => {
+    const commentOnly = !audioOnly && downloadedIds.has(videoId);
+    window.nndd.invoke(window.nndd.channels.DOWNLOAD_ENQUEUE, { videoId, commentOnly, audioOnly });
+    showToast(
+      audioOnly ? '音声のみDLリストに追加しました'
+        : commentOnly ? 'コメントのみDLリストに追加しました'
+        : 'DLリストに追加しました'
+    );
   };
 
   const handleSave = async (): Promise<void> => {

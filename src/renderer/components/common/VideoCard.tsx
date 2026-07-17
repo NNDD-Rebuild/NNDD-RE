@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { AddToPlaylistMenuItem } from './AddToPlaylistMenuItem';
 
 /**
@@ -28,7 +28,8 @@ export interface VideoCardData {
 interface Props {
   data: VideoCardData;
   onPlay?: (videoId: string) => void;
-  onDownload?: (videoId: string) => void;
+  /** ダウンロード。第2引数 true で音声のみDL */
+  onDownload?: (videoId: string, audioOnly?: boolean) => void;
   onOpenInfo?: (videoId: string) => void;
   /** ニコニコで開く */
   onNiconico?: (videoId: string) => void;
@@ -241,7 +242,7 @@ function Actions({
 }: {
   data: VideoCardData;
   onPlay?: (id: string) => void;
-  onDownload?: (id: string) => void;
+  onDownload?: (id: string, audioOnly?: boolean) => void;
   onOpenInfo?: (id: string) => void;
   onNiconico?: (id: string) => void;
   onUserPage?: (userId: string) => void;
@@ -259,17 +260,11 @@ function Actions({
         </button>
       )}
       {onDownload && (
-        <button
-          onClick={() => onDownload(data.videoId)}
-          className={
-            isDownloaded
-              ? 'text-xs px-2 py-0.5 bg-green-700 text-white rounded hover:bg-green-600'
-              : 'text-xs px-2 py-0.5 bg-nndd-border rounded hover:bg-nndd-accent hover:text-white'
-          }
-          title={isDownloaded ? 'コメントのみ再取得' : 'ダウンロード'}
-        >
-          {isDownloaded ? 'DL' : 'DL'}
-        </button>
+        <DownloadSplitButton
+          videoId={data.videoId}
+          isDownloaded={isDownloaded}
+          onDownload={onDownload}
+        />
       )}
       {onNiconico && (
         <button
@@ -305,6 +300,60 @@ function Actions({
         >
           削除
         </button>
+      )}
+    </div>
+  );
+}
+
+function DownloadSplitButton({
+  videoId,
+  isDownloaded,
+  onDownload
+}: {
+  videoId: string;
+  isDownloaded: boolean;
+  onDownload: (videoId: string, audioOnly?: boolean) => void;
+}): JSX.Element {
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+
+  const baseCls = isDownloaded
+    ? 'bg-green-700 text-white hover:bg-green-600'
+    : 'bg-nndd-border hover:bg-nndd-accent hover:text-white';
+
+  return (
+    <div className="relative inline-flex">
+      <button
+        onClick={() => onDownload(videoId)}
+        className={`text-xs px-2 py-0.5 rounded-l ${baseCls}`}
+        title={isDownloaded ? 'コメントのみ再取得' : 'ダウンロード'}
+      >
+        DL
+      </button>
+      <button
+        ref={btnRef}
+        onClick={() => {
+          if (menuPos) {
+            setMenuPos(null);
+          } else {
+            const r = btnRef.current?.getBoundingClientRect();
+            if (r) setMenuPos({ x: r.left, y: r.bottom });
+          }
+        }}
+        className={`text-[9px] px-0.5 py-0.5 rounded-r border-l border-white/30 ${baseCls}`}
+        title="ダウンロード方式を選択"
+      >
+        ▼
+      </button>
+      {menuPos && (
+        <ContextMenuPopup x={menuPos.x} y={menuPos.y} onClose={() => setMenuPos(null)}>
+          <MenuItem onClick={() => { onDownload(videoId, false); setMenuPos(null); }}>
+            ⬇ 通常ダウンロード
+          </MenuItem>
+          <MenuItem onClick={() => { onDownload(videoId, true); setMenuPos(null); }}>
+            ♪ 音声のみダウンロード
+          </MenuItem>
+        </ContextMenuPopup>
       )}
     </div>
   );

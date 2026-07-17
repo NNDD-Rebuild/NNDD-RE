@@ -4,10 +4,12 @@ import type { WatchPageInfo, VariantStreamData } from '@shared/types';
 import { NicoContext } from '../NicoContext';
 import { WatchSession } from './WatchSession';
 import { M3U8Parser } from './M3U8Parser';
+import type { MasterPlaylist } from './M3U8Parser';
 import { SegmentDownloader } from './SegmentDownloader';
 import { FFmpegManager } from './FFmpegManager';
 import { MediabunnyMuxer } from './MediabunnyMuxer';
 import { StreamJsonWriter } from './StreamJsonWriter';
+import { concatBinary } from './SegmentConcat';
 import { createLogger } from '../../util/Logger';
 import { getConfigStore } from '../../config/ConfigStore';
 
@@ -26,6 +28,8 @@ export interface VideoDownloadOptions {
   onPhaseChange?: (phase: VideoDownloadPhase, detail?: string) => void;
   onProgress?: (done: number, total: number) => void;
   signal?: AbortSignal;
+  /** 音声のみダウンロード (映像トラックを取得しない) */
+  audioOnly?: boolean;
 }
 
 export type VideoDownloadPhase =
@@ -60,18 +64,119 @@ export class VideoDownloader {
     const session = new WatchSession(watch);
     try {
       opts.onPhaseChange?.('session');
-      const sessionResult = await session.ensure();
+      const sessionResult = await session.ensure(opts.audioOnly);
       log.info('session ensured:', sessionResult.contentUrl);
 
       opts.onPhaseChange?.('master_playlist');
       const ctx = NicoContext.get();
       const masterText = await ctx.http.getText(sessionResult.contentUrl);
       const master = M3U8Parser.parseMaster(masterText, sessionResult.contentUrl);
-      if (master.streams.length === 0) {
-        throw new Error('master playlistから映像ストリームが見つかりません');
+
+      if (opts.audioOnly) {
+        await this.downloadAudioOnly(master, masterText, sessionResult.contentUrl, opts);
+      } else {
+        await this.downloadWithVideo(master, opts);
       }
 
-      // 最高解像度を選択
+      opts.onPhaseChange?.('done');
+    } finally {
+      session.dispose();
+    }
+  }
+
+  /**
+   * 音声のみダウンロード。
+   * HLS fMP4 の audio init+segment は init+segment を単純連結するだけで
+   * 有効な .m4a になるため、mux (ffmpeg/mediabunny) 工程を経由しない。
+   */
+  private static async downloadAudioOnly(
+    master: MasterPlaylist,
+    masterText: string,
+    masterUrl: string,
+    opts: VideoDownloadOptions
+  ): Promise<void> {
+    const ctx = NicoContext.get();
+
+    opts.onPhaseChange?.('variant_playlist');
+    let audioVariantText: string;
+    let audioVariantUrl: string;
+    if (master.audios.length > 0) {
+      const chosenAudio = master.audios[0];
+      audioVariantText = await ctx.http.getText(chosenAudio.url);
+      audioVariantUrl = chosenAudio.url;
+    } else if (master.streams.length > 0) {
+      // DMS が音声トラックを #EXT-X-STREAM-INF (video用と同じタグ) で提供する場合
+      log.info('master playlistのSTREAM-INFを音声トラックとして解釈します');
+      const chosenStream = master.streams[0];
+      audioVariantText = await ctx.http.getText(chosenStream.url);
+      audioVariantUrl = chosenStream.url;
+    } else {
+      // DMS は音声トラック単体指定 (outputs=[[audio.id]]) の場合、
+      // master m3u8 ではなく variant m3u8 (セグメント一覧) を直接返すことがある。
+      // その場合 contentUrl 自体を variant playlist として扱う。
+      log.info('master playlistに音声トラック定義なし。contentUrlをvariant playlistとして解釈します');
+      audioVariantText = masterText;
+      audioVariantUrl = masterUrl;
+    }
+    log.debug('audio variant playlist text:', audioVariantText);
+    const audioVariant = M3U8Parser.parseVariant(
+      audioVariantText,
+      audioVariantUrl
+    );
+    if (!audioVariant.mapUrl) {
+      throw new Error('init segment が見つかりません');
+    }
+
+    opts.onPhaseChange?.('key');
+    let audioKey: Buffer | undefined;
+    let audioIv: Buffer | undefined;
+    if (audioVariant.key) {
+      audioKey = await ctx.http.getBinary(audioVariant.key.url);
+      audioIv = audioVariant.key.iv
+        ? this.parseIv(audioVariant.key.iv)
+        : Buffer.alloc(16);
+    }
+
+    const audioDir = path.join(opts.tempDir, 'audio');
+    fs.mkdirSync(audioDir, { recursive: true });
+    const audioInitPath = path.join(audioDir, audioVariant.mapFilename!);
+    if (!fs.existsSync(audioInitPath)) {
+      const buf = await ctx.http.getBinary(audioVariant.mapUrl);
+      fs.writeFileSync(audioInitPath, buf);
+    }
+
+    opts.onPhaseChange?.('audio_segments');
+    await SegmentDownloader.downloadAll(audioVariant.segments, {
+      outputDir: audioDir,
+      key: audioKey,
+      iv: audioIv,
+      concurrency: opts.concurrency,
+      maxRetries: opts.maxRetries,
+      onProgress: opts.onProgress,
+      signal: opts.signal
+    });
+
+    opts.onPhaseChange?.('merge');
+    fs.mkdirSync(path.dirname(opts.outputPath), { recursive: true });
+    concatBinary(
+      [
+        audioInitPath,
+        ...audioVariant.segments.map((s) => path.join(audioDir, s.filename))
+      ],
+      opts.outputPath
+    );
+  }
+
+  private static async downloadWithVideo(
+    master: MasterPlaylist,
+    opts: VideoDownloadOptions
+  ): Promise<void> {
+    const ctx = NicoContext.get();
+    if (master.streams.length === 0) {
+      throw new Error('master playlistから映像ストリームが見つかりません');
+    }
+
+    // 最高解像度を選択
       master.streams.sort((a, b) => b.bandwidth - a.bandwidth);
       const chosenVideo = master.streams[0];
       const chosenAudio =
@@ -208,11 +313,6 @@ export class VideoDownloader {
       } else {
         await FFmpegManager.merge(mergeOpts);
       }
-
-      opts.onPhaseChange?.('done');
-    } finally {
-      session.dispose();
-    }
   }
 
   private static parseIv(ivHex: string): Buffer {

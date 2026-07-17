@@ -298,10 +298,14 @@ export function FollowView(): JSX.Element {
   const handlePlayAudioOnly = (videoId: string): void => {
     window.nndd.invoke(window.nndd.channels.VIDEO_OPEN_PLAYER, { videoId, audioOnly: true });
   };
-  const handleDownload = (videoId: string): void => {
-    const commentOnly = downloadedIds.has(videoId);
-    window.nndd.invoke(window.nndd.channels.DOWNLOAD_ENQUEUE, { videoId, commentOnly });
-    showToast(commentOnly ? 'コメントのみDLリストに追加しました' : 'DLリストに追加しました');
+  const handleDownload = (videoId: string, audioOnly?: boolean): void => {
+    const commentOnly = !audioOnly && downloadedIds.has(videoId);
+    window.nndd.invoke(window.nndd.channels.DOWNLOAD_ENQUEUE, { videoId, commentOnly, audioOnly });
+    showToast(
+      audioOnly ? '音声のみDLリストに追加しました'
+        : commentOnly ? 'コメントのみDLリストに追加しました'
+        : 'DLリストに追加しました'
+    );
   };
   const handleNiconico = (videoId: string): void => {
     window.nndd.invoke(window.nndd.channels.SYS_OPEN_PATH, `https://www.nicovideo.jp/watch/${videoId}`);

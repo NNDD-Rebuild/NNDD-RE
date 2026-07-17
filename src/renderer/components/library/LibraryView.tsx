@@ -692,6 +692,11 @@ export function LibraryView(): JSX.Element {
                             {formatDuration(v.time)}
                           </span>
                         )}
+                        {isAudioOnlyVideo(v) && (
+                          <span className="absolute left-1 top-1 bg-purple-600 text-white text-[10px] px-1 rounded" title="音声のみ">
+                            ♪ 音声のみ
+                          </span>
+                        )}
                       </div>
                       <div className="p-1.5 bg-nndd-panel flex-1 flex flex-col gap-0.5">
                         <div className="text-xs line-clamp-2 leading-tight" title={v.videoName}>
@@ -748,7 +753,14 @@ export function LibraryView(): JSX.Element {
                             }}
                           />
                         </td>
-                        <td title={v.videoName}>{v.videoName}</td>
+                        <td title={v.videoName}>
+                          {v.videoName}
+                          {isAudioOnlyVideo(v) && (
+                            <span className="ml-1.5 text-[10px] px-1 py-0.5 rounded bg-purple-600 text-white" title="音声のみ">
+                              ♪ 音声のみ
+                            </span>
+                          )}
+                        </td>
                         <td>{formatDuration(v.time)}</td>
                         <td>{v.playCount}</td>
                         <td>{v.pubDate ? v.pubDate.toLocaleDateString('ja-JP') : '-'}</td>
@@ -795,6 +807,10 @@ function TabBtn({
       {children}
     </button>
   );
+}
+
+function isAudioOnlyVideo(v: NNDDREVideo): boolean {
+  return v.uri.toLowerCase().endsWith('.m4a');
 }
 
 function formatDuration(sec: number): string {

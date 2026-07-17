@@ -1527,7 +1527,7 @@ export function registerIpcHandlers(
   ipcMain.handle(IpcChannel.LIBRARY_FOLDER_VIDEOS, async (_e, folderPath: string) => {
     const fsmod = await import('node:fs');
     const pmod = await import('node:path');
-    const VIDEO_EXTS = new Set(['.mp4', '.flv', '.swf', '.webm', '.mkv']);
+    const VIDEO_EXTS = new Set(['.mp4', '.flv', '.swf', '.webm', '.mkv', '.m4a']);
     if (!fsmod.existsSync(folderPath)) return [];
     try {
       return fsmod.readdirSync(folderPath)

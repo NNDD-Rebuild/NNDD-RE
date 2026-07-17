@@ -51,6 +51,8 @@ export interface EnqueueOptions {
   saveDir?: string;
   /** コメントのみ */
   commentOnly?: boolean;
+  /** 音声のみ (.m4a、映像トラックなし) */
+  audioOnly?: boolean;
 }
 
 /**
@@ -92,6 +94,7 @@ export class DownloadManager extends EventEmitter {
         opts.saveDir ??
         this.library.videoDir,
       isCommentOnly: opts.commentOnly ?? false,
+      isAudioOnly: opts.audioOnly ?? false,
       startTime: null,
       endTime: null,
       errorMessage: null
@@ -200,11 +203,12 @@ export class DownloadManager extends EventEmitter {
       const baseDir = item.saveDir;
       fs.mkdirSync(baseDir, { recursive: true });
       const baseName = LocalFileNaming.baseName(watch.title, watch.videoId);
+      const skipComments = item.isAudioOnly && (getConfigStore().get('skipCommentsOnAudioOnly') ?? false);
 
       // コメント取得
       // コメント全量取得 (過去ログ含む — fetchAllComments でループ遡り)
       this.updateStatus(item, DownloadStatusType.COMMENT);
-      if (getConfigStore().get('downloadAllComments') !== false) {
+      if (!skipComments && getConfigStore().get('downloadAllComments') !== false) {
       try {
         const comments = await CommentClient.fetchAllComments(watch, {
           includeEasy: getConfigStore().get('downloadEasyComments') ?? false,
@@ -249,6 +253,7 @@ export class DownloadManager extends EventEmitter {
 
       // [NowComment].json: fetchComments (ストリーミング今コメ相当) の no 一覧を保存
       // → ローカル再生時に fetchAllComments XML から今コメを再現するために使用
+      if (!skipComments) {
       try {
         const nowComments = await CommentClient.fetchComments(watch);
         LocalFileHandler.writeNowCommentJson(
@@ -258,6 +263,7 @@ export class DownloadManager extends EventEmitter {
       } catch (e) {
         log.warn('now comment fetch failed (continuing):', e);
       }
+      } // skipComments
 
       // サムネ取得
       this.updateStatus(item, DownloadStatusType.THUMB);
@@ -283,9 +289,10 @@ export class DownloadManager extends EventEmitter {
 
       // 動画ダウンロード (コメントのみモードでなければ)
       if (!item.isCommentOnly) {
+        const ext = item.isAudioOnly ? 'm4a' : 'mp4';
         const outputPath = path.join(
           baseDir,
-          LocalFileNaming.videoFileName(watch.title, watch.videoId, 'mp4')
+          LocalFileNaming.videoFileName(watch.title, watch.videoId, ext)
         );
 
         this.updateStatus(item, DownloadStatusType.VIDEO);
@@ -295,7 +302,7 @@ export class DownloadManager extends EventEmitter {
         const video: NNDDREVideo = {
           id: 0,
           uri: outputPath,
-          videoName: `${baseName}.mp4`,
+          videoName: `${baseName}.${ext}`,
           tagStrings: watch.tags,
           modificationDate: new Date(),
           creationDate: new Date(),
@@ -317,19 +324,21 @@ export class DownloadManager extends EventEmitter {
       if (!item.isCommentOnly) {
         const videoPath = path.join(
           baseDir,
-          LocalFileNaming.videoFileName(watch.title, watch.videoId, 'mp4')
+          LocalFileNaming.videoFileName(watch.title, watch.videoId, item.isAudioOnly ? 'm4a' : 'mp4')
         );
         if (!fs.existsSync(videoPath)) {
           throw new Error(`動画ファイルが見つかりません (DL後検証): ${videoPath}`);
         }
 
         const missingSecondary: string[] = [];
-        if (getConfigStore().get('downloadAllComments') !== false) {
-          const p = path.join(baseDir, LocalFileNaming.commentXmlFileName(watch.title, watch.videoId));
-          if (!fs.existsSync(p)) missingSecondary.push('コメントXML');
+        if (!skipComments) {
+          if (getConfigStore().get('downloadAllComments') !== false) {
+            const p = path.join(baseDir, LocalFileNaming.commentXmlFileName(watch.title, watch.videoId));
+            if (!fs.existsSync(p)) missingSecondary.push('コメントXML');
+          }
+          const nowCommentPath = path.join(baseDir, LocalFileNaming.nowCommentJsonFileName(watch.title, watch.videoId));
+          if (!fs.existsSync(nowCommentPath)) missingSecondary.push('今コメJSON');
         }
-        const nowCommentPath = path.join(baseDir, LocalFileNaming.nowCommentJsonFileName(watch.title, watch.videoId));
-        if (!fs.existsSync(nowCommentPath)) missingSecondary.push('今コメJSON');
         const thumbInfoPath = path.join(baseDir, LocalFileNaming.thumbInfoXmlFileName(watch.title, watch.videoId));
         if (!fs.existsSync(thumbInfoPath)) missingSecondary.push('ThumbInfo');
         const thumbImagePath = path.join(baseDir, LocalFileNaming.thumbImageFileName(watch.title, watch.videoId));
@@ -383,6 +392,45 @@ export class DownloadManager extends EventEmitter {
     signal: AbortSignal
   ): Promise<void> {
     const useNative = getConfigStore().get('useNativeVideoDownloader') ?? true;
+
+    if (item.isAudioOnly) {
+      if (!useNative) {
+        throw new Error(
+          '音声のみダウンロードは yt-dlp フォールバックに対応していません。設定の「ネイティブ動画ダウンローダーを使用」を有効にしてください。'
+        );
+      }
+      const tempDir = path.join(os.tmpdir(), 'nndd-video-dl', item.id);
+      try {
+        await VideoDownloader.download(watch, {
+          outputPath,
+          tempDir,
+          signal,
+          audioOnly: true,
+          onPhaseChange: (phase) => {
+            item.message = phase === 'merge' ? '音声セグメント結合中' : NATIVE_PHASE_LABEL[phase];
+            const status = NATIVE_PHASE_STATUS[phase];
+            if (status) {
+              this.updateStatus(item, status);
+            } else {
+              this.emit('change', item);
+            }
+            if (phase === 'merge') item.progress = 0.95;
+          },
+          onProgress: (done, total) => {
+            if (total <= 0) return;
+            const pct = done / total;
+            item.progress = pct * 0.9;
+            item.message = `${NATIVE_PHASE_LABEL['audio_segments']} ${(item.progress * 100).toFixed(1)}% (${done}/${total})`;
+            this.emit('change', item);
+          }
+        });
+      } finally {
+        fs.promises.rm(tempDir, { recursive: true, force: true }).catch((e) => {
+          log.warn('native audio download tempDir cleanup failed:', e);
+        });
+      }
+      return;
+    }
 
     if (useNative) {
       const tempDir = path.join(os.tmpdir(), 'nndd-video-dl', item.id);
