@@ -253,7 +253,7 @@ export function PlayerSettings(): JSX.Element {
                     className="mt-0.5"
                   />
                   <span>
-                    HLS即時再生（yt-dlp）
+                    HLS即時再生（プロキシ）
                     <span className="block text-nndd-subtext">
                       HLS proxy 経由でニコニコCDNにアクセス。
                     </span>

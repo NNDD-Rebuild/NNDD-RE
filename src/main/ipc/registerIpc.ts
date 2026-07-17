@@ -684,7 +684,7 @@ export function registerIpcHandlers(
   // ストリーミング再生。
   // streamingMode:
   //   'native':   hls.js でニコニコCDNに直接アクセス (session.webRequest でCookie/CORS処理)
-  //   'hls':      HLS プロキシで即時再生 (StreamServer+HlsProxy 経由, yt-dlp ベース)
+  //   'hls':      HLS プロキシで即時再生 (StreamServer+HlsProxy 経由、URL書き換えのみ)
   //   'niconico': 公式プレイヤー webview 埋め込み
   ipcMain.handle(IpcChannel.VIDEO_GET_STREAM_URL, async (_e, videoId: string, watchInfo?: WatchPageInfo, audioOnly?: boolean, videoQualityId?: string) => {
     const mode = getConfigStore().get('player').streamingMode ?? 'native';
