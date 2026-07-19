@@ -115,10 +115,9 @@ export function VideoPlayer({
     const isHlsResolved = isHls ?? /\.m3u8(\?|$)/i.test(src);
 
     if (isHlsResolved) {
-      const resumeAt = pendingSeekRef && pendingSeekRef.current > 0 ? pendingSeekRef.current : 0;
-      if (pendingSeekRef && pendingSeekRef.current > 0) {
-        pendingSeekRef.current = 0;
-      }
+      // pendingSeekRef のリセットは実際にシークを適用した後に行う (React.StrictMode の
+      // 二重effect実行で1回目が先に消費してしまい、2回目 (実際に残る方) でシークされなくなるのを防ぐ)
+      const resumeAt = pendingSeekRef?.current ?? 0;
 
       // Safari 互換ブラウザは native HLS
       if (video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -126,6 +125,7 @@ export function VideoPlayer({
         if (resumeAt > 0) {
           video.addEventListener('loadedmetadata', () => {
             video.currentTime = resumeAt;
+            if (pendingSeekRef) pendingSeekRef.current = 0;
           }, { once: true });
         }
         video.play().catch(() => {});
@@ -144,6 +144,7 @@ export function VideoPlayer({
         hls.loadSource(src);
         hls.on(Hls.Events.MANIFEST_PARSED, () => {
           video.play().catch(() => {});
+          if (pendingSeekRef && resumeAt > 0) pendingSeekRef.current = 0;
         });
         hls.on(Hls.Events.ERROR, (_e, data) => {
           if (data.fatal) {
@@ -185,9 +186,9 @@ export function VideoPlayer({
       }, { once: true });
       if (pendingSeekRef && pendingSeekRef.current > 0) {
         const seekTo = pendingSeekRef.current;
-        pendingSeekRef.current = 0;
         video.addEventListener('loadedmetadata', () => {
           video.currentTime = seekTo;
+          pendingSeekRef.current = 0;
         }, { once: true });
       }
       video.play().catch(() => {});

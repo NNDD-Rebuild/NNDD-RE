@@ -158,6 +158,8 @@ export interface NnddConfig {
     controlUiSize: 'small' | 'normal' | 'large';
     /** 動画リンク (sm/nm/so/ss) をNNDD-REプレイヤーで開く */
     openVideoLinkInPlayer: boolean;
+    /** 前回の再生位置から続きを再生する (OFF時は常に最初から再生) */
+    resumePlayback: boolean;
   };
 
   /** UI 設定 */
@@ -290,7 +292,8 @@ const DEFAULTS: NnddConfig = {
       mail: 48
     },
     controlUiSize: 'normal',
-    openVideoLinkInPlayer: false
+    openVideoLinkInPlayer: false,
+    resumePlayback: false
   },
   ui: {
     theme: 'dark',

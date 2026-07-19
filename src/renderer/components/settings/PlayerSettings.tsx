@@ -79,6 +79,10 @@ export function PlayerSettings(): JSX.Element {
     'player.openVideoLinkInPlayer',
     false
   );
+  const [resumePlayback, setResumePlayback] = useConfig<boolean>(
+    'player.resumePlayback',
+    false
+  );
 
   return (
     <div className="p-4 max-w-3xl">
@@ -401,6 +405,16 @@ export function PlayerSettings(): JSX.Element {
           />
           <p className="text-xs text-nndd-subtext mt-0.5">
             動画説明文の sm/nm/so 等のリンクをNNDD-REでストリーミング再生
+          </p>
+        </Row>
+        <Row label="続きから再生する">
+          <input
+            type="checkbox"
+            checked={resumePlayback}
+            onChange={(e) => setResumePlayback(e.target.checked)}
+          />
+          <p className="text-xs text-nndd-subtext mt-0.5">
+            前回の再生位置を記憶し、次回開いた時に続きから再生 (OFF時は常に最初から)
           </p>
         </Row>
         <Row label="コントロールUIサイズ">

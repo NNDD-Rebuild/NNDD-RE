@@ -642,7 +642,8 @@ export function registerIpcHandlers(
         return true;
       }
 
-      const resume = params.videoId ? library.resumeDao.get(params.videoId) : null;
+      const resumePlaybackEnabled = getConfigStore().get('player').resumePlayback;
+      const resume = resumePlaybackEnabled && params.videoId ? library.resumeDao.get(params.videoId) : null;
       const resumeSec = resume && resume.positionSec > 3 ? resume.positionSec : undefined;
 
       // videoId のみ指定 → ライブラリに DL 済みファイルがあればローカル再生を優先

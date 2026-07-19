@@ -269,6 +269,7 @@ export function LibraryView(): JSX.Element {
       .map((x) => x.uri);
     window.nndd.invoke(window.nndd.channels.VIDEO_OPEN_PLAYER, {
       localPath: v.uri,
+      videoId: extractVideoId(v.videoName) ?? undefined,
       folderPlaylist: folderPlaylist.length > 1 ? folderPlaylist : undefined
     });
   };
@@ -634,8 +635,10 @@ export function LibraryView(): JSX.Element {
                     : selected !== null
                     ? sorted.findIndex((x) => x.id === selected)
                     : 0;
+                  const startVideo = sorted[startIdx >= 0 ? startIdx : 0];
                   window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
-                    localPath: sorted[startIdx >= 0 ? startIdx : 0].uri,
+                    localPath: startVideo.uri,
+                    videoId: extractVideoId(startVideo.videoName) ?? undefined,
                     folderPlaylist: paths,
                     audioOnly: audioOnly || undefined,
                   });

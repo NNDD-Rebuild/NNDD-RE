@@ -1195,6 +1195,7 @@ export default function PlayerApp(): JSX.Element {
             isHls={isHls}
             comments={[]}
             videoRefCallback={setVideoWithRef}
+            pendingSeekRef={pendingSeekRef}
             videoId={watch?.videoId ?? playInfoRef.current?.videoId}
             className="w-0 h-0"
             audioOnly
