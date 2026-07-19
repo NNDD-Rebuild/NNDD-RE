@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { ipcMain, dialog, shell, app, BrowserWindow, webContents, WebContentsView, nativeTheme, session } from 'electron';
+import type { Session } from 'electron';
 import { IpcChannel } from '@shared/types';
 import { LibraryManager } from '../db/LibraryManager';
 import { getConfigStore } from '../config/ConfigStore';
@@ -709,11 +710,14 @@ export function registerIpcHandlers(
 
     // --- native モード: hls.js でニコニコCDNに直接アクセス ---
     if (mode === 'native') {
-      let session: { contentUrl: string; isDMS: boolean };
+      let session: { contentUrl: string; isDMS: boolean; domandBidCookie: string | null };
       try {
         session = await ensureStreamSession(videoId, watchInfo, audioOnly, videoQualityId);
       } catch (e) {
         return { contentUrl: null, isDMS: false, error: String(e) };
+      }
+      if (session.domandBidCookie) {
+        await injectDomandBidCookie(_e.sender.session, session.domandBidCookie);
       }
       log.verbose('native: direct stream', videoId, audioOnly ? '(audioOnly)' : '', '→', session.contentUrl.slice(0, 80));
       return { contentUrl: session.contentUrl, isDMS: session.isDMS, isHls: true };
@@ -721,11 +725,14 @@ export function registerIpcHandlers(
 
     // --- hls モード: HLS プロキシで即時再生 (yt-dlp ベース) ---
     if (mode === 'hls') {
-      let session: { contentUrl: string; isDMS: boolean };
+      let session: { contentUrl: string; isDMS: boolean; domandBidCookie: string | null };
       try {
         session = await ensureStreamSession(videoId, watchInfo, audioOnly, videoQualityId);
       } catch (e) {
         return { contentUrl: null, isDMS: false, error: String(e) };
+      }
+      if (session.domandBidCookie) {
+        await injectDomandBidCookie(_e.sender.session, session.domandBidCookie);
       }
       const proxyBase = buildHlsProxyBase(videoId);
       const proxyMasterUrl = encodeProxyUrl(session.contentUrl, 'm3u8', proxyBase);
@@ -1629,7 +1636,7 @@ async function ensureStreamSession(
   watchInfo: WatchPageInfo | undefined,
   audioOnly: boolean | undefined,
   videoQualityId: string | undefined
-): Promise<{ contentUrl: string; isDMS: boolean }> {
+): Promise<{ contentUrl: string; isDMS: boolean; domandBidCookie: string | null }> {
   const info = watchInfo ?? (await WatchInfoHandler.fetchWatchInfo(videoId));
   try {
     return await new WatchSession(info).ensure(audioOnly, videoQualityId);
@@ -1644,6 +1651,32 @@ async function ensureStreamSession(
     log.info('auto relogin succeeded, retrying stream session:', videoId);
     const freshInfo = await WatchInfoHandler.fetchWatchInfo(videoId);
     return await new WatchSession(freshInfo).ensure(audioOnly, videoQualityId);
+  }
+}
+
+/**
+ * ゲスト取得 (履歴を残さない設定ON) 時、access-rights API が発行する
+ * `domand_bid` Cookie を Player ウィンドウの session に注入する。
+ * この Cookie が無いと CDN (delivery.domand.nicovideo.jp) への variant m3u8
+ * リクエストが署名付きURLであっても HTTP 403 (CloudFrontレベルで拒否) になる。
+ */
+async function injectDomandBidCookie(ses: Session, cookieStr: string): Promise<void> {
+  const idx = cookieStr.indexOf('=');
+  if (idx < 0) return;
+  const name = cookieStr.slice(0, idx);
+  const value = cookieStr.slice(idx + 1);
+  try {
+    await ses.cookies.set({
+      url: 'https://nicovideo.jp/',
+      name,
+      value,
+      domain: '.nicovideo.jp',
+      path: '/',
+      secure: true,
+      httpOnly: true
+    });
+  } catch (e) {
+    log.warn('domand_bid cookie injection failed:', e);
   }
 }
 

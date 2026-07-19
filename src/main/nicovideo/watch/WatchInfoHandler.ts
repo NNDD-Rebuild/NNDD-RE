@@ -32,11 +32,16 @@ export class WatchInfoHandler {
     const videoId = WatchInfoHandler.extractVideoId(rawId);
     const ctx = NicoContext.get();
     const loggedIn = await ctx.isLoggedIn();
+    const configStore = (await import('../../config/ConfigStore')).getConfigStore();
+    const hideHistory = configStore.get('hideWatchHistory') ?? false;
+    // 履歴非表示ON時は最初からゲスト扱い (v3_guest + Cookie無し) で取得する。
+    // v3 は Cookie 認証必須のため、Cookie無しで叩いても失敗するだけ。
+    const effectiveLoggedIn = loggedIn && !hideHistory;
     try {
-      const info = await WatchInfoHandler.fetchViaJsonApi(videoId, loggedIn);
+      const info = await WatchInfoHandler.fetchViaJsonApi(videoId, effectiveLoggedIn, hideHistory);
       // v3 APIが series:null を返した場合は HTML から補完を試みる
       if (!info.series) {
-        const series = await WatchInfoHandler.fetchSeriesFromHtml(videoId);
+        const series = await WatchInfoHandler.fetchSeriesFromHtml(videoId, hideHistory);
         if (series) {
           log.debug('series補完 (HTML): videoId=%s seriesId=%s', videoId, series.id);
           return { ...info, series };
@@ -45,15 +50,15 @@ export class WatchInfoHandler {
       return info;
     } catch (e) {
       // ログイン中で v3 が失敗した場合は v3_guest にもフォールバック
-      if (loggedIn) {
+      if (effectiveLoggedIn) {
         try {
-          return await WatchInfoHandler.fetchViaJsonApi(videoId, false);
+          return await WatchInfoHandler.fetchViaJsonApi(videoId, false, hideHistory);
         } catch (e2) {
           log.warn('watch v3_guest fallback also failed:', e2);
         }
       }
       log.warn('watch v3 JSON API failed, falling back to HTML scrape:', e);
-      return await WatchInfoHandler.fetchViaHtml(videoId);
+      return await WatchInfoHandler.fetchViaHtml(videoId, hideHistory);
     }
   }
 
@@ -65,20 +70,21 @@ export class WatchInfoHandler {
    *    nvapi でタイトルを補完する
    */
   private static async fetchSeriesFromHtml(
-    videoId: string
+    videoId: string,
+    noCookie = false
   ): Promise<{ id: string; title: string } | null> {
     try {
       const ctx = NicoContext.get();
       const url = `${NicoApi.WATCH_PAGE}${videoId}`;
       log.debug('fetchSeriesFromHtml: fetching HTML for series:', url);
-      const html = await ctx.http.getText(url);
+      const html = await ctx.http.getText(url, { noCookie, noCookieReceive: noCookie });
       const series = WatchPageParser.parseSeriesFromHtml(html);
       if (!series) return null;
 
       // タイトルが空 (href パターンから ID のみ取得した場合) は nvapi で補完
       if (!series.title) {
         log.debug('fetchSeriesFromHtml: title missing, fetching from nvapi. seriesId=%s', series.id);
-        const title = await WatchInfoHandler.fetchSeriesTitleFromApi(series.id);
+        const title = await WatchInfoHandler.fetchSeriesTitleFromApi(series.id, noCookie);
         return { id: series.id, title: title ?? `シリーズ ${series.id}` };
       }
       return series;
@@ -93,13 +99,19 @@ export class WatchInfoHandler {
    * 認証済み HTTP クライアント経由で呼ぶ。
    * ※ SERIES_API は v1 だが series 詳細は v2 エンドポイントで取得する。
    */
-  private static async fetchSeriesTitleFromApi(seriesId: string): Promise<string | null> {
+  private static async fetchSeriesTitleFromApi(
+    seriesId: string,
+    noCookie = false
+  ): Promise<string | null> {
     try {
       const ctx = NicoContext.get();
       // v2/series/{id} は detail.title を含む (registerIpc.ts と同じエンドポイント)
       const url = `https://nvapi.nicovideo.jp/v2/series/${encodeURIComponent(seriesId)}?pageSize=1&page=1`;
       log.debug('fetchSeriesTitleFromApi:', url);
-      const res = await ctx.http.getJson<{ data?: { detail?: { title?: string } } }>(url);
+      const res = await ctx.http.getJson<{ data?: { detail?: { title?: string } } }>(url, {
+        noCookie,
+        noCookieReceive: noCookie
+      });
       const title = res?.data?.detail?.title ?? null;
       log.debug('fetchSeriesTitleFromApi: title=%s', title);
       return title ?? null;
@@ -146,7 +158,8 @@ export class WatchInfoHandler {
   /** watch v3 / v3_guest JSON API を直接叩く (nvComment 構造が確実に取れる) */
   private static async fetchViaJsonApi(
     videoId: string,
-    loggedIn: boolean
+    loggedIn: boolean,
+    noCookie = false
   ): Promise<WatchPageInfo> {
     const ctx = NicoContext.get();
     const actionTrackId = WatchInfoHandler.generateActionTrackId();
@@ -174,20 +187,26 @@ export class WatchInfoHandler {
         'X-Niconico-Language': 'ja-jp',
         'X-Request-With': 'https://www.nicovideo.jp'
       },
+      noCookie,
+      noCookieReceive: noCookie,
       debugDumpPath,
       debugLabel: `watch-${endpoint}`
     });
     if (!json?.data) throw new Error(`watch ${endpoint} API: data field missing`);
-    return WatchPageParser.parseApiData(json.data, videoId);
+    const parsed = WatchPageParser.parseApiData(json.data, videoId, actionTrackId);
+    // v3_guest エンドポイント or Cookie無しで叩いた場合、accessRightKey はゲスト用JWTになる。
+    // 後続の DMS access-rights POST でも Cookie無し送信を強制するためにフラグを立てる。
+    return { ...parsed, guestFetched: !loggedIn || noCookie };
   }
 
   /** HTMLスクレイピング (フォールバック) */
-  private static async fetchViaHtml(videoId: string): Promise<WatchPageInfo> {
+  private static async fetchViaHtml(videoId: string, noCookie = false): Promise<WatchPageInfo> {
     const ctx = NicoContext.get();
     const url = `${NicoApi.WATCH_PAGE}${videoId}`;
     log.debug('fetching watch page (HTML):', url);
-    const html = await ctx.http.getText(url);
-    return WatchPageParser.parse(html, videoId);
+    const html = await ctx.http.getText(url, { noCookie, noCookieReceive: noCookie });
+    const parsed = WatchPageParser.parse(html, videoId);
+    return { ...parsed, guestFetched: noCookie };
   }
 
   private static extractVideoId(input: string): string {

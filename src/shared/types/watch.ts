@@ -83,6 +83,23 @@ export interface WatchPageInfo {
   } | null;
   /** 所属シリーズ (未所属なら null) */
   series: { id: string; title: string } | null;
+  /**
+   * watch API 取得時に使った actionTrackId。
+   * domandAccessRightKey (JWT) の payload.uid にゲスト取得時はこの値がそのまま
+   * 埋め込まれるため、後続の DMS access-rights リクエストでも同じ値を使い回す必要がある
+   * (別の actionTrackId を使うと uid 不一致で HTTP 400 INVALID_PARAMETER になる)。
+   * HTML スクレイピング経由の場合は null (呼び出し側で新規生成する)。
+   */
+  actionTrackId: string | null;
+  /**
+   * v3_guest / Cookie無しで取得したか。
+   *
+   * true の場合、後続の DMS access-rights リクエストも Cookie無しで送る必要がある。
+   * ログイン済Cookieを送ると accessRightKey (guest JWT) との uid 不整合で
+   * HTTP 400 INVALID_PARAMETER になるため。
+   * (「履歴を残さない」設定ON + ログイン中の再生パスで顕在化)
+   */
+  guestFetched: boolean;
 }
 
 /**

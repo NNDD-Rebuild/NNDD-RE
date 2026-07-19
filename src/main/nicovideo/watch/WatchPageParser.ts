@@ -32,22 +32,29 @@ export class WatchPageParser {
       (json as Record<string, unknown>)['data'] ??
       (json as Record<string, unknown>)['response'] ??
       json;
-    return this.parseRoot(root as Record<string, unknown>, videoId);
+    return this.parseRoot(root as Record<string, unknown>, videoId, null);
   }
 
   /**
    * /api/watch/v3 の JSON API レスポンスの data オブジェクトを受け取ってパース。
    * HTML の埋め込み JSON と同じ構造なので parse() と同じ処理を流用する。
+   * actionTrackId: watch API 取得時に使ったもの。domandAccessRightKey (JWT) の
+   * payload.uid にゲスト取得時はこの値が埋め込まれるため、後続の DMS リクエストで
+   * 再利用できるよう WatchPageInfo に含めて返す。
    */
-  static parseApiData(data: unknown, videoId: string): WatchPageInfo {
+  static parseApiData(data: unknown, videoId: string, actionTrackId: string | null = null): WatchPageInfo {
     const root =
       (data as Record<string, unknown>)['data'] ??
       (data as Record<string, unknown>)['response'] ??
       data;
-    return this.parseRoot(root as Record<string, unknown>, videoId);
+    return this.parseRoot(root as Record<string, unknown>, videoId, actionTrackId);
   }
 
-  private static parseRoot(data: Record<string, unknown>, videoId: string): WatchPageInfo {
+  private static parseRoot(
+    data: Record<string, unknown>,
+    videoId: string,
+    actionTrackId: string | null
+  ): WatchPageInfo {
     const videoNode = (data['video'] ?? {}) as Record<string, unknown>;
     const ownerNode = (data['owner'] ?? null) as Record<string, unknown> | null;
     const channelNode = (data['channel'] ?? null) as Record<string, unknown> | null;
@@ -126,6 +133,8 @@ export class WatchPageParser {
       series: seriesNode && seriesNode['id']
         ? { id: String(seriesNode['id']), title: String(seriesNode['title'] ?? '') }
         : null,
+      actionTrackId,
+      guestFetched: false
     };
   }
 

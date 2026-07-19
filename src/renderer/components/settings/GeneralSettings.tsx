@@ -39,6 +39,7 @@ export function GeneralSettings({ onDeveloperModeChange }: GeneralSettingsProps)
   const [allowMyList, setAllowMyList] = useState(true);
   const [httpEnabled, setHttpEnabled] = useConfig<boolean>('httpServer.enabled', false);
   const [httpPort, setHttpPort] = useConfig<number>('httpServer.port', 12345);
+  const [hideWatchHistory, setHideWatchHistory] = useConfig<boolean>('hideWatchHistory', false);
 
   // LANライブラリ (リモートNNDD)
   const [remoteEnabled, setRemoteEnabled] = useState(false);
@@ -279,6 +280,22 @@ export function GeneralSettings({ onDeveloperModeChange }: GeneralSettingsProps)
           onLoggedIn={refreshLoginStatus}
         />
       )}
+
+      <Section title="プライバシー">
+        <label className="flex items-center gap-2 cursor-pointer select-none text-sm">
+          <input
+            type="checkbox"
+            checked={hideWatchHistory}
+            onChange={(e) => setHideWatchHistory(e.target.checked)}
+          />
+          視聴履歴を残さない
+        </label>
+        <p className="text-xs text-nndd-subtext mt-2">
+          ONにすると、動画再生・ダウンロード時にニコニコ動画へCookieを送らずゲスト扱いでアクセスし、
+          アカウントの視聴履歴に残しません。年齢制限動画・チャンネル会員限定動画は
+          視聴・ダウンロードできなくなる場合があります。
+        </p>
+      </Section>
 
       <Section title="内蔵HTTPサーバー">
         <div className="flex items-center gap-2">

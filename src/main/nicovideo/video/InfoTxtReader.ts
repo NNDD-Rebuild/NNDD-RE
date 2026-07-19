@@ -153,6 +153,8 @@ export class InfoTxtReader {
       dmcSessionRequestJson: null,
       nvCommentParams: null,
       series: null,
+      actionTrackId: null,
+      guestFetched: false,
     };
   }
 }

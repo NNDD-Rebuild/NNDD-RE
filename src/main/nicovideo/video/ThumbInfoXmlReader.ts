@@ -135,6 +135,8 @@ export class ThumbInfoXmlReader {
       dmcSessionRequestJson: null,
       nvCommentParams: null,
       series: null,
+      actionTrackId: null,
+      guestFetched: false,
     };
   }
 

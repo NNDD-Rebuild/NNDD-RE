@@ -23,6 +23,7 @@ const SYNCABLE_CONFIG_KEYS: (keyof NnddConfig)[] = [
   'downloadEasyComments',
   'downloadAllComments',
   'comment429RetryWaitSec',
+  'hideWatchHistory',
   'player',
   'httpServer',
   'remoteNndd',

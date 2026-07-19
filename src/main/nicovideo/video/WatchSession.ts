@@ -19,6 +19,13 @@ export interface SessionResult {
   dmcResponseJson: string | null;
   /** 失効までの予想時刻 (ms) */
   expireAt: number;
+  /**
+   * ゲスト(guestFetched)取得時、access-rights API が発行する `domand_bid` Cookie。
+   * "name=value" 形式。CDN (delivery.domand.nicovideo.jp) への視聴許可トークンで、
+   * Player ウィンドウの session に注入しないと variant m3u8 取得が 403 になる。
+   * ログイン中Cookie送信時 (guestFetched=false) は null。
+   */
+  domandBidCookie: string | null;
 }
 
 /**
@@ -112,9 +119,13 @@ export class WatchSession {
       throw new Error('DMS の videos に利用可能な候補がありません');
     }
 
+    // accessRightKey (JWT) の payload.uid には watch API 取得時の actionTrackId が
+    // 埋め込まれる (ゲスト取得時) ため、ここで新規生成せず同じ値を使い回す必要がある。
+    // 別の actionTrackId を使うと uid 不一致で HTTP 400 INVALID_PARAMETER になる。
+    const actionTrackId = this.watch.actionTrackId ?? this.generateActionTrackId();
     const url = `https://nvapi.nicovideo.jp/v1/watch/${encodeURIComponent(
       this.videoId
-    )}/access-rights/hls?actionTrackId=${this.generateActionTrackId()}`;
+    )}/access-rights/hls?actionTrackId=${actionTrackId}`;
 
     log.info('DMS session ensure:', url, audioOnly ? 'audioOnly' : `video=${video!.id}`, 'audio=', audio.id);
 
@@ -139,6 +150,14 @@ export class WatchSession {
     }
 
     const outputs = audioOnly ? [[audio.id]] : [[video!.id, audio.id]];
+    // ゲスト取得 (v3_guest or Cookie無し) の場合、accessRightKey はゲストJWT。
+    // ここで Cookie を送るとログイン済ユーザーIDと JWT payload.uid の不整合で
+    // HTTP 400 INVALID_PARAMETER になるため、guestFetched に合わせて noCookie を切り替える。
+    const guest = this.watch.guestFetched;
+    // 受信側 (noCookieReceive) は常に false にする。
+    // access-rights のレスポンスは domand_bid Cookie を発行しており、これが
+    // CDN (delivery.domand.nicovideo.jp) への視聴許可トークンになっている。
+    // guest時にこれを捨てると、署名付きURL自体はあっても variant m3u8 取得が 403 になる。
     const res = await ctx.http.postJson<AccessRightsResponse>(
       url,
       { outputs },
@@ -147,6 +166,8 @@ export class WatchSession {
           'X-Access-Right-Key': accessRightKey,
           'X-Request-With': 'https://www.nicovideo.jp'
         },
+        noCookie: guest,
+        noCookieReceive: false,
         debugDumpPath,
         debugLabel: 'session-dms'
       }
@@ -164,12 +185,20 @@ export class WatchSession {
       if (!isNaN(t)) expireAt = t;
     }
 
+    let domandBidCookie: string | null = null;
+    if (guest) {
+      const cookies = await ctx.cookieStore.rawJar.getCookies(url);
+      const bid = cookies.find((c) => c.key === 'domand_bid');
+      if (bid) domandBidCookie = `${bid.key}=${bid.value}`;
+    }
+
     return {
       contentUrl,
       sessionId: null,
       isDMS: true,
       dmcResponseJson: null,
-      expireAt
+      expireAt,
+      domandBidCookie
     };
   }
 
@@ -226,7 +255,8 @@ export class WatchSession {
       sessionId: session.id,
       isDMS: false,
       dmcResponseJson: JSON.stringify({ session }),
-      expireAt: Date.now() + 1000 * 60 * 60
+      expireAt: Date.now() + 1000 * 60 * 60,
+      domandBidCookie: null
     };
   }
 

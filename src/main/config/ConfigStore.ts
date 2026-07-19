@@ -65,6 +65,14 @@ export interface NnddConfig {
   comment429RetryWaitSec: number;
 
   /**
+   * 動画視聴・ダウンロード時に、ニコニコ動画本体へ視聴履歴を残さない (ゲスト扱いでアクセス)。
+   * 対象は WatchInfoHandler の watch API / HTML フォールバック取得のみ。
+   * デフォルト false (従来通り履歴を残す)。ON時は年齢制限/チャンネル会員限定動画が
+   * 視聴・ダウンロードできない場合がある。
+   */
+  hideWatchHistory: boolean;
+
+  /**
    * キャッシュルートディレクトリ (空なら userData/nndd-cache 配下)。
    * 映像キャッシュ: <cacheRoot>/cache/movie (カスタム) or userData/nndd-cache/movie (デフォルト)。
    * 画像キャッシュ: userData/nndd-cache/image (常に userData)。
@@ -263,6 +271,7 @@ const DEFAULTS: NnddConfig = {
   downloadAllComments: false,
   skipCommentsOnAudioOnly: false,
   comment429RetryWaitSec: 60,
+  hideWatchHistory: false,
   cacheRoot: '',
   player: {
     volume: 1.0,

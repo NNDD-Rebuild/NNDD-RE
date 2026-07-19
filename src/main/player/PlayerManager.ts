@@ -61,38 +61,56 @@ export class PlayerManager {
     return this.instance;
   }
 
+  /** window ごとの hideWatchHistory 状態 (partition分離判定用) */
+  private windowHideHistory = new WeakMap<BrowserWindow, boolean>();
+
   /**
    * プレイヤーウィンドウを開く。既存ウィンドウがあれば再利用して新しい動画パラメータを送信。
    */
   open(params: OpenPlayerParams): BrowserWindow {
     params = this.applyAudioOnlyDetection(params);
+    const config = getConfigStore();
+    const hideHistory = config.get('hideWatchHistory') ?? false;
+
     if (this.windows.size > 0) {
       const [, existing] = [...this.windows.entries()][0];
-      const resolved: OpenPlayerParams = { ...params };
-      if (resolved.localPath && !resolved.localFiles) {
-        resolved.localFiles = this.resolveLocalFiles(resolved.localPath);
-      }
-      if (params.audioOnly) {
-        existing.setMinimumSize(300, 100);
-        existing.setSize(1100, 120);
+      const existingHideHistory = this.windowHideHistory.get(existing) ?? false;
+      // hideWatchHistory 状態が切り替わったら既存windowを閉じて新規作成する。
+      // partition が違う (Cookie分離 or 共有) ため再利用不可。
+      if (existingHideHistory !== hideHistory) {
+        log.info(`hideWatchHistory 切替 (${existingHideHistory} → ${hideHistory}), 既存プレイヤーを閉じて再生成`);
+        existing.close();
       } else {
-        existing.setMinimumSize(640, 400);
-        if (existing.getSize()[1] < 400) {
-          existing.setSize(1440, 900);
+        const resolved: OpenPlayerParams = { ...params };
+        if (resolved.localPath && !resolved.localFiles) {
+          resolved.localFiles = this.resolveLocalFiles(resolved.localPath);
         }
+        if (params.audioOnly) {
+          existing.setMinimumSize(300, 100);
+          existing.setSize(1100, 120);
+        } else {
+          existing.setMinimumSize(640, 400);
+          if (existing.getSize()[1] < 400) {
+            existing.setSize(1440, 900);
+          }
+        }
+        existing.webContents.send('nndd:player:init', resolved);
+        if (!params.autoNext || !existing.isMinimized()) {
+          existing.show();
+          existing.focus();
+        }
+        return existing;
       }
-      existing.webContents.send('nndd:player:init', resolved);
-      if (!params.autoNext || !existing.isMinimized()) {
-        existing.show();
-        existing.focus();
-      }
-      return existing;
     }
 
-    const config = getConfigStore();
     const bgColor = config.get('ui').theme === 'light' ? '#f0f0f0' : '#000000';
 
     const isMini = !!params.audioOnly;
+    // hideWatchHistory=ON時は Cookie を共有しない一時partitionを使う。
+    // persist: プレフィックス無し = メモリセッション (アプリ再起動やwindow破棄で消える)。
+    // これで default session の nicovideo.jp Cookie が player の HLS リクエストに送られなくなり、
+    // guest access-rights で発行された CloudFront URL が uid 不整合で 403 になるのを回避する。
+    const partition = hideHistory ? `nndd-guest-${Date.now()}` : undefined;
     const win = new BrowserWindow({
       width: isMini ? 1100 : 1440,
       height: isMini ? 120 : 900,
@@ -107,9 +125,11 @@ export class PlayerManager {
         sandbox: false,
         contextIsolation: true,
         nodeIntegration: false,
-        webviewTag: true
+        webviewTag: true,
+        ...(partition ? { partition } : {})
       }
     });
+    this.windowHideHistory.set(win, hideHistory);
 
     // 'native' モード用: hls.js → ニコニコCDN直接アクセスに必要なCookie/CORS処理
     setupHlsSessionInterceptor(win.webContents.session);
