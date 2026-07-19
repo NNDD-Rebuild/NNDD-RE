@@ -1,6 +1,9 @@
 # yt-dlp download fragment files
 --Frag*
 
+# Editor atomic-save temp files (e.g. foo.ts.tmp.13056.9a1ad49d526f)
+*.tmp.*
+
 node_modules/
 dist/
 out/
