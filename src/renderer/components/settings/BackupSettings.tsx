@@ -48,11 +48,21 @@ export function BackupSettings(): JSX.Element {
     setActiveProfileId(id ?? null);
   }, []);
 
+  const importProfilesFromGitHub = useCallback(async () => {
+    await window.nndd.invoke(window.nndd.channels.BACKUP_IMPORT_PROFILES);
+    await refreshProfiles();
+  }, [refreshProfiles]);
+
   useEffect(() => {
-    Promise.all([refreshStatus(), refreshProfiles(), refreshActiveProfileId()]).finally(() =>
-      setLoading(false)
-    );
-  }, [refreshStatus, refreshProfiles, refreshActiveProfileId]);
+    (async () => {
+      const s = await window.nndd.invoke<GitHubStatus>(window.nndd.channels.GITHUB_STATUS);
+      setStatus(s ?? { loggedIn: false });
+      // ログイン中なら、GitHub上の未連携Gistをあらかじめプロファイルとして取り込んでおく
+      if (s?.loggedIn) await importProfilesFromGitHub();
+      await Promise.all([refreshProfiles(), refreshActiveProfileId()]);
+      setLoading(false);
+    })();
+  }, [importProfilesFromGitHub, refreshProfiles, refreshActiveProfileId]);
 
   // Device Flow の進捗通知を購読
   useEffect(() => {
@@ -62,13 +72,14 @@ export function BackupSettings(): JSX.Element {
         setDeviceFlow(null);
         setDeviceFlowError(null);
         refreshStatus();
+        importProfilesFromGitHub();
       } else if (event.status === 'expired' || event.status === 'denied' || event.status === 'error') {
         setDeviceFlowError(event.message ?? '認証に失敗しました');
       } else {
         setDeviceFlowStatusMessage(event.message ?? '');
       }
     });
-  }, [refreshStatus]);
+  }, [refreshStatus, importProfilesFromGitHub]);
 
   const handleLogin = useCallback(async () => {
     setLoginLoading(true);

@@ -606,6 +606,10 @@ export function registerIpcHandlers(
     return client.listCandidates();
   });
 
+  ipcMain.handle(IpcChannel.BACKUP_IMPORT_PROFILES, async () => {
+    return backupManager.importProfilesFromGitHub();
+  });
+
   ipcMain.handle(IpcChannel.BACKUP_UPLOAD, async (_e, profileId: string) => {
     return backupManager.upload(profileId);
   });

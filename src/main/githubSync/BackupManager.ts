@@ -1,7 +1,7 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { app } from 'electron';
 import { GitHubApi } from '@shared/constants';
-import type { BackupPayload, BackupResult, DataScope, SyncProfile } from '@shared/types';
+import type { BackupPayload, BackupResult, DataScope, GistSummary, SyncProfile } from '@shared/types';
 import { BACKUP_SCHEMA_VERSION, DEFAULT_DATA_SCOPE } from '@shared/types';
 import { LibraryManager } from '../db/LibraryManager';
 import { getConfigStore, type NnddConfig } from '../config/ConfigStore';
@@ -90,6 +90,51 @@ export class BackupManager {
 
   linkExistingGist(profileId: string, gistId: string): SyncProfile {
     return this.updateProfile(profileId, { gistId });
+  }
+
+  /**
+   * GitHubログイン直後などに呼び、GitHub上にある自アプリ作成のGistのうち
+   * まだどのローカルプロファイルにも紐付いていないものを新規プロファイルとして取り込む。
+   * 別端末で作成したバックアップを、ログインしただけで一覧に反映させるための補助。
+   */
+  async importProfilesFromGitHub(): Promise<SyncProfile[]> {
+    const token = GitHubAuthManager.getToken();
+    if (!token) return [];
+
+    let candidates: GistSummary[];
+    try {
+      candidates = await new GistClient(token).listCandidates();
+    } catch (e) {
+      log.warn('import profiles from github failed:', e);
+      return [];
+    }
+
+    const cfg = getConfigStore().get('githubSync');
+    const linkedGistIds = new Set(
+      cfg.profiles.map((p) => p.gistId).filter((id): id is string => !!id)
+    );
+    const unlinked = candidates.filter((g) => !linkedGistIds.has(g.id));
+    if (unlinked.length === 0) return [];
+
+    const imported: SyncProfile[] = unlinked.map((g) => ({
+      id: randomUUID(),
+      name: this.profileNameFromGistDescription(g.description),
+      gistId: g.id,
+      dataScope: { ...DEFAULT_DATA_SCOPE },
+      lastSyncedAt: null,
+      lastSyncDirection: null,
+      autoUploadEnabled: false
+    }));
+
+    getConfigStore().set('githubSync', { ...cfg, profiles: [...cfg.profiles, ...imported] });
+    log.info(`imported ${imported.length} profile(s) from GitHub Gist`);
+    return imported;
+  }
+
+  private profileNameFromGistDescription(description: string): string {
+    const prefix = `${GitHubApi.BACKUP_DESCRIPTION_PREFIX}: `;
+    const name = description.startsWith(prefix) ? description.slice(prefix.length).trim() : '';
+    return name || 'インポート済みプロファイル';
   }
 
   private getProfile(profileId: string): SyncProfile {

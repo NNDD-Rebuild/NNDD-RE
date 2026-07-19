@@ -326,6 +326,8 @@ export const IpcChannel = {
   BACKUP_LINK_EXISTING_GIST: 'nndd:backup:linkExistingGist',
   /** → GistSummary[] (自アプリ作成のGistのみ) */
   BACKUP_LIST_CANDIDATE_GISTS: 'nndd:backup:listCandidateGists',
+  /** → SyncProfile[] (GitHub上の未連携Gistから新規インポートされたプロファイル) */
+  BACKUP_IMPORT_PROFILES: 'nndd:backup:importProfiles',
   /** (profileId: string) → BackupResult */
   BACKUP_UPLOAD: 'nndd:backup:upload',
   /** (profileId: string) → BackupResult */
