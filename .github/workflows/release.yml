@@ -50,3 +50,70 @@ jobs:
           gh release edit "${{ github.ref_name }}" --notes $notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-linux:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: install-rpm
+        run: sudo apt-get update && sudo apt-get install -y rpm
+
+      - name: set-version
+        run: |
+          tag="${{ github.ref_name }}"
+          tag="${tag#v}"
+          npm version "$tag" --no-git-tag-version
+
+      - name: install
+        run: npm ci
+
+      - name: build
+        run: npm run build
+
+      - name: dist
+        run: npm run dist:linux -- --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-mac:
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: set-version
+        run: |
+          tag="${{ github.ref_name }}"
+          tag="${tag#v}"
+          npm version "$tag" --no-git-tag-version
+
+      - name: install
+        run: npm ci
+
+      - name: build
+        run: npm run build
+
+      - name: dist
+        run: npm run dist:mac -- --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
