@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useConfig } from '@renderer/hooks/useConfig';
 
 type UpdateEvent =
   | { event: 'checking' }
@@ -24,6 +25,10 @@ type AppInfo = {
 export function UpdateSettings(): JSX.Element {
   const [info, setInfo] = useState<AppInfo | null>(null);
   const [status, setStatus] = useState<UpdateEvent | null>(null);
+  const [updateMode, setUpdateMode] = useConfig<'ask' | 'silent' | 'off'>(
+    'update.mode',
+    'ask'
+  );
 
   useEffect(() => {
     window.nndd
@@ -77,6 +82,30 @@ export function UpdateSettings(): JSX.Element {
       </Section>
 
       <Section title="アップデート">
+        <div className="text-xs text-nndd-subtext mb-1">起動時のアップデート確認</div>
+        <div className="flex flex-col gap-1 mb-3">
+          {(
+            [
+              { value: 'ask', label: '確認する', desc: 'ダウンロード・インストール前にダイアログで尋ねる' },
+              { value: 'silent', label: '自動更新', desc: '自動でダウンロードし、次回終了時に自動インストール (通知のみ)' },
+              { value: 'off', label: '確認しない', desc: '起動時のチェックを行わない' }
+            ] as const
+          ).map(({ value, label, desc }) => (
+            <label key={value} className="flex items-start gap-2 text-sm cursor-pointer">
+              <input
+                type="radio"
+                name="update-mode"
+                className="mt-0.5"
+                checked={updateMode === value}
+                onChange={() => setUpdateMode(value)}
+              />
+              <span>
+                {label}
+                <span className="block text-xs text-nndd-subtext">{desc}</span>
+              </span>
+            </label>
+          ))}
+        </div>
         <div className="flex gap-2 mb-2">
           <Btn onClick={check}>更新を確認</Btn>
           {status?.event === 'available' && <Btn onClick={download}>ダウンロード</Btn>}

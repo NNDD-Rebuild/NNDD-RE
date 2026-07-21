@@ -21,6 +21,7 @@ import { PlayerManager } from './player/PlayerManager';
 import { NnddHttpServer } from './server/NnddHttpServer';
 import { TrayManager } from './tray/TrayManager';
 import { BackupManager } from './githubSync/BackupManager';
+import { getUpdateManager } from './update/UpdateManager';
 
 const log = createLogger('Main');
 
@@ -237,6 +238,12 @@ app.whenReady().then(async () => {
 
   // 起動時自動アップロード: バックグラウンド実行、起動処理(ウィンドウ表示等)をブロックしない
   void backupManager.autoUploadActiveProfile();
+
+  // 起動時アップデート確認: バックグラウンド実行、起動処理をブロックしない
+  const updateMode = config.get('update').mode;
+  if (updateMode !== 'off') {
+    void getUpdateManager().checkOnStartup(() => mainWindow, updateMode);
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

@@ -256,6 +256,17 @@ export interface NnddConfig {
 
   /** GitHub Gist 設定バックアップ・同期 */
   githubSync: GitHubSyncConfig;
+
+  /** アプリ自動更新 */
+  update: {
+    /**
+     * 起動時のアップデート確認方式
+     *   - 'ask':    確認してダウンロード・インストールもダイアログで都度尋ねる (デフォルト)
+     *   - 'silent': 自動でダウンロードし、次回終了時に自動インストール (通知のみ)
+     *   - 'off':    起動時は確認しない
+     */
+    mode: 'ask' | 'silent' | 'off';
+  };
 }
 
 const DEFAULTS: NnddConfig = {
@@ -345,6 +356,9 @@ const DEFAULTS: NnddConfig = {
   githubSync: {
     profiles: [],
     activeProfileId: null
+  },
+  update: {
+    mode: 'ask'
   }
 };
 
