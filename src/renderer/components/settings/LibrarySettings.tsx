@@ -32,15 +32,15 @@ export function LibrarySettings(): JSX.Element {
   );
   const [downloadAllComments, setDownloadAllComments] = useConfig<boolean>(
     'downloadAllComments',
-    true
+    false
   );
   const [comment429RetryWaitSec, setComment429RetryWaitSec] = useConfig<number>(
     'comment429RetryWaitSec',
-    60
+    185
   );
   const [skipCommentsOnAudioOnly, setSkipCommentsOnAudioOnly] = useConfig<boolean>(
     'skipCommentsOnAudioOnly',
-    false
+    true
   );
   const [useNativeVideoDownloader, setUseNativeVideoDownloader] = useConfig<boolean>(
     'useNativeVideoDownloader',
@@ -48,7 +48,7 @@ export function LibrarySettings(): JSX.Element {
   );
   const [muxImplementation, setMuxImplementation] = useConfig<'ffmpeg' | 'mediabunny'>(
     'downloadMuxImplementation',
-    'ffmpeg'
+    'mediabunny'
   );
   const [librarySortCol, setLibrarySortCol] = useConfig<SortCol>('ui.librarySortCol', 'pubDate');
   const [librarySortDir, setLibrarySortDir] = useConfig<SortDir>('ui.librarySortDir', 'asc');
@@ -190,8 +190,8 @@ export function LibrarySettings(): JSX.Element {
             onChange={(e) => setMuxImplementation(e.target.value as 'ffmpeg' | 'mediabunny')}
             className="bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
           >
-            <option value="ffmpeg" disabled={ffmpegMissing}>ffmpeg (デフォルト)</option>
-            <option value="mediabunny">mediabunny (JS実装、ffmpeg不要・実験的機能)</option>
+            <option value="mediabunny">mediabunny (JS実装、ffmpeg不要・デフォルト)</option>
+            <option value="ffmpeg" disabled={ffmpegMissing}>ffmpeg</option>
           </select>
           <span className="text-xs text-nndd-subtext ml-2">
             (ネイティブHLS DL時の映像/音声結合方式。mediabunny選択時は失敗してもyt-dlpへフォールバックしません)
@@ -203,7 +203,7 @@ export function LibrarySettings(): JSX.Element {
             onOpenTools={() => setPendingSettingsTab('tools')}
           />
         )}
-        <Row label="429待機時間">
+        <Row label="too many request待機時間">
           <input
             type="number"
             min={0}
@@ -214,7 +214,7 @@ export function LibrarySettings(): JSX.Element {
             className="w-24 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
           />
           <span className="text-xs text-nndd-subtext ml-2">
-            秒 (0=リトライなし。コメント取得429時の待機時間、最大5回リトライ)
+            秒 (0=リトライなし。コメント取得でtoo many request (429) 時の待機時間、最大5回リトライ)
           </span>
         </Row>
       </Section>

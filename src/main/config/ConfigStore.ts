@@ -32,8 +32,8 @@ export interface NnddConfig {
 
   /**
    * ネイティブHLS実装での映像/音声mux方式。
-   * 'ffmpeg' (デフォルト): ffmpeg外部プロセスでstream copy mux。
-   * 'mediabunny': JS実装 (mediabunnyライブラリ) でstream copy mux。ffmpeg非依存。実験的機能。
+   * 'mediabunny' (デフォルト): JS実装 (mediabunnyライブラリ) でstream copy mux。ffmpeg非依存。
+   * 'ffmpeg': ffmpeg外部プロセスでstream copy mux。
    */
   downloadMuxImplementation: 'ffmpeg' | 'mediabunny';
 
@@ -54,13 +54,13 @@ export interface NnddConfig {
 
   /**
    * 音声のみダウンロード時はコメント (過去ログ・今コメ双方) を取得しないか。
-   * デフォルト false (通常DLと同様にコメントも取得する)。
+   * デフォルト true (音声のみDL時はコメントを取得しない)。
    */
   skipCommentsOnAudioOnly: boolean;
 
   /**
-   * コメント取得で HTTP 429 が来た時の待機秒数。
-   * 0 = リトライなし (即 break)。デフォルト 60。
+   * コメント取得で HTTP 429 (Too Many Requests) が来た時の待機秒数。
+   * 0 = リトライなし (即 break)。デフォルト 185。
    */
   comment429RetryWaitSec: number;
 
@@ -276,12 +276,12 @@ const DEFAULTS: NnddConfig = {
   downloadCooldownMs: 0,
   ytDlpPath: '',
   useNativeVideoDownloader: true,
-  downloadMuxImplementation: 'ffmpeg',
+  downloadMuxImplementation: 'mediabunny',
   ffmpegPath: '',
   downloadEasyComments: false,
   downloadAllComments: false,
-  skipCommentsOnAudioOnly: false,
-  comment429RetryWaitSec: 60,
+  skipCommentsOnAudioOnly: true,
+  comment429RetryWaitSec: 185,
   hideWatchHistory: false,
   cacheRoot: '',
   player: {
@@ -312,7 +312,7 @@ const DEFAULTS: NnddConfig = {
       mail: 48
     },
     controlUiSize: 'normal',
-    openVideoLinkInPlayer: false,
+    openVideoLinkInPlayer: true,
     resumePlayback: false
   },
   ui: {

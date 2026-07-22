@@ -293,7 +293,7 @@ export class VideoDownloader {
       // 結合 (ffmpeg or mediabunny)
       opts.onPhaseChange?.('merge');
       fs.mkdirSync(path.dirname(opts.outputPath), { recursive: true });
-      const muxImpl = getConfigStore().get('downloadMuxImplementation') ?? 'ffmpeg';
+      const muxImpl = getConfigStore().get('downloadMuxImplementation') ?? 'mediabunny';
       const mergeOpts = {
         videoInitPath,
         videoSegmentPaths: videoVariant.segments.map((s) =>

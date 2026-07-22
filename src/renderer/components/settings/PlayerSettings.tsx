@@ -77,7 +77,7 @@ export function PlayerSettings(): JSX.Element {
   );
   const [openVideoLinkInPlayer, setOpenVideoLinkInPlayer] = useConfig<boolean>(
     'player.openVideoLinkInPlayer',
-    false
+    true
   );
   const [resumePlayback, setResumePlayback] = useConfig<boolean>(
     'player.resumePlayback',
