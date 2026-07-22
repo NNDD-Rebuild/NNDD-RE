@@ -145,6 +145,17 @@ npm run dist:linux   # Linux AppImage
 
 成果物は `dist/` フォルダに出力されます。
 
+### 配布物についての注意 (コード署名なし)
+
+[Releases](https://github.com/NNDD-Rebuild/NNDD-RE/releases) で配布しているビルド済みアプリは、コスト都合によりコード署名(Windows)・公証(macOS)を行っていません。そのためOSの警告が表示されることがあります。
+
+- **Windows**: インストーラ実行時に SmartScreen が「WindowsによってPCが保護されました」と表示することがあります。「詳細情報」→「実行」をクリックしてください。
+- **macOS**: アプリ起動時に「開発元を確認できないため開けません」と表示されることがあります。Finderでアプリを右クリック→「開く」を選択するか、ターミナルで以下を実行してください。
+  ```bash
+  xattr -cr /Applications/NNDD-RE.app
+  ```
+- **Linux**: 署名の警告は基本的に発生しません。
+
 ## 使い方の流れ
 
 初回ログイン → 動画ダウンロード → 動画再生 → スケジュール自動DL、の4ステップです。詳細は [使い方ガイド](https://nndd-rebuild.github.io/NNDD-RE/usage-guide/) を参照してください。
