@@ -176,9 +176,10 @@ export function LibrarySettings(): JSX.Element {
         </Row>
         {ytDlpMissing && (
           <WarningBanner
+            variant={useNativeVideoDownloader ? 'warning' : 'error'}
             message={
               useNativeVideoDownloader
-                ? 'yt-dlpが見つかりません。フォールバックが使えないため、外部ツールからインストールしてください。'
+                ? 'yt-dlpが見つかりません。通常はネイティブ実装で動作するためインストール必須ではありませんが、失敗時のフォールバックとして入れておくと安心です。'
                 : 'yt-dlpが見つかりません。このままではダウンロードができません。'
             }
             onOpenTools={() => setPendingSettingsTab('tools')}
@@ -301,13 +302,19 @@ function Section({
 
 function WarningBanner({
   message,
-  onOpenTools
+  onOpenTools,
+  variant = 'error'
 }: {
   message: string;
   onOpenTools: () => void;
+  variant?: 'error' | 'warning';
 }): JSX.Element {
+  const colorClass =
+    variant === 'warning'
+      ? 'bg-yellow-500/10 border-yellow-500/40 text-yellow-600 dark:text-yellow-400'
+      : 'bg-red-500/10 border-red-500/40 text-red-500 dark:text-red-400';
   return (
-    <div className="flex items-center justify-between gap-3 mb-2 px-3 py-2 bg-red-500/10 border border-red-500/40 rounded text-xs text-red-500 dark:text-red-400">
+    <div className={`flex items-center justify-between gap-3 mb-2 px-3 py-2 border rounded text-xs ${colorClass}`}>
       <span>{message}</span>
       <button
         onClick={onOpenTools}
