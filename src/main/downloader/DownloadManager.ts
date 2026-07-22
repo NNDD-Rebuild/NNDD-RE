@@ -260,6 +260,37 @@ export class DownloadManager extends EventEmitter {
           path.join(baseDir, LocalFileNaming.nowCommentJsonFileName(watch.title, watch.videoId)),
           nowComments.map((c) => c.no)
         );
+        // 全件取得オフ時は上のfetchAllCommentsブロックが実行されず通常コメントXMLが
+        // 生成されないため、今コメの内容をそのまま通常コメントXMLとしても書き出す
+        if (getConfigStore().get('downloadAllComments') === false) {
+          const threadId =
+            watch.commentThreads.find((t) => t.fork === 'main')?.id ??
+            watch.commentThreads[0]?.id ??
+            '';
+          LocalFileHandler.writeCommentXml(
+            path.join(
+              baseDir,
+              LocalFileNaming.commentXmlFileName(watch.title, watch.videoId)
+            ),
+            nowComments.filter((c) => c.fork !== 'owner'),
+            threadId,
+            watch.videoId,
+            'main'
+          );
+          const ownerNowComments = nowComments.filter((c) => c.fork === 'owner');
+          const ownerThread =
+            watch.commentThreads.find((t) => t.fork === 'owner')?.id ?? '';
+          LocalFileHandler.writeCommentXml(
+            path.join(
+              baseDir,
+              LocalFileNaming.ownerCommentXmlFileName(watch.title, watch.videoId)
+            ),
+            ownerNowComments,
+            ownerThread,
+            watch.videoId,
+            'owner'
+          );
+        }
       } catch (e) {
         log.warn('now comment fetch failed (continuing):', e);
       }
