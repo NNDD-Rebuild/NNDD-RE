@@ -48,7 +48,8 @@ export class MyListClient {
   static async fetchPublicMylist(
     mylistId: string,
     page = 1,
-    pageSize = 100
+    pageSize = 100,
+    cacheImages = true
   ): Promise<{ items: MyListItem[]; total: number }> {
     // 自分のマイリスト (非公開含む) を取得できる /v1/users/me/mylists/{id} を最初に試す。
     // 401 / 403 / 404 が返ったら公開マイリスト /v2/mylists/{id} にフォールバック。
@@ -101,7 +102,7 @@ export class MyListClient {
       mylistCount: i.video.count?.mylist ?? 0,
       likeCount: i.video.count?.like ?? 0
     }));
-    if (ImageCache.isEnabled()) {
+    if (cacheImages && ImageCache.isEnabled()) {
       const http = NicoContext.get().http;
       const urls = ImageCache.cacheUrlList(items.map(i => i.thumbnailUrl), http);
       items = items.map((i, idx) => ({ ...i, thumbnailUrl: urls[idx] }));
@@ -193,6 +194,96 @@ export class MyListClient {
       type: RssType.MY_LIST,
       myListVideoIds: {}
     }));
+  }
+
+  /**
+   * 指定ユーザーの投稿動画一覧を取得。
+   * GET https://nvapi.nicovideo.jp/v3/users/{userId}/videos
+   * 元: FollowFeedClient の getUserRecentVideos
+   */
+  static async fetchUserVideos(
+    userId: string,
+    page = 1,
+    pageSize = 100,
+    cacheImages = true
+  ): Promise<{ items: MyListItem[]; total: number }> {
+    interface NvApiUserVideosResponse {
+      meta?: { status?: number };
+      data?: {
+        items?: Array<{
+          essential?: {
+            id?: string;
+            title?: string;
+            thumbnail?: { url?: string; middleUrl?: string };
+            registeredAt?: string;
+            count?: { view?: number; comment?: number; mylist?: number; like?: number };
+            duration?: number;
+          };
+        }>;
+        totalCount?: number;
+      };
+    }
+
+    const ctx = NicoContext.get();
+    const params = new URLSearchParams({
+      sortKey: 'registeredAt',
+      sortOrder: 'desc',
+      pageSize: String(pageSize),
+      page: String(page),
+      sensitive: 'mask'
+    });
+    const url = `https://nvapi.nicovideo.jp/v3/users/${encodeURIComponent(userId)}/videos?${params}`;
+    log.debug('fetch user videos:', url);
+    const res = await ctx.http.getJson<NvApiUserVideosResponse>(url);
+    const status = res.meta?.status;
+    if (status && status >= 400) {
+      throw new Error(`ユーザー投稿動画の取得に失敗: status=${status}`);
+    }
+    const rawItems = res.data?.items ?? [];
+    const total = res.data?.totalCount ?? rawItems.length;
+    let items = rawItems
+      .map((it): MyListItem | null => {
+        const e = it.essential;
+        if (!e?.id) return null;
+        return {
+          videoId: e.id,
+          title: e.title ?? e.id,
+          description: '',
+          thumbnailUrl: e.thumbnail?.middleUrl ?? e.thumbnail?.url ?? '',
+          length: this.toLengthString(e.duration ?? 0),
+          pubDate: e.registeredAt ? new Date(e.registeredAt) : new Date(0),
+          viewCount: e.count?.view ?? 0,
+          commentCount: e.count?.comment ?? 0,
+          mylistCount: e.count?.mylist ?? 0,
+          likeCount: e.count?.like ?? 0
+        };
+      })
+      .filter((i): i is MyListItem => i !== null);
+    if (cacheImages && ImageCache.isEnabled()) {
+      const http = ctx.http;
+      const urls = ImageCache.cacheUrlList(items.map(i => i.thumbnailUrl), http);
+      items = items.map((i, idx) => ({ ...i, thumbnailUrl: urls[idx] }));
+    }
+    log.debug(`user ${userId} page=${page} items=${items.length} total=${total}`);
+    return { items, total };
+  }
+
+  /**
+   * ユーザーIDからニックネームを取得 (表示名用の軽量版)。
+   */
+  static async fetchUserName(userId: string): Promise<string | null> {
+    interface NvApiUserResponse {
+      data?: { user?: { nickname?: string } };
+    }
+    try {
+      const res = await NicoContext.get().http.getJson<NvApiUserResponse>(
+        `https://nvapi.nicovideo.jp/v1/users/${encodeURIComponent(userId)}`
+      );
+      return res.data?.user?.nickname ?? null;
+    } catch (e) {
+      log.debug(`fetchUserName failed for ${userId}:`, e);
+      return null;
+    }
   }
 
   private static toLengthString(durationSec: number): string {

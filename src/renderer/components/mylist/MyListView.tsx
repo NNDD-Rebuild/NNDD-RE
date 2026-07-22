@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { MyList, MyListItem, Playlist, PlaylistItem, RssTypeValue } from '@shared/types';
 import { IpcChannel, RssType } from '@shared/types';
+import { parseMylistSource } from '@shared/utils/parseMylistUrl';
 import { VideoCard, type VideoCardData } from '../common/VideoCard';
 import { ContinuousPlayButton } from '../common/ContinuousPlayButton';
 import { useAppStore } from '../../store/useAppStore';
@@ -30,10 +31,21 @@ export function MyListView(): JSX.Element {
   const [totalItems, setTotalItems] = useState(0);
   const PAGE_SIZE = 100;
 
-  // マイリスト追加フォーム
+  // タイトル検索 (選択中リスト内)
+  const [searchText, setSearchText] = useState('');
+  // 検索開始時に全ページを取得してキャッシュしたもの (未検索/未取得なら null)
+  const [allItems, setAllItems] = useState<VideoCardData[] | null>(null);
+  const [loadingAll, setLoadingAll] = useState(false);
+  const [loadedCount, setLoadedCount] = useState(0);
+  const cancelLoadAllRef = useRef(false);
+  const isLoadingAllRef = useRef(false);
+
+  // マイリスト追加フォーム (URLから種別を自動判定)
   const [newUrl, setNewUrl] = useState('');
   const [newName, setNewName] = useState('');
   const [newType, setNewType] = useState<RssTypeValue>(RssType.MY_LIST);
+  const [urlError, setUrlError] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   // プレイリスト作成フォーム
   const [newPlaylistName, setNewPlaylistName] = useState('');
@@ -114,7 +126,7 @@ export function MyListView(): JSX.Element {
         // マイリスト名を取得して表示名に使用
         const info = await window.nndd.invoke<{ name: string } | null>(
           IpcChannel.MYLIST_FETCH_INFO,
-          mylistId
+          { url, type: RssType.MY_LIST }
         ).catch(() => null);
         const tempMl: MyList = {
           myListUrl: url,
@@ -190,6 +202,10 @@ export function MyListView(): JSX.Element {
     setSelectedIds(new Set());
     setLastClickedId(null);
     setCurrentPage(page);
+    setSearchText('');
+    setAllItems(null);
+    cancelLoadAllRef.current = true;
+    isLoadingAllRef.current = false;
     try {
       if (ml.type === RssType.SERIES) {
         const seriesId = ml.myListUrl.match(/series\/(\d+)/)?.[1] ?? ml.myListUrl;
@@ -213,7 +229,7 @@ export function MyListView(): JSX.Element {
       } else {
         const data = await window.nndd.invoke<{ items: MyListItem[]; total: number }>(
           IpcChannel.MYLIST_FETCH_PAGE,
-          { url: ml.myListUrl, page, pageSize: PAGE_SIZE }
+          { url: ml.myListUrl, type: ml.type, page, pageSize: PAGE_SIZE }
         );
         const mapped = data.items.map((d) => ({ ...d, pubDate: new Date(d.pubDate) }));
         setItems(mapped.map(mylistItemToCard));
@@ -238,6 +254,10 @@ export function MyListView(): JSX.Element {
     setSelected({ kind: 'playlist', playlist: pl });
     setSelectedIds(new Set());
     setLastClickedId(null);
+    setSearchText('');
+    setAllItems(null);
+    cancelLoadAllRef.current = true;
+    isLoadingAllRef.current = false;
     try {
       const list = await window.nndd.invoke<PlaylistItem[]>(IpcChannel.PLAYLIST_GET_ITEMS, pl.id);
       setItems(list.map(playlistItemToCard));
@@ -255,21 +275,123 @@ export function MyListView(): JSX.Element {
     }
   };
 
+  /** 検索欄に何か入力された時、現在ページ以外の残り全ページを取得して allItems にキャッシュする */
+  const loadAllPagesForSearch = async (): Promise<void> => {
+    if (selected?.kind !== 'mylist' || allItems !== null || totalItems <= items.length) return;
+    if (isLoadingAllRef.current) return; // 連続入力による二重起動を防止
+    isLoadingAllRef.current = true;
+    const ml = selected.mylist;
+    cancelLoadAllRef.current = false;
+    setLoadingAll(true);
+    setLoadedCount(0);
+    try {
+      const totalPages = Math.ceil(totalItems / PAGE_SIZE);
+      const merged: VideoCardData[] = [];
+      for (let p = 1; p <= totalPages; p++) {
+        if (cancelLoadAllRef.current) return;
+        const data = await window.nndd.invoke<{ items: MyListItem[]; total: number }>(
+          IpcChannel.MYLIST_FETCH_PAGE,
+          // 全件先読み中は画像キャッシュを保存しない (検索確定時にヒット分だけ保存する)
+          { url: ml.myListUrl, type: ml.type, page: p, pageSize: PAGE_SIZE, cacheImages: false }
+        );
+        if (cancelLoadAllRef.current) return;
+        const mapped = data.items.map((d) => ({ ...d, pubDate: new Date(d.pubDate) }));
+        merged.push(...mapped.map(mylistItemToCard));
+        setLoadedCount(merged.length);
+      }
+      if (!cancelLoadAllRef.current) setAllItems(merged);
+    } catch {
+      // 失敗時は現在ページのみでの検索にフォールバック (allItems は null のまま)
+    } finally {
+      setLoadingAll(false);
+      isLoadingAllRef.current = false;
+    }
+  };
+
+  const handleSearchTextChange = (value: string): void => {
+    setSearchText(value);
+    if (value.trim()) {
+      if (allItems === null) void loadAllPagesForSearch();
+    } else {
+      // 検索窓を空にしたら取得を中断
+      cancelLoadAllRef.current = true;
+    }
+  };
+
+  /** 検索確定 (Enter): ヒットした分だけ画像キャッシュに保存する */
+  const handleSearchConfirm = (): void => {
+    if (!searchText.trim()) return;
+    for (const it of filteredItems) {
+      if (!it.thumbnailUrl) continue;
+      window.nndd.invoke(IpcChannel.IMAGE_FETCH, it.thumbnailUrl).catch(() => {});
+    }
+  };
+
+  const filteredItems = useMemo(() => {
+    if (!searchText.trim()) return items;
+    const q = searchText.trim().toLowerCase();
+    const base = allItems ?? items;
+    return base.filter((it) => it.title.toLowerCase().includes(q));
+  }, [items, allItems, searchText]);
+
+  /** URL入力欄からフォーカスが外れた/Enterされた時: 種別自動判定してプレビュー表示 */
+  const handleUrlPreview = async (): Promise<void> => {
+    const url = newUrl.trim();
+    if (!url) { setUrlError(null); return; }
+    const parsed = parseMylistSource(url);
+    if (!parsed) {
+      setUrlError('マイリスト/チャンネル/ユーザー/シリーズのURLまたはIDを認識できませんでした');
+      return;
+    }
+    setUrlError(null);
+    setNewType(parsed.type);
+    setPreviewLoading(true);
+    try {
+      let name = newName.trim();
+      if (!name) {
+        const info = await window.nndd.invoke<{ name: string } | null>(
+          IpcChannel.MYLIST_FETCH_INFO,
+          { url: parsed.normalizedUrl, type: parsed.type }
+        ).catch(() => null);
+        if (info?.name) {
+          name = info.name;
+          setNewName(info.name);
+        }
+      }
+      const tempMl: MyList = {
+        myListUrl: parsed.normalizedUrl,
+        myListName: name || parsed.normalizedUrl,
+        type: parsed.type,
+        isDir: false,
+        unPlayVideoCount: 0,
+        myListVideoIds: {},
+      };
+      await fetchItems(tempMl);
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
   const handleAdd = async (): Promise<void> => {
     const url = newUrl.trim();
     if (!url) return;
+    const parsed = parseMylistSource(url);
+    if (!parsed) {
+      setUrlError('マイリスト/チャンネル/ユーザー/シリーズのURLまたはIDを認識できませんでした');
+      return;
+    }
     let name = newName.trim();
     if (!name) {
       const info = await window.nndd.invoke<{ name: string } | null>(
         IpcChannel.MYLIST_FETCH_INFO,
-        url
+        { url: parsed.normalizedUrl, type: parsed.type }
       ).catch(() => null);
-      name = info?.name ?? url;
+      name = info?.name ?? parsed.normalizedUrl;
     }
     const ml: MyList = {
-      myListUrl: url,
+      myListUrl: parsed.normalizedUrl,
       myListName: name,
-      type: newType,
+      type: parsed.type,
       isDir: false,
       unPlayVideoCount: 0,
       myListVideoIds: {},
@@ -277,6 +399,7 @@ export function MyListView(): JSX.Element {
     await window.nndd.invoke(IpcChannel.MYLIST_ADD, ml);
     setNewUrl('');
     setNewName('');
+    setUrlError(null);
     reloadMylists();
   };
 
@@ -437,7 +560,7 @@ export function MyListView(): JSX.Element {
   // 選択クリック処理 (shift/ctrl)
   const handleItemClick = (videoId: string, e: React.MouseEvent): void => {
     if (e.shiftKey && lastClickedId) {
-      const ids = items.map((it) => it.videoId);
+      const ids = filteredItems.map((it) => it.videoId);
       const from = ids.indexOf(lastClickedId);
       const to = ids.indexOf(videoId);
       const start = Math.min(from, to);
@@ -458,8 +581,8 @@ export function MyListView(): JSX.Element {
 
   const handleBulkDownload = async (): Promise<void> => {
     const targets = selectedIds.size > 0
-      ? items.filter((it) => selectedIds.has(it.videoId))
-      : items;
+      ? filteredItems.filter((it) => selectedIds.has(it.videoId))
+      : filteredItems;
     if (targets.length === 0 || bulkDling) return;
     setBulkDling(true);
     try {
@@ -475,7 +598,7 @@ export function MyListView(): JSX.Element {
   const registeredIds = new Set(mylists.map((m) => m.myListUrl));
   const bulkLabel = selectedIds.size > 0
     ? `一括DL (${selectedIds.size}件選択)`
-    : `一括DL (${items.length}件)`;
+    : `一括DL (${filteredItems.length}件)`;
   const isPlaylistSelected = selected?.kind === 'playlist';
 
   return (
@@ -486,7 +609,9 @@ export function MyListView(): JSX.Element {
           <input
             value={newUrl}
             onChange={(e) => setNewUrl(e.target.value)}
-            placeholder="ID or URL (例: 12345678)"
+            onBlur={() => void handleUrlPreview()}
+            onKeyDown={(e) => { if (e.key === 'Enter') void handleUrlPreview(); }}
+            placeholder="URL or ID (マイリスト/チャンネル/ユーザー/シリーズ)"
             className="w-full bg-nndd-bg border border-nndd-border px-2 py-1 text-xs"
           />
           <input
@@ -495,17 +620,14 @@ export function MyListView(): JSX.Element {
             placeholder="表示名 (省略可)"
             className="w-full bg-nndd-bg border border-nndd-border px-2 py-1 text-xs"
           />
-          <select
-            value={newType}
-            onChange={(e) => setNewType(e.target.value as RssTypeValue)}
-            className="w-full bg-nndd-bg border border-nndd-border px-2 py-1 text-xs"
-          >
-            <option value={RssType.MY_LIST}>マイリスト</option>
-            <option value={RssType.CHANNEL}>チャンネル</option>
-            <option value={RssType.COMMUNITY}>コミュニティ</option>
-            <option value={RssType.USER_UPLOAD_VIDEO}>ユーザー投稿</option>
-            <option value={RssType.SERIES}>シリーズ</option>
-          </select>
+          {newUrl.trim() && !urlError && (
+            <div className="text-xs text-nndd-subtext">
+              種別: {typeLabel(newType)} {typeNameJa(newType)} {previewLoading && '(取得中…)'}
+            </div>
+          )}
+          {urlError && (
+            <div className="text-xs text-red-500 dark:text-red-400">⚠ {urlError}</div>
+          )}
           <div className="flex gap-1 flex-wrap">
             <button
               onClick={handleAdd}
@@ -774,12 +896,12 @@ export function MyListView(): JSX.Element {
             {items.length > 0 && (
               <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-nndd-border bg-nndd-panel text-xs">
                 <ContinuousPlayButton
-                  disabled={loading || items.length === 0}
+                  disabled={loading || filteredItems.length === 0}
                   onPlay={(audioOnly) => {
-                    if (items.length === 0) return;
-                    const videoIds = items.map((it) => it.videoId);
+                    if (filteredItems.length === 0) return;
+                    const videoIds = filteredItems.map((it) => it.videoId);
                     const startIdx = selectedIds.size > 0
-                      ? items.findIndex((it) => selectedIds.has(it.videoId))
+                      ? filteredItems.findIndex((it) => selectedIds.has(it.videoId))
                       : 0;
                     window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
                       videoId: videoIds[startIdx >= 0 ? startIdx : 0],
@@ -788,7 +910,19 @@ export function MyListView(): JSX.Element {
                     });
                   }}
                 />
-                <span className="text-nndd-subtext">{items.length} 件</span>
+                <input
+                  value={searchText}
+                  onChange={(e) => handleSearchTextChange(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') handleSearchConfirm(); }}
+                  placeholder="タイトルで絞り込み"
+                  className="bg-nndd-bg border border-nndd-border px-2 py-1 text-xs"
+                />
+                {loadingAll && (
+                  <span className="text-nndd-subtext animate-pulse">
+                    全件読込中… ({loadedCount.toLocaleString()}/{totalItems.toLocaleString()}件)
+                  </span>
+                )}
+                <span className="text-nndd-subtext">{filteredItems.length} 件</span>
               </div>
             )}
 
@@ -821,15 +955,19 @@ export function MyListView(): JSX.Element {
             <div className="flex-1 overflow-auto p-3">
               {loading ? (
                 <div className="text-nndd-subtext text-sm">読み込み中…</div>
-              ) : items.length === 0 ? (
+              ) : filteredItems.length === 0 ? (
                 <div className="text-nndd-subtext text-sm">
-                  {isPlaylistSelected
-                    ? '動画がありません。動画の右クリックメニューから「プレイリストに追加」してください。'
-                    : '動画なし'}
+                  {searchText.trim()
+                    ? '該当する動画がありません。'
+                    : isPlaylistSelected
+                      ? '動画がありません。動画の右クリックメニューから「プレイリストに追加」してください。'
+                      : '動画なし'}
                 </div>
               ) : displayMode === 'grid' ? (
                 <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
-                  {items.map((it, idx) => (
+                  {filteredItems.map((it) => {
+                    const idx = items.findIndex((x) => x.videoId === it.videoId);
+                    return (
                     <div
                       key={it.videoId}
                       onClick={(e) => handleItemClick(it.videoId, e)}
@@ -851,7 +989,7 @@ export function MyListView(): JSX.Element {
                         <div className="absolute left-1 top-1 flex flex-col gap-0.5 z-10">
                           <button
                             onClick={(e) => { e.stopPropagation(); moveItem(idx, -1); }}
-                            disabled={idx === 0}
+                            disabled={idx <= 0}
                             className="w-5 h-5 text-xs bg-black/60 text-white rounded disabled:opacity-30"
                             title="上へ"
                           >▲</button>
@@ -864,11 +1002,14 @@ export function MyListView(): JSX.Element {
                         </div>
                       )}
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="flex flex-col gap-1">
-                  {items.map((it, idx) => (
+                  {filteredItems.map((it) => {
+                    const idx = items.findIndex((x) => x.videoId === it.videoId);
+                    return (
                     <div
                       key={it.videoId}
                       className={[
@@ -880,7 +1021,7 @@ export function MyListView(): JSX.Element {
                         <div className="flex flex-col gap-0.5 shrink-0">
                           <button
                             onClick={() => moveItem(idx, -1)}
-                            disabled={idx === 0}
+                            disabled={idx <= 0}
                             className="w-5 h-4 text-xs bg-nndd-border rounded disabled:opacity-30"
                             title="上へ"
                           >▲</button>
@@ -908,7 +1049,8 @@ export function MyListView(): JSX.Element {
                         />
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -962,5 +1104,16 @@ function typeLabel(t: RssTypeValue): string {
     case RssType.USER_UPLOAD_VIDEO: return '👤';
     case RssType.SERIES: return '📚';
     default: return '?';
+  }
+}
+
+function typeNameJa(t: RssTypeValue): string {
+  switch (t) {
+    case RssType.MY_LIST: return 'マイリスト';
+    case RssType.CHANNEL: return 'チャンネル';
+    case RssType.COMMUNITY: return 'コミュニティ (終了済)';
+    case RssType.USER_UPLOAD_VIDEO: return 'ユーザー投稿';
+    case RssType.SERIES: return 'シリーズ';
+    default: return '不明';
   }
 }

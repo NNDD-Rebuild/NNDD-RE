@@ -63,9 +63,9 @@ export const IpcChannel = {
   MYLIST_RENEW_ALL: 'nndd:mylist:renewAll',
   /** ログイン済みアカウントのマイリスト一覧を取得 */
   MYLIST_FETCH_ACCOUNT: 'nndd:mylist:fetchAccount',
-  /** マイリストIDからマイリスト名・説明を取得 → {name: string, description?: string} | null */
+  /** {url, type} からマイリスト/チャンネル/ユーザー投稿の表示名を取得 → {name: string} | null */
   MYLIST_FETCH_INFO: 'nndd:mylist:fetchInfo',
-  /** マイリストをページ指定で取得 → {items: MyListItem[], total: number} */
+  /** {url, type, page, pageSize} から動画一覧をページ指定で取得 → {items: MyListItem[], total: number} */
   MYLIST_FETCH_PAGE: 'nndd:mylist:fetchPage',
   /** シリーズIDからアイテム一覧を取得 → {name: string, items: {videoId:string,title:string}[]} */
   SERIES_FETCH: 'nndd:series:fetch',

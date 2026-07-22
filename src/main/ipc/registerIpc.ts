@@ -22,8 +22,11 @@ import {
   MyListClient,
   RankingClient,
   ConnectionDiag,
+  fetchMylistLikeItems,
+  fetchMylistLikeName,
   type SearchOptions
 } from '../nicovideo';
+import type { RssTypeValue } from '@shared/types';
 import { NicoContext } from '../nicovideo/NicoContext';
 import { NnddHttpServer } from '../server/NnddHttpServer';
 import { LanLibraryClient } from '../server/LanLibraryClient';
@@ -335,21 +338,18 @@ export function registerIpcHandlers(
 
   ipcMain.handle(
     IpcChannel.MYLIST_RENEW,
-    async (_e, mylistUrl: string) => {
-      // mylistUrl から id を抽出
-      const m = mylistUrl.match(/(?:mylist\/|^)(\d+)/);
-      if (!m) throw new Error(`invalid mylist url: ${mylistUrl}`);
-      const { items } = await MyListClient.fetchPublicMylist(m[1]);
+    async (_e, args: string | { url: string; type?: RssTypeValue }) => {
+      const mylistUrl = typeof args === 'string' ? args : args.url;
+      const type = typeof args === 'string' ? undefined : args.type;
+      const { items } = await fetchMylistLikeItems(mylistUrl, type ?? 'mylist', 1, 100);
       return items;
     }
   );
 
   ipcMain.handle(
     IpcChannel.MYLIST_FETCH_PAGE,
-    async (_e, args: { url: string; page: number; pageSize?: number }) => {
-      const m = args.url.match(/(?:mylist\/|^)(\d+)/);
-      if (!m) throw new Error(`invalid mylist url: ${args.url}`);
-      return MyListClient.fetchPublicMylist(m[1], args.page, args.pageSize ?? 100);
+    async (_e, args: { url: string; type?: RssTypeValue; page: number; pageSize?: number; cacheImages?: boolean }) => {
+      return fetchMylistLikeItems(args.url, args.type ?? 'mylist', args.page, args.pageSize ?? 100, args.cacheImages ?? true);
     }
   );
 
@@ -357,11 +357,14 @@ export function registerIpcHandlers(
     return MyListClient.fetchAccountMylists();
   });
 
-  ipcMain.handle(IpcChannel.MYLIST_FETCH_INFO, async (_e, mylistId: string) => {
-    const m = mylistId.match(/(?:mylist\/|^)(\d+)/);
-    if (!m) return null;
-    return MyListClient.fetchMylistInfo(m[1]);
-  });
+  ipcMain.handle(
+    IpcChannel.MYLIST_FETCH_INFO,
+    async (_e, args: string | { url: string; type?: RssTypeValue }) => {
+      const url = typeof args === 'string' ? args : args.url;
+      const type = typeof args === 'string' ? undefined : args.type;
+      return fetchMylistLikeName(url, type ?? 'mylist').then((name) => (name ? { name } : null));
+    }
+  );
 
   ipcMain.handle(IpcChannel.SERIES_FETCH, async (_e, seriesId: string, currentVideoId?: string, requestedPage?: number) => {
     // seriesId は数字のみ、またはURL
@@ -473,9 +476,7 @@ export function registerIpcHandlers(
     const results: Record<string, number> = {};
     for (const ml of mylists) {
       try {
-        const m = ml.myListUrl.match(/(?:mylist\/|^)(\d+)/);
-        if (!m) continue;
-        const { items } = await MyListClient.fetchPublicMylist(m[1]);
+        const { items } = await fetchMylistLikeItems(ml.myListUrl, ml.type, 1, 100);
         results[ml.myListUrl] = items.length;
         library.myListDao.upsert({ ...ml, unPlayVideoCount: 0 });
       } catch (e) {

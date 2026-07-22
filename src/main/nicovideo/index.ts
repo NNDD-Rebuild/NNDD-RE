@@ -28,6 +28,8 @@ export { CommentXmlReader } from './comment/CommentXmlReader';
 export { SearchClient } from './search/SearchClient';
 export type { SearchOptions } from './search/SearchClient';
 export { MyListClient } from './mylist/MyListClient';
+export { fetchMylistLikeItems, fetchMylistLikeName } from './mylist/MylistFetcher';
+export { ChannelClient } from './channel/ChannelClient';
 export { RankingClient } from './ranking/RankingClient';
 export { ConnectionDiag } from './ConnectionDiag';
 export type { DiagResult } from './ConnectionDiag';
