@@ -21,13 +21,19 @@ const log = createLogger('Update');
  */
 export class UpdateManager {
   private initialized = false;
+  private updateReady = false;
+  private quitInstallTriggered = false;
 
   initialize(): void {
     if (this.initialized) return;
     this.initialized = true;
 
     autoUpdater.autoDownload = false;
-    autoUpdater.autoInstallOnAppQuit = true;
+    // electron-updater の autoInstallOnAppQuit は終了時に install(true, false) を
+    // 固定引数で呼ぶため isForceRunAfter が効かず、インストール後にアプリが
+    // 自動起動しない。before-quit で明示的に quitAndInstall(true, true) を
+    // 呼ぶことで代替する。
+    autoUpdater.autoInstallOnAppQuit = false;
 
     autoUpdater.on('checking-for-update', () =>
       this.broadcast({ event: 'checking' })
@@ -44,9 +50,17 @@ export class UpdateManager {
     autoUpdater.on('download-progress', (p) =>
       this.broadcast({ event: 'progress', percent: p.percent })
     );
-    autoUpdater.on('update-downloaded', (info) =>
-      this.broadcast({ event: 'downloaded', info })
-    );
+    autoUpdater.on('update-downloaded', (info) => {
+      this.updateReady = true;
+      this.broadcast({ event: 'downloaded', info });
+    });
+
+    app.on('before-quit', (event) => {
+      if (!this.updateReady || this.quitInstallTriggered) return;
+      this.quitInstallTriggered = true;
+      event.preventDefault();
+      autoUpdater.quitAndInstall(true, true);
+    });
   }
 
   async check(): Promise<unknown> {
@@ -66,7 +80,7 @@ export class UpdateManager {
   }
 
   install(): void {
-    autoUpdater.quitAndInstall();
+    autoUpdater.quitAndInstall(false, true);
   }
 
   /**
@@ -153,7 +167,7 @@ export class UpdateManager {
       title: 'アップデートの準備完了',
       message: 'アップデートのダウンロードが完了しました。'
     });
-    if (response === 0) autoUpdater.quitAndInstall();
+    if (response === 0) autoUpdater.quitAndInstall(false, true);
   }
 
   private async confirm(
