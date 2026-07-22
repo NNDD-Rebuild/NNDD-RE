@@ -7,7 +7,7 @@
   "license": "MPL-2.0",
   "private": true,
   "scripts": {
-    "dev": "chcp 65001 > nul && electron-vite dev",
+    "dev": "node scripts/dev.js",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "start": "electron-vite preview",
@@ -19,6 +19,7 @@
     "dist:win": "electron-vite build && electron-builder --win",
     "dist:mac": "electron-builder --mac",
     "dist:linux": "electron-builder --linux",
+    "dist:linux:docker": "node scripts/dist-linux-docker.js",
     "tc": "tsc --noEmit -p tsconfig.node.json",
     "tc:web": "tsc --noEmit -p tsconfig.web.json",
     "tc:all": "npm run tc && npm run tc:web",

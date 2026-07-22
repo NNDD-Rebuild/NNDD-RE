@@ -34,3 +34,6 @@ test-*.mjs
 
 # TypeScript output
 tc_out.txt
+
+# chcp redirect artifact (Windows)
+nul
