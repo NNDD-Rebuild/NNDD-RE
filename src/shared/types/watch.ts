@@ -17,6 +17,8 @@ export interface WatchPageInfo {
   thumbnail: {
     url: string;
     largeUrl: string;
+    /** ImageCache適用前の元URL (nndd-re-local://はDiscord等の外部から解決できないため、外部連携用に保持) */
+    remoteUrl: string;
   };
   /** カウンタ */
   count: {

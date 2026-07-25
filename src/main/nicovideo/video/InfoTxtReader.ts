@@ -121,7 +121,8 @@ export class InfoTxtReader {
       tags: parsed.tags,
       thumbnail: {
         url: thumbImagePath,
-        largeUrl: thumbImagePath
+        largeUrl: thumbImagePath,
+        remoteUrl: ''
       },
       count: {
         view: parsed.viewCount,

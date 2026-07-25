@@ -147,7 +147,8 @@ export class WatchInfoHandler {
       ...info,
       thumbnail: {
         url: thumbUrl || info.thumbnail.url,
-        largeUrl: thumbLargeUrl || info.thumbnail.largeUrl
+        largeUrl: thumbLargeUrl || info.thumbnail.largeUrl,
+        remoteUrl: info.thumbnail.remoteUrl
       },
       owner: info.owner
         ? { ...info.owner, iconUrl: ownerIconUrl || info.owner.iconUrl }

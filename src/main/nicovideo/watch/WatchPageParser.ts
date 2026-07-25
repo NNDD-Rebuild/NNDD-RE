@@ -90,7 +90,8 @@ export class WatchPageParser {
         url: String(thumbnailNode['url'] ?? ''),
         largeUrl: String(
           thumbnailNode['largeUrl'] ?? thumbnailNode['middleUrl'] ?? ''
-        )
+        ),
+        remoteUrl: String(thumbnailNode['url'] ?? '')
       },
       count: {
         view: Number(countNode['view'] ?? 0),

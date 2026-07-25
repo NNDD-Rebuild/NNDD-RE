@@ -103,7 +103,8 @@ export class ThumbInfoXmlReader {
       tags: parsed.tags,
       thumbnail: {
         url: imgPath,
-        largeUrl: imgPath
+        largeUrl: imgPath,
+        remoteUrl: parsed.thumbnailUrl
       },
       count: {
         view: parsed.viewCount,
