@@ -7,6 +7,7 @@ import { getConfigStore } from '../config/ConfigStore';
 import { VideoFileSuffix } from '@shared/constants';
 import { createLogger } from '../util/Logger';
 import { setupHlsSessionInterceptor } from './HlsSessionInterceptor';
+import { registerProtocolHandlerForSession } from './LocalVideoProtocol';
 
 const log = createLogger('PlayerManager');
 
@@ -133,6 +134,11 @@ export class PlayerManager {
 
     // 'native' モード用: hls.js → ニコニコCDN直接アクセスに必要なCookie/CORS処理
     setupHlsSessionInterceptor(win.webContents.session);
+    // partition (hideWatchHistory=ON) はdefaultSessionと別セッションのため、
+    // nndd-re-local:// プロトコルを個別に登録しないとローカル再生が失敗する。
+    if (partition) {
+      registerProtocolHandlerForSession(win.webContents.session);
+    }
 
     // ローカル再生時、付帯ファイル群を自動探索
     const resolved: OpenPlayerParams = { ...params };

@@ -56,10 +56,22 @@ export function registerScheme(): void {
 }
 
 /**
- * app.whenReady() 後に呼ぶ。プロトコルハンドラーを登録する。
+ * app.whenReady() 後に呼ぶ。デフォルトセッションにプロトコルハンドラーを登録する。
  */
 export function registerProtocolHandler(): void {
-  protocol.handle(SCHEME, async (req) => {
+  protocol.handle(SCHEME, handleRequest);
+}
+
+/**
+ * hideWatchHistory=ON時などに生成される非デフォルトpartitionセッションにも
+ * このプロトコルを登録する。登録しないと当該ウィンドウで `nndd-re-local://`
+ * が解決できず、ローカル再生がストリーミングにフォールバックしてしまう。
+ */
+export function registerProtocolHandlerForSession(sess: Electron.Session): void {
+  sess.protocol.handle(SCHEME, handleRequest);
+}
+
+async function handleRequest(req: Request): Promise<Response> {
     try {
       const u = new URL(req.url);
       const filePath = u.searchParams.get('path');
@@ -136,7 +148,6 @@ export function registerProtocolHandler(): void {
       log.error('protocol handler error:', e);
       return new Response(`error: ${e}`, { status: 500 });
     }
-  });
 }
 
 /**
