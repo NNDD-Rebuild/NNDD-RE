@@ -5,19 +5,10 @@ import { useAppStore } from '@renderer/store/useAppStore';
  * 設定 > ランキング・検索・マイリスト。
  * 元: NNDD.mxml の Canvas label="ランキング・検索・マイリスト"
  *
- *  - トレイ (有効/最小化→トレイ)
  *  - 起動時タブ
  *  - テーマ
  */
 export function NicoSettings(): JSX.Element {
-  const [trayEnabled, setTrayEnabled] = useConfig<boolean>(
-    'tray.enabled',
-    true
-  );
-  const [minimizeToTray, setMinimizeToTray] = useConfig<boolean>(
-    'tray.minimizeToTray',
-    true
-  );
   const [initialTab, setInitialTab] = useConfig<number>('ui.initialTab', 0);
   const [theme, setThemeConfig] = useConfig<'dark' | 'light'>('ui.theme', 'dark');
 
@@ -115,26 +106,6 @@ export function NicoSettings(): JSX.Element {
             <option value="dark">ダーク</option>
             <option value="light">ライト</option>
           </select>
-        </Row>
-      </Section>
-
-      <Section title="システムトレイ">
-        <Row label="トレイアイコンを表示">
-          <input
-            type="checkbox"
-            checked={trayEnabled}
-            onChange={(e) => setTrayEnabled(e.target.checked)}
-          />
-        </Row>
-        <Row label="ウィンドウを閉じたらトレイに最小化">
-          <input
-            type="checkbox"
-            checked={minimizeToTray}
-            onChange={(e) => setMinimizeToTray(e.target.checked)}
-          />
-          <span className="text-xs text-nndd-subtext ml-2">
-            (DLが続行できます)
-          </span>
         </Row>
       </Section>
     </div>

@@ -40,6 +40,11 @@ export function GeneralSettings({ onDeveloperModeChange }: GeneralSettingsProps)
   const [httpEnabled, setHttpEnabled] = useConfig<boolean>('httpServer.enabled', false);
   const [httpPort, setHttpPort] = useConfig<number>('httpServer.port', 12345);
   const [hideWatchHistory, setHideWatchHistory] = useConfig<boolean>('hideWatchHistory', false);
+  const [trayEnabled, setTrayEnabled] = useConfig<boolean>('tray.enabled', true);
+  const [minimizeToTray, setMinimizeToTray] = useConfig<boolean>(
+    'tray.minimizeToTray',
+    true
+  );
 
   // LANライブラリ (リモートNNDD)
   const [remoteEnabled, setRemoteEnabled] = useState(false);
@@ -505,6 +510,26 @@ export function GeneralSettings({ onDeveloperModeChange }: GeneralSettingsProps)
           同じLAN内の本家NNDDまたはNNDD-REのライブラリを「LANライブラリ」タブで閲覧・再生できます。
           本家NNDDではサーバー設定でポート12300・動画情報共有を有効にしてください。
         </p>
+      </Section>
+
+      <Section title="システムトレイ">
+        <label className="flex items-center gap-2 cursor-pointer select-none text-sm">
+          <input
+            type="checkbox"
+            checked={trayEnabled}
+            onChange={(e) => setTrayEnabled(e.target.checked)}
+          />
+          トレイアイコンを表示
+        </label>
+        <label className="flex items-center gap-2 mt-2 cursor-pointer select-none text-sm">
+          <input
+            type="checkbox"
+            checked={minimizeToTray}
+            onChange={(e) => setMinimizeToTray(e.target.checked)}
+          />
+          ウィンドウを閉じたらトレイに最小化
+          <span className="text-xs text-nndd-subtext ml-1">(DLが続行できます)</span>
+        </label>
       </Section>
 
       <Section title="ウィンドウの大きさ・位置をリセットする">
