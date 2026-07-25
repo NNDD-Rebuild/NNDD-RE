@@ -40,6 +40,28 @@ export interface RankingGenre {
 }
 
 /**
+ * ランキングジャンル情報 (featuredKey ベース、動的取得用)
+ */
+export interface RankingGenreInfo {
+  /** URL に使う featuredKey (opaque ID) */
+  id: string;
+  /** 表示名 */
+  name: string;
+  /** サブカテゴリ(トレンドタグ)選択に対応しているか */
+  hasTags?: boolean;
+}
+
+/**
+ * ランキング取得結果
+ */
+export interface RankingFetchResult {
+  items: RankingItem[];
+  /** 現在のジャンルで選べるサブカテゴリ(トレンドタグ)一覧 */
+  trendTags: string[];
+  hasNext: boolean;
+}
+
+/**
  * ランキング項目
  * 元: nicovideo4as/src/org/mineap/nicovideo4as/model/RankingItem.as
  */

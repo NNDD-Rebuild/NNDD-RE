@@ -28,6 +28,10 @@ export function NicoSettings(): JSX.Element {
   };
   const [contentViewMode, setContentViewModeConfig] = useConfig<'grid' | 'list'>('ui.contentViewMode', 'grid');
   const setContentViewModeStore = useAppStore((s) => s.setContentViewMode);
+  const [hideSensitiveContents, setHideSensitiveContents] = useConfig<boolean>(
+    'hideSensitiveContents',
+    true
+  );
 
   const setContentViewMode = (mode: 'grid' | 'list'): void => {
     setContentViewModeConfig(mode);
@@ -73,6 +77,16 @@ export function NicoSettings(): JSX.Element {
           <p className="text-xs text-nndd-subtext mt-1">
             ライブラリの表示形式は「DLリスト・ライブラリ」タブで設定できます。
           </p>
+        </Row>
+        <Row label="センシティブな動画を隠す">
+          <input
+            type="checkbox"
+            checked={hideSensitiveContents}
+            onChange={(e) => setHideSensitiveContents(e.target.checked)}
+          />
+          <span className="text-xs text-nndd-subtext ml-2">
+            (OFFでランキングにR18等の閲覧注意動画も表示)
+          </span>
         </Row>
       </Section>
 

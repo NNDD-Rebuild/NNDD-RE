@@ -80,6 +80,13 @@ export interface NnddConfig {
    */
   cacheRoot: string;
 
+  /**
+   * ランキング取得時にセンシティブ (閲覧注意) な動画を隠すか。
+   * true (デフォルト): レスポンスの requireSensitiveMasking=true の動画を除外する。
+   * false: 除外せずすべて表示する。
+   */
+  hideSensitiveContents: boolean;
+
   /** プレイヤー設定 */
   player: {
     volume: number;
@@ -284,6 +291,7 @@ const DEFAULTS: NnddConfig = {
   comment429RetryWaitSec: 185,
   hideWatchHistory: false,
   cacheRoot: '',
+  hideSensitiveContents: true,
   player: {
     volume: 1.0,
     streamingMode: 'native',

@@ -1,16 +1,21 @@
 import { useEffect, useState } from 'react';
-import type { RankingItem, RankingTermValue } from '@shared/types';
+import type { RankingItem, RankingTermValue, RankingGenreInfo } from '@shared/types';
 import { RANKING_GENRES, RANKING_TERMS } from '@shared/constants';
 import { VideoCard } from '../common/VideoCard';
 import { useAppStore } from '@renderer/store/useAppStore';
 
+const ALL_TAG = '';
+
 /**
  * ランキングタブ。
- * ジャンル/集計期間選択 + グリッド/リスト表示切替
+ * ジャンル/サブカテゴリ(タグ)/集計期間選択 + グリッド/リスト表示切替
  */
 export function RankingView(): JSX.Element {
-  const [genre, setGenre] = useState('all');
+  const [genres, setGenres] = useState<RankingGenreInfo[]>(RANKING_GENRES);
+  const [genre, setGenre] = useState(RANKING_GENRES[0]?.id ?? 'e9uj2uks');
   const [term, setTerm] = useState<RankingTermValue>('24h');
+  const [tag, setTag] = useState(ALL_TAG);
+  const [trendTags, setTrendTags] = useState<string[]>([]);
   const [items, setItems] = useState<RankingItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -19,19 +24,32 @@ export function RankingView(): JSX.Element {
   const showToast = useAppStore((s) => s.showToast);
   const [displayMode, setDisplayMode] = useState<'grid' | 'list'>(globalMode);
 
+  const currentGenre = genres.find((g) => g.id === genre);
+
   // グローバル設定変更を即時反映
   useEffect(() => { setDisplayMode(globalMode); }, [globalMode]);
+
+  // ジャンル一覧は起動時に本家サイトから動的取得 (失敗時は静的一覧のまま)
+  useEffect(() => {
+    window.nndd
+      .invoke<RankingGenreInfo[]>(window.nndd.channels.RANKING_GENRES)
+      .then((list) => {
+        if (list && list.length > 0) setGenres(list);
+      })
+      .catch(() => {});
+  }, []);
 
   const fetchRanking = async (): Promise<void> => {
     setLoading(true);
     setError(null);
     try {
-      const data = await window.nndd.invoke<RankingItem[]>(
+      const res = await window.nndd.invoke<{ items: RankingItem[]; trendTags: string[]; hasNext: boolean }>(
         window.nndd.channels.RANKING_FETCH,
-        { genre, term }
+        { genre, term, tag: tag || undefined }
       );
-      const mapped = data.map((d) => ({ ...d, registeredAt: new Date(d.registeredAt) }));
+      const mapped = res.items.map((d) => ({ ...d, registeredAt: new Date(d.registeredAt) }));
       setItems(mapped);
+      setTrendTags(res.trendTags ?? []);
       const ids = mapped.map((d) => d.videoId);
       window.nndd
         .invoke<string[]>(window.nndd.channels.LIBRARY_CHECK_BATCH, ids)
@@ -44,10 +62,17 @@ export function RankingView(): JSX.Element {
     }
   };
 
+  // ジャンルを切り替えたらサブカテゴリ選択はリセットする
+  useEffect(() => {
+    setTag(ALL_TAG);
+    setTrendTags([]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [genre]);
+
   useEffect(() => {
     fetchRanking();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [genre, term]);
+  }, [genre, term, tag]);
 
   const handlePlay = (videoId: string): void => {
     window.nndd.invoke(window.nndd.channels.VIDEO_OPEN_PLAYER, { videoId });
@@ -76,10 +101,22 @@ export function RankingView(): JSX.Element {
           onChange={(e) => setGenre(e.target.value)}
           className="bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
         >
-          {RANKING_GENRES.map((g) => (
+          {genres.map((g) => (
             <option key={g.id} value={g.id}>{g.name}</option>
           ))}
         </select>
+        {currentGenre?.hasTags && (
+          <select
+            value={tag}
+            onChange={(e) => setTag(e.target.value)}
+            className="bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
+          >
+            <option value={ALL_TAG}>すべて</option>
+            {trendTags.map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+        )}
         <div className="flex gap-1">
           {RANKING_TERMS.map((t) => (
             <button

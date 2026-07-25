@@ -766,10 +766,15 @@ export function registerIpcHandlers(
   // --- ランキング ---
   ipcMain.handle(
     IpcChannel.RANKING_FETCH,
-    async (_e, opts: { genre: string; term: 'hour' | '24h' | 'week' | 'month' | 'total' }) => {
-      return RankingClient.fetch(opts.genre, opts.term);
+    async (_e, opts: { genre: string; term: 'hour' | '24h' | 'week' | 'month' | 'total'; tag?: string }) => {
+      const hideSensitiveContents = getConfigStore().get('hideSensitiveContents');
+      return RankingClient.fetch(opts.genre, opts.term, opts.tag, hideSensitiveContents);
     }
   );
+
+  ipcMain.handle(IpcChannel.RANKING_GENRES, async () => {
+    return RankingClient.fetchGenres();
+  });
 
   // --- 設定 ---
   ipcMain.handle(IpcChannel.CONFIG_GET_ALL, () => {
