@@ -1,5 +1,5 @@
 import Store from 'electron-store';
-import type { GitHubSyncConfig, DiscordRpcConfig } from '@shared/types';
+import type { GitHubSyncConfig, DiscordRpcConfig, WebhookNotifyConfig } from '@shared/types';
 
 /**
  * アプリ全体の設定。
@@ -267,6 +267,9 @@ export interface NnddConfig {
   /** Discord Rich Presence */
   discordRpc: DiscordRpcConfig;
 
+  /** Webhook通知 (Discord/Slack自動判定) */
+  webhookNotify: WebhookNotifyConfig;
+
   /** アプリ自動更新 */
   update: {
     /**
@@ -375,6 +378,12 @@ const DEFAULTS: NnddConfig = {
     showElapsed: true,
     showThumbnail: true,
     showGithubButton: true
+  },
+  webhookNotify: {
+    enabled: false,
+    webhookUrl: '',
+    notifyOnDownloadComplete: true,
+    notifyOnDownloadFail: true
   },
   update: {
     mode: 'ask'

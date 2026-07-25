@@ -61,6 +61,7 @@ import { GistClient } from '../github/GistClient';
 import { BackupManager } from '../githubSync/BackupManager';
 import type { DeviceFlowEvent, SyncProfile, DiscordActivityInfo } from '@shared/types';
 import { getDiscordRpcManager } from '../discord/DiscordRpcManager';
+import { sendWebhookNotify } from '../notification/WebhookNotifier';
 
 const log = createLogger('IPC');
 
@@ -95,11 +96,27 @@ export function registerIpcHandlers(
         'ダウンロード完了',
         item.videoName || item.videoId
       );
+      if (getConfigStore().store.webhookNotify.notifyOnDownloadComplete) {
+        void sendWebhookNotify({
+          title: 'ダウンロード完了',
+          description: item.videoName || item.videoId,
+          level: 'success',
+          videoId: item.videoId
+        });
+      }
     } else if (item.status === DownloadStatusType.FAIL) {
       trayManager?.notify(
         'ダウンロード失敗',
         `${item.videoName || item.videoId}: ${item.errorMessage ?? ''}`
       );
+      if (getConfigStore().store.webhookNotify.notifyOnDownloadFail) {
+        void sendWebhookNotify({
+          title: 'ダウンロード失敗',
+          description: `${item.videoName || item.videoId}: ${item.errorMessage ?? ''}`,
+          level: 'error',
+          videoId: item.videoId
+        });
+      }
     }
   });
   dlManager.on('changeAll', (items) => {

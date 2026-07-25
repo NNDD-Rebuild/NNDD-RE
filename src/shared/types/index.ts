@@ -8,4 +8,5 @@ export * from './watch';
 export * from './playlist';
 export * from './backup';
 export * from './discordRpc';
+export * from './notification';
 export * from './ipc';

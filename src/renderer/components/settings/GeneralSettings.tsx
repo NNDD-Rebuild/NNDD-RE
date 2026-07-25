@@ -62,6 +62,22 @@ export function GeneralSettings({ onDeveloperModeChange }: GeneralSettingsProps)
   const [discordShowThumbnail, setDiscordShowThumbnail] = useConfig<boolean>('discordRpc.showThumbnail', true);
   const [discordShowGithubButton, setDiscordShowGithubButton] = useConfig<boolean>('discordRpc.showGithubButton', true);
 
+  // Webhook通知 (Discord/Slack自動判定)
+  const [webhookEnabled, setWebhookEnabled] = useConfig<boolean>('webhookNotify.enabled', false);
+  const [webhookUrl, setWebhookUrl] = useConfig<string>('webhookNotify.webhookUrl', '');
+  const [webhookNotifyComplete, setWebhookNotifyComplete] = useConfig<boolean>(
+    'webhookNotify.notifyOnDownloadComplete',
+    true
+  );
+  const [webhookNotifyFail, setWebhookNotifyFail] = useConfig<boolean>(
+    'webhookNotify.notifyOnDownloadFail',
+    true
+  );
+  const [webhookUrlInput, setWebhookUrlInput] = useState('');
+  useEffect(() => {
+    setWebhookUrlInput(webhookUrl ?? '');
+  }, [webhookUrl]);
+
   const [hasSavedCredentials, setHasSavedCredentials] = useState(false);
 
   const refreshImgCacheInfo = (): void => {
@@ -615,6 +631,49 @@ export function GeneralSettings({ onDeveloperModeChange }: GeneralSettingsProps)
         <p className="text-xs text-nndd-subtext mt-2">
           Discordデスクトップアプリが起動している必要があります。
           ボタンは自分のプロフィール画面には表示されず、他のユーザーから見た時のみ表示されます (Discord仕様)。
+        </p>
+      </Section>
+
+      <Section title="Webhook通知 (Discord / Slack)">
+        <label className="flex items-center gap-2 cursor-pointer select-none text-sm">
+          <input
+            type="checkbox"
+            checked={webhookEnabled}
+            onChange={(e) => setWebhookEnabled(e.target.checked)}
+          />
+          ダウンロード状況をWebhookで通知する
+        </label>
+        <div className="flex items-center gap-2 mt-3">
+          <span className="text-xs text-nndd-subtext w-24 shrink-0">Webhook URL</span>
+          <input
+            type="text"
+            placeholder="https://discord.com/api/webhooks/... または https://hooks.slack.com/services/..."
+            value={webhookUrlInput}
+            onChange={(e) => setWebhookUrlInput(e.target.value)}
+            onBlur={() => setWebhookUrl(webhookUrlInput)}
+            className="flex-1 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
+          />
+        </div>
+        <div className="mt-3 space-y-1">
+          <label className="flex items-center gap-2 cursor-pointer select-none text-sm">
+            <input
+              type="checkbox"
+              checked={webhookNotifyComplete}
+              onChange={(e) => setWebhookNotifyComplete(e.target.checked)}
+            />
+            ダウンロード完了時に通知
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer select-none text-sm">
+            <input
+              type="checkbox"
+              checked={webhookNotifyFail}
+              onChange={(e) => setWebhookNotifyFail(e.target.checked)}
+            />
+            ダウンロード失敗時に通知
+          </label>
+        </div>
+        <p className="text-xs text-nndd-subtext mt-2">
+          URLのドメインからDiscord / Slackを自動判別して送信します。両方に対応。
         </p>
       </Section>
 
