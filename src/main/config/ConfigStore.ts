@@ -279,6 +279,12 @@ export interface NnddConfig {
      *   - 'off':    起動時は確認しない
      */
     mode: 'ask' | 'silent' | 'off';
+    /**
+     * アップデートチャンネル
+     *   - 'stable': 正式版のみ (GitHub Releaseのpre-releaseを除外)
+     *   - 'beta':   ベータ版 (pre-release) も対象に含める
+     */
+    channel: 'stable' | 'beta';
   };
 }
 
@@ -386,7 +392,8 @@ const DEFAULTS: NnddConfig = {
     notifyOnDownloadFail: true
   },
   update: {
-    mode: 'ask'
+    mode: 'ask',
+    channel: 'stable'
   }
 };
 

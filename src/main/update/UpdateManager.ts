@@ -9,6 +9,7 @@ import {
 } from 'electron';
 import { IpcChannel } from '@shared/types';
 import { createLogger } from '../util/Logger';
+import { getConfigStore } from '../config/ConfigStore';
 
 const log = createLogger('Update');
 
@@ -63,9 +64,30 @@ export class UpdateManager {
     });
   }
 
+  /**
+   * ConfigStore の update.channel を都度読み込み autoUpdater に反映する。
+   * initialize() は一度きりしか呼ばれないため、チェックの都度呼ぶことで
+   * チャンネル設定の変更を次回チェック時から反映させる。
+   *
+   * channel セッターは一度非nullをセットすると null を再代入できないため
+   * (electron-updater 側の仕様)、安定版でも 'latest' (デフォルトチャンネル名)
+   * を明示セットする。
+   */
+  private applyChannelConfig(): void {
+    const channel = getConfigStore().get('update').channel;
+    if (channel === 'beta') {
+      autoUpdater.allowPrerelease = true;
+      autoUpdater.channel = 'beta';
+    } else {
+      autoUpdater.allowPrerelease = false;
+      autoUpdater.channel = 'latest';
+    }
+  }
+
   async check(): Promise<unknown> {
     if (!app.isPackaged) return null;
     this.initialize();
+    this.applyChannelConfig();
     try {
       return await autoUpdater.checkForUpdates();
     } catch (e) {
@@ -94,6 +116,7 @@ export class UpdateManager {
   ): Promise<void> {
     if (!app.isPackaged) return;
     this.initialize();
+    this.applyChannelConfig();
 
     const onAvailable = (info: { version?: string }): void => {
       autoUpdater.off('update-available', onAvailable);

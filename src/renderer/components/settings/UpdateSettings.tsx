@@ -29,6 +29,10 @@ export function UpdateSettings(): JSX.Element {
     'update.mode',
     'ask'
   );
+  const [updateChannel, setUpdateChannel] = useConfig<'stable' | 'beta'>(
+    'update.channel',
+    'stable'
+  );
 
   useEffect(() => {
     window.nndd
@@ -82,6 +86,33 @@ export function UpdateSettings(): JSX.Element {
       </Section>
 
       <Section title="アップデート">
+        <div className="text-xs text-nndd-subtext mb-1">アップデートチャンネル</div>
+        <div className="flex flex-col gap-1 mb-3">
+          {(
+            [
+              { value: 'stable', label: '安定版', desc: '正式リリース版のみを対象にする' },
+              {
+                value: 'beta',
+                label: 'ベータ版',
+                desc: '正式リリース前のベータ版も対象にする (不具合が含まれる可能性があります)'
+              }
+            ] as const
+          ).map(({ value, label, desc }) => (
+            <label key={value} className="flex items-start gap-2 text-sm cursor-pointer">
+              <input
+                type="radio"
+                name="update-channel"
+                className="mt-0.5"
+                checked={updateChannel === value}
+                onChange={() => setUpdateChannel(value)}
+              />
+              <span>
+                {label}
+                <span className="block text-xs text-nndd-subtext">{desc}</span>
+              </span>
+            </label>
+          ))}
+        </div>
         <div className="text-xs text-nndd-subtext mb-1">起動時のアップデート確認</div>
         <div className="flex flex-col gap-1 mb-3">
           {(
