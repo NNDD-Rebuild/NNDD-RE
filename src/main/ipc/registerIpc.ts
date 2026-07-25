@@ -59,7 +59,8 @@ import { ImageCache } from '../util/ImageCache';
 import { GitHubAuthManager } from '../github/GitHubAuthManager';
 import { GistClient } from '../github/GistClient';
 import { BackupManager } from '../githubSync/BackupManager';
-import type { DeviceFlowEvent, SyncProfile } from '@shared/types';
+import type { DeviceFlowEvent, SyncProfile, DiscordActivityInfo } from '@shared/types';
+import { getDiscordRpcManager } from '../discord/DiscordRpcManager';
 
 const log = createLogger('IPC');
 
@@ -795,6 +796,9 @@ export function registerIpcHandlers(
     if (key === 'logLevel') {
       setLogLevel(value as 'standard' | 'verbose');
     }
+    if (key === 'discordRpc.enabled' || key === 'discordRpc.clientId') {
+      void getDiscordRpcManager().onConfigChanged();
+    }
     if (key === 'libraryRoot') {
       const dir = typeof value === 'string' && value ? value : library.defaultVideoDir;
       library.videoDir = dir;
@@ -996,6 +1000,17 @@ export function registerIpcHandlers(
     if (!fsmod.existsSync(htmlPath)) return null;
     await shell.openPath(htmlPath);
     return htmlPath;
+  });
+
+  // --- Discord Rich Presence ---
+  ipcMain.handle(IpcChannel.DISCORD_RPC_STATUS, () => {
+    return getDiscordRpcManager().status();
+  });
+  ipcMain.on(IpcChannel.DISCORD_RPC_SET_ACTIVITY, (_e, info: DiscordActivityInfo) => {
+    void getDiscordRpcManager().setActivity(info);
+  });
+  ipcMain.on(IpcChannel.DISCORD_RPC_CLEAR_ACTIVITY, () => {
+    void getDiscordRpcManager().clearActivity();
   });
 
   // --- 接続診断 ---

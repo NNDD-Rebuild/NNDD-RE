@@ -333,7 +333,15 @@ export const IpcChannel = {
   /** (profileId: string) → BackupResult */
   BACKUP_DOWNLOAD: 'nndd:backup:download',
   /** (profileId: string) → BackupPayload | null */
-  BACKUP_PREVIEW: 'nndd:backup:preview'
+  BACKUP_PREVIEW: 'nndd:backup:preview',
+
+  // Discord Rich Presence
+  /** → { connected: boolean } */
+  DISCORD_RPC_STATUS: 'nndd:discordRpc:status',
+  /** (DiscordActivityInfo) 動画再生中のPresenceを設定 (send, 返り値なし) */
+  DISCORD_RPC_SET_ACTIVITY: 'nndd:discordRpc:setActivity',
+  /** Presenceをクリア (send, 返り値なし) */
+  DISCORD_RPC_CLEAR_ACTIVITY: 'nndd:discordRpc:clearActivity'
 } as const;
 
 export type IpcChannelValue = typeof IpcChannel[keyof typeof IpcChannel];

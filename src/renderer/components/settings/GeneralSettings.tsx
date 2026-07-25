@@ -55,6 +55,13 @@ export function GeneralSettings({ onDeveloperModeChange }: GeneralSettingsProps)
   // 開発者オプション
   const [developerEnabled, setDeveloperEnabled] = useState(false);
 
+  // Discord Rich Presence
+  const [discordEnabled, setDiscordEnabled] = useConfig<boolean>('discordRpc.enabled', false);
+  const [discordShowTitle, setDiscordShowTitle] = useConfig<boolean>('discordRpc.showTitle', true);
+  const [discordShowElapsed, setDiscordShowElapsed] = useConfig<boolean>('discordRpc.showElapsed', true);
+  const [discordShowThumbnail, setDiscordShowThumbnail] = useConfig<boolean>('discordRpc.showThumbnail', true);
+  const [discordShowGithubButton, setDiscordShowGithubButton] = useConfig<boolean>('discordRpc.showGithubButton', true);
+
   const [hasSavedCredentials, setHasSavedCredentials] = useState(false);
 
   const refreshImgCacheInfo = (): void => {
@@ -559,6 +566,55 @@ export function GeneralSettings({ onDeveloperModeChange }: GeneralSettingsProps)
         <p className="text-xs text-nndd-subtext mt-2">
           動画再生時に取得したサムネイルとユーザーアイコンをローカルに保存します。
           次回同じ動画を開く際にオフラインでも表示できます。
+        </p>
+      </Section>
+
+      <Section title="Discord連携 (Rich Presence)">
+        <label className="flex items-center gap-2 cursor-pointer select-none text-sm">
+          <input
+            type="checkbox"
+            checked={discordEnabled}
+            onChange={(e) => setDiscordEnabled(e.target.checked)}
+          />
+          再生中の動画をDiscordのステータスに表示する
+        </label>
+        <div className="mt-3 space-y-1">
+          <label className="flex items-center gap-2 cursor-pointer select-none text-sm">
+            <input
+              type="checkbox"
+              checked={discordShowTitle}
+              onChange={(e) => setDiscordShowTitle(e.target.checked)}
+            />
+            動画タイトルを表示
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer select-none text-sm">
+            <input
+              type="checkbox"
+              checked={discordShowElapsed}
+              onChange={(e) => setDiscordShowElapsed(e.target.checked)}
+            />
+            経過時間を表示
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer select-none text-sm">
+            <input
+              type="checkbox"
+              checked={discordShowThumbnail}
+              onChange={(e) => setDiscordShowThumbnail(e.target.checked)}
+            />
+            サムネイル画像を表示
+          </label>
+          <label className="flex items-center gap-2 cursor-pointer select-none text-sm">
+            <input
+              type="checkbox"
+              checked={discordShowGithubButton}
+              onChange={(e) => setDiscordShowGithubButton(e.target.checked)}
+            />
+            GitHubリポジトリへのリンクボタンを表示
+          </label>
+        </div>
+        <p className="text-xs text-nndd-subtext mt-2">
+          Discordデスクトップアプリが起動している必要があります。
+          ボタンは自分のプロフィール画面には表示されず、他のユーザーから見た時のみ表示されます (Discord仕様)。
         </p>
       </Section>
 

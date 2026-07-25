@@ -222,6 +222,8 @@ export default function PlayerApp(): JSX.Element {
     videoId: string;
     title: string;
     thumbnailUrl: string;
+    /** Discord Rich Presence送信用。nndd-re-local://はDiscordから解決できないため、ImageCache適用前の生URLを別途保持 */
+    discordThumbnailUrl?: string;
     isLocal: boolean;
   } | null>(null);
   const [commentOpacity] = useConfig<number>('player.commentOpacity', 1);
@@ -437,6 +439,7 @@ export default function PlayerApp(): JSX.Element {
       videoId,
       title: w?.title ?? videoId,
       thumbnailUrl: w?.thumbnail?.url ?? '',
+      discordThumbnailUrl: w?.thumbnail?.remoteUrl ?? '',
       isLocal: false
     };
 
@@ -615,6 +618,9 @@ export default function PlayerApp(): JSX.Element {
       );
       if (!w) return;
       setWatch(w);
+      if (playInfoRef.current && w.thumbnail?.remoteUrl) {
+        playInfoRef.current.discordThumbnailUrl = w.thumbnail.remoteUrl;
+      }
       if (w.owner?.id) {
         window.nndd
           .invoke<string | null>(IpcChannel.USER_ICON_FETCH, w.owner.id)
@@ -873,6 +879,31 @@ export default function PlayerApp(): JSX.Element {
     video.addEventListener('timeupdate', onTime);
     return () => video.removeEventListener('timeupdate', onTime);
   }, [video]);
+
+  // Discord Rich Presence: 再生開始時にPresence送信 (src切替のたびに最新化)
+  useEffect(() => {
+    if (!video) return;
+    const sendActivity = (): void => {
+      const info = playInfoRef.current;
+      if (!info?.videoId) return;
+      window.nndd.send(IpcChannel.DISCORD_RPC_SET_ACTIVITY, {
+        videoId: info.videoId,
+        title: info.title,
+        thumbnailUrl: info.discordThumbnailUrl || undefined,
+        durationSec: video.duration || undefined,
+        startedAtMs: Date.now() - video.currentTime * 1000
+      });
+    };
+    video.addEventListener('play', sendActivity);
+    return () => video.removeEventListener('play', sendActivity);
+  }, [video, src]);
+
+  // Discord Rich Presence: ウィンドウを閉じたらPresenceをクリア
+  useEffect(() => {
+    return () => {
+      window.nndd.send(IpcChannel.DISCORD_RPC_CLEAR_ACTIVITY);
+    };
+  }, []);
 
   // owner コメントの @ジャンプ / ＠ジャンプ: 指定 vpos に達したら別動画へジャンプ
   // 半角・全角 @ 両対応。fork は 'owner' (ストリーミング) / '1' (ローカルXML) の両方を見る

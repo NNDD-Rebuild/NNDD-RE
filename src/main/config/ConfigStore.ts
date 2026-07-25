@@ -1,5 +1,5 @@
 import Store from 'electron-store';
-import type { GitHubSyncConfig } from '@shared/types';
+import type { GitHubSyncConfig, DiscordRpcConfig } from '@shared/types';
 
 /**
  * アプリ全体の設定。
@@ -264,6 +264,9 @@ export interface NnddConfig {
   /** GitHub Gist 設定バックアップ・同期 */
   githubSync: GitHubSyncConfig;
 
+  /** Discord Rich Presence */
+  discordRpc: DiscordRpcConfig;
+
   /** アプリ自動更新 */
   update: {
     /**
@@ -364,6 +367,14 @@ const DEFAULTS: NnddConfig = {
   githubSync: {
     profiles: [],
     activeProfileId: null
+  },
+  discordRpc: {
+    enabled: false,
+    clientId: '',
+    showTitle: true,
+    showElapsed: true,
+    showThumbnail: true,
+    showGithubButton: true
   },
   update: {
     mode: 'ask'

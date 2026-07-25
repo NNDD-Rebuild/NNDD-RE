@@ -29,6 +29,7 @@
     "tc:both:short": "tsc --noEmit -p tsconfig.node.json 2>&1 | findstr \"VIDEO_OPEN_PLAYER registerIpc\" | more +0"
   },
   "dependencies": {
+    "@xhayper/discord-rpc": "^1.3.4",
     "@xpadev-net/niconicomments": "^0.3.0",
     "better-sqlite3": "^11.3.0",
     "electron-store": "^8.2.0",
