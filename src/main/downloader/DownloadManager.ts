@@ -381,10 +381,9 @@ export class DownloadManager extends EventEmitter {
         }
       }
 
-      this.updateStatus(item, DownloadStatusType.SUCCESS);
       item.progress = 1;
       item.endTime = new Date();
-      this.emit('change', item);
+      this.updateStatus(item, DownloadStatusType.SUCCESS);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       item.errorMessage = msg;
