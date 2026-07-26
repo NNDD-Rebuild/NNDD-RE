@@ -135,7 +135,7 @@ const TERMS = ['last-6-months', 'last-1-month'] as const;
 async function getMyUserId(): Promise<string> {
   const http = NicoContext.get().http;
   const res = await http.fetch('https://nvapi.nicovideo.jp/v1/users/me', { timeoutMs: 8000 });
-  if (!res.ok) throw new Error(`user info failed: ${res.status}`);
+  if (!res.ok) throw new Error(`user info failed: HTTP ${res.status}`);
   const json = await res.json() as Record<string, unknown>;
   const id = (json['data'] as Record<string, unknown>)?.['user']?.['id'] ?? json['id'];
   if (!id) throw new Error('userId not found');

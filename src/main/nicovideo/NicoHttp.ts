@@ -6,6 +6,57 @@ import path from 'node:path';
 
 const log = createLogger('NicoHttp');
 
+/**
+ * ニコニコAPIがエラーレスポンス (4xx) の body に埋め込む meta 情報。
+ * 例: { meta: { status: 404, errorCode: "NOT_FOUND" } }
+ */
+interface NicoApiErrorBody {
+  meta?: {
+    status?: number;
+    errorCode?: string;
+    errorMessage?: string;
+  };
+}
+
+/**
+ * HTTPエラー時、bodyのJSONから読み取れた errorCode 等を保持する例外。
+ * 動画の「非公開/削除済み/ログイン必要」等を呼び出し元で区別するために使う。
+ */
+export class NicoApiError extends Error {
+  constructor(
+    message: string,
+    public readonly httpStatus: number,
+    public readonly errorCode?: string,
+    public readonly errorMessage?: string
+  ) {
+    super(message);
+    this.name = 'NicoApiError';
+  }
+}
+
+/** !res.ok 時、bodyをJSONとして読み取れれば errorCode 等を含む NicoApiError を返す */
+async function buildApiError(url: string, res: Response, method = 'GET'): Promise<NicoApiError> {
+  const text = await res.text().catch(() => '');
+  let errorCode: string | undefined;
+  let errorMessage: string | undefined;
+  try {
+    const body = JSON.parse(text) as NicoApiErrorBody;
+    errorCode = body.meta?.errorCode;
+    errorMessage = body.meta?.errorMessage;
+  } catch {
+    // bodyがJSONでない (HTMLエラーページ等) 場合はerrorCode無しで進める
+  }
+  log.warn(
+    `${method} ${url} failed: HTTP ${res.status} errorCode=${errorCode ?? '(none)'} errorMessage=${errorMessage ?? '(none)'}`
+  );
+  return new NicoApiError(
+    `${method} ${url} failed: HTTP ${res.status}${errorCode ? ` errorCode=${errorCode}` : ''}`,
+    res.status,
+    errorCode,
+    errorMessage
+  );
+}
+
 export interface NicoHttpOptions extends Omit<RequestInit, 'headers'> {
   headers?: Record<string, string>;
   /** Cookieを送らない場合 true */
@@ -71,7 +122,7 @@ export class NicoHttp {
   async getText(url: string, opts: NicoHttpOptions = {}): Promise<string> {
     const res = await this.fetch(url, opts);
     if (!res.ok) {
-      throw new Error(`GET ${url} failed: HTTP ${res.status}`);
+      throw await buildApiError(url, res);
     }
     return res.text();
   }
@@ -88,15 +139,15 @@ export class NicoHttp {
       headers: { Accept: 'application/json, */*;q=0.8', ...(opts.headers ?? {}) }
     });
     if (!res.ok) {
-      throw new Error(`GET ${url} failed: HTTP ${res.status}`);
+      throw await buildApiError(url, res);
     }
     const data = (await res.json()) as T;
-    
+
     // debugDumpPath が指定されている場合、レスポンスを保存
     if (opts.debugDumpPath) {
       this.dumpResponse(opts.debugDumpPath, opts.debugLabel || 'api', url, data);
     }
-    
+
     return data;
   }
 
@@ -116,12 +167,10 @@ export class NicoHttp {
       body: JSON.stringify(body)
     });
     if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      log.warn(`POST ${url} failed: HTTP ${res.status}`, text.slice(0, 300));
-      throw new Error(`POST ${url} failed: HTTP ${res.status}`);
+      throw await buildApiError(url, res, 'POST');
     }
     const data = (await res.json()) as T;
-    
+
     // debugDumpPath が指定されている場合、リクエスト＋レスポンスを保存
     if (opts.debugDumpPath) {
       this.dumpResponse(opts.debugDumpPath, opts.debugLabel || 'api', url, data, body);
