@@ -31,7 +31,7 @@ export function parseMylistSource(input: string): ParsedMylistSource | null {
     return { type: RssType.CHANNEL, id: m[1], normalizedUrl: `https://ch.nicovideo.jp/${m[1]}` };
   }
 
-  m = trimmed.match(/nicovideo\.jp\/user\/(\d+)/);
+  m = trimmed.match(/user\/(\d+)/);
   if (m) {
     return { type: RssType.USER_UPLOAD_VIDEO, id: m[1], normalizedUrl: `https://www.nicovideo.jp/user/${m[1]}` };
   }
