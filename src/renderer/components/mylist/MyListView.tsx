@@ -277,31 +277,36 @@ export function MyListView(): JSX.Element {
     }
   };
 
+  /** 指定マイリストの全ページを取得して1つの配列にまとめる (検索・一括DL共用) */
+  const fetchAllMylistPages = async (ml: MyList): Promise<VideoCardData[] | null> => {
+    const totalPages = Math.ceil(totalItems / PAGE_SIZE);
+    const merged: VideoCardData[] = [];
+    for (let p = 1; p <= totalPages; p++) {
+      if (cancelLoadAllRef.current) return null;
+      const data = await window.nndd.invoke<{ items: MyListItem[]; total: number }>(
+        IpcChannel.MYLIST_FETCH_PAGE,
+        // 全件先読み中は画像キャッシュを保存しない (検索確定時/DL時にヒット分だけ保存する)
+        { url: ml.myListUrl, type: ml.type, page: p, pageSize: PAGE_SIZE, cacheImages: false }
+      );
+      if (cancelLoadAllRef.current) return null;
+      const mapped = data.items.map((d) => ({ ...d, pubDate: new Date(d.pubDate) }));
+      merged.push(...mapped.map(mylistItemToCard));
+      setLoadedCount(merged.length);
+    }
+    return merged;
+  };
+
   /** 検索欄に何か入力された時、現在ページ以外の残り全ページを取得して allItems にキャッシュする */
   const loadAllPagesForSearch = async (): Promise<void> => {
     if (selected?.kind !== 'mylist' || allItems !== null || totalItems <= items.length) return;
     if (isLoadingAllRef.current) return; // 連続入力による二重起動を防止
     isLoadingAllRef.current = true;
-    const ml = selected.mylist;
     cancelLoadAllRef.current = false;
     setLoadingAll(true);
     setLoadedCount(0);
     try {
-      const totalPages = Math.ceil(totalItems / PAGE_SIZE);
-      const merged: VideoCardData[] = [];
-      for (let p = 1; p <= totalPages; p++) {
-        if (cancelLoadAllRef.current) return;
-        const data = await window.nndd.invoke<{ items: MyListItem[]; total: number }>(
-          IpcChannel.MYLIST_FETCH_PAGE,
-          // 全件先読み中は画像キャッシュを保存しない (検索確定時にヒット分だけ保存する)
-          { url: ml.myListUrl, type: ml.type, page: p, pageSize: PAGE_SIZE, cacheImages: false }
-        );
-        if (cancelLoadAllRef.current) return;
-        const mapped = data.items.map((d) => ({ ...d, pubDate: new Date(d.pubDate) }));
-        merged.push(...mapped.map(mylistItemToCard));
-        setLoadedCount(merged.length);
-      }
-      if (!cancelLoadAllRef.current) setAllItems(merged);
+      const merged = await fetchAllMylistPages(selected.mylist);
+      if (merged !== null) setAllItems(merged);
     } catch {
       // 失敗時は現在ページのみでの検索にフォールバック (allItems は null のまま)
     } finally {
@@ -581,19 +586,42 @@ export function MyListView(): JSX.Element {
     setLastClickedId(videoId);
   };
 
+  /** 選択なしで一括DLした際、複数ページにまたがるマイリストなら全ページ分を対象にする */
   const handleBulkDownload = async (): Promise<void> => {
-    const candidates = selectedIds.size > 0
-      ? filteredItems.filter((it) => selectedIds.has(it.videoId))
-      : filteredItems;
-    if (candidates.length === 0 || bulkDling) return;
-    const targets = candidates.filter((it) => !downloadedIds.has(it.videoId));
-    const skipped = candidates.length - targets.length;
-    if (targets.length === 0) {
-      showToast('選択した動画は全てDL済みです');
-      return;
-    }
+    if (bulkDling) return;
     setBulkDling(true);
     try {
+      let candidates: VideoCardData[];
+      let dlSet = downloadedIds;
+      if (selectedIds.size > 0) {
+        candidates = filteredItems.filter((it) => selectedIds.has(it.videoId));
+      } else if (selected?.kind === 'mylist' && allItems === null && totalItems > items.length) {
+        setLoadingAll(true);
+        setLoadedCount(0);
+        cancelLoadAllRef.current = false;
+        const all = await fetchAllMylistPages(selected.mylist).catch(() => null);
+        setLoadingAll(false);
+        if (!all) {
+          showToast('全件取得に失敗しました');
+          return;
+        }
+        setAllItems(all);
+        candidates = all;
+        const dl = await window.nndd
+          .invoke<string[]>(IpcChannel.LIBRARY_CHECK_BATCH, all.map((i) => i.videoId))
+          .catch(() => []);
+        dlSet = new Set(dl);
+        setDownloadedIds(dlSet);
+      } else {
+        candidates = filteredItems;
+      }
+      if (candidates.length === 0) return;
+      const targets = candidates.filter((it) => !dlSet.has(it.videoId));
+      const skipped = candidates.length - targets.length;
+      if (targets.length === 0) {
+        showToast('選択した動画は全てDL済みです');
+        return;
+      }
       for (const it of targets) {
         await window.nndd.invoke(IpcChannel.DOWNLOAD_ENQUEUE, { videoId: it.videoId });
       }
@@ -610,7 +638,9 @@ export function MyListView(): JSX.Element {
   const registeredIds = new Set(mylists.map((m) => m.myListUrl));
   const bulkLabel = selectedIds.size > 0
     ? `一括DL (${selectedIds.size}件選択)`
-    : `一括DL (${filteredItems.length}件)`;
+    : selected?.kind === 'mylist' && !searchText.trim() && totalItems > items.length
+      ? `一括DL (全${totalItems}件)`
+      : `一括DL (${filteredItems.length}件)`;
   const isPlaylistSelected = selected?.kind === 'playlist';
 
   return (
