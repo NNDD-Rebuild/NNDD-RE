@@ -75,14 +75,14 @@ export function SettingsView(): JSX.Element {
 
   return (
     <div className="h-full flex">
-      <aside className="w-56 border-r border-nndd-border bg-nndd-panel flex flex-col">
+      <aside className="w-max shrink-0 border-r border-nndd-border bg-nndd-panel flex flex-col">
         <div className="flex-1 overflow-auto">
           {SUBTABS.map((t) => (
             <button
               key={t.id}
               onClick={() => setActive(t.id)}
               className={[
-                'block w-full text-left px-4 py-2 text-sm border-b border-nndd-border',
+                'block w-full text-left px-4 py-2 text-sm border-b border-nndd-border whitespace-nowrap',
                 active === t.id
                   ? 'bg-nndd-bg text-nndd-text border-l-2 border-l-nndd-accent'
                   : 'text-nndd-subtext hover:bg-nndd-border hover:text-nndd-text'
@@ -95,7 +95,7 @@ export function SettingsView(): JSX.Element {
             <button
               onClick={() => setActive('debug')}
               className={[
-                'block w-full text-left px-4 py-2 text-sm border-b border-nndd-border',
+                'block w-full text-left px-4 py-2 text-sm border-b border-nndd-border whitespace-nowrap',
                 active === 'debug'
                   ? 'bg-nndd-bg text-nndd-text border-l-2 border-l-nndd-accent'
                   : 'text-nndd-subtext hover:bg-nndd-border hover:text-nndd-text bg-nndd-border/50'
