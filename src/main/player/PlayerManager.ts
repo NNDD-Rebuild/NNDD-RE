@@ -1,4 +1,4 @@
-import { BrowserWindow } from 'electron';
+import { BrowserWindow, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import { CommentWindowManager } from './CommentWindowManager';
@@ -131,6 +131,13 @@ export class PlayerManager {
       }
     });
     this.windowHideHistory.set(win, hideHistory);
+
+    // 概要欄等のリンクを新規BrowserWindowで開こうとするとハンドラ未設定でクラッシュしうるため、
+    // 既定の新規ウィンドウ生成を拒否し外部ブラウザで開く
+    win.webContents.setWindowOpenHandler((details) => {
+      void shell.openExternal(details.url);
+      return { action: 'deny' };
+    });
 
     // 'native' モード用: hls.js → ニコニコCDN直接アクセスに必要なCookie/CORS処理
     setupHlsSessionInterceptor(win.webContents.session);

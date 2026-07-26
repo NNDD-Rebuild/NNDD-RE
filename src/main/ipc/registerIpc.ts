@@ -870,6 +870,23 @@ export function registerIpcHandlers(
   );
 
   ipcMain.handle(IpcChannel.SYS_OPEN_PATH, async (_e, p: string) => {
+    // http(s) URL は openPath (ローカルファイル用) に渡すとネイティブ層で不正動作するため openExternal で開く
+    if (/^https?:\/\//i.test(p)) {
+      // Linuxでは既定ブラウザ (xdg-open) が存在しない環境で shell.openExternal を呼ぶと
+      // ネイティブクラッシュすることがあるため、事前に存在確認する
+      if (process.platform === 'linux') {
+        const { execFile } = await import('node:child_process');
+        const hasXdgOpen = await new Promise<boolean>((resolve) => {
+          execFile('which', ['xdg-open'], (err) => resolve(!err));
+        });
+        if (!hasXdgOpen) {
+          log.warn('xdg-open が見つからないため外部リンクを開けません:', p);
+          return '';
+        }
+      }
+      await shell.openExternal(p);
+      return '';
+    }
     return shell.openPath(p);
   });
 
