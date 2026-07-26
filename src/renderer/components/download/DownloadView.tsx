@@ -107,6 +107,12 @@ export function DownloadView(): JSX.Element {
       .invoke(window.nndd.channels.DOWNLOAD_CLEAR_COMPLETED)
       .then(reload);
   };
+  const handleCancelAll = (): void => {
+    if (!window.confirm('キュー内の全ダウンロードをキャンセルしますか?')) return;
+    window.nndd
+      .invoke(window.nndd.channels.DOWNLOAD_CANCEL_ALL)
+      .then(reload);
+  };
 
   return (
     <div className="h-full flex flex-col">
@@ -137,6 +143,13 @@ export function DownloadView(): JSX.Element {
           className="text-xs px-3 py-1 bg-nndd-border text-nndd-text rounded hover:bg-nndd-accent hover:text-white"
         >
           完了済みをクリア
+        </button>
+        <button
+          onClick={handleCancelAll}
+          disabled={items.length === 0}
+          className="text-xs px-3 py-1 bg-nndd-border text-nndd-text rounded hover:bg-red-700 hover:text-white disabled:opacity-50"
+        >
+          全キャンセル
         </button>
       </div>
       <div className="flex-1 overflow-auto">

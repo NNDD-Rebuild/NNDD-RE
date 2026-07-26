@@ -39,6 +39,7 @@ export const IpcChannel = {
   // ダウンロード
   DOWNLOAD_ENQUEUE: 'nndd:download:enqueue',
   DOWNLOAD_CANCEL: 'nndd:download:cancel',
+  DOWNLOAD_CANCEL_ALL: 'nndd:download:cancelAll',
   DOWNLOAD_LIST: 'nndd:download:list',
   DOWNLOAD_RETRY: 'nndd:download:retry',
   DOWNLOAD_REMOVE: 'nndd:download:remove',

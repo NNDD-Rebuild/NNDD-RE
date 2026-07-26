@@ -166,6 +166,18 @@ export class DownloadManager extends EventEmitter {
     this.emit('changeAll', this.list());
   }
 
+  /** キュー全体をキャンセルする (実行中は中断、待機中はCANCELED化) */
+  cancelAll(): void {
+    for (const ac of this.running.values()) {
+      ac.abort();
+    }
+    for (const item of this.queue) {
+      if (item.status === DownloadStatusType.WAIT) {
+        this.updateStatus(item, DownloadStatusType.CANCELED);
+      }
+    }
+  }
+
   /**
    * キューを進める。
    */

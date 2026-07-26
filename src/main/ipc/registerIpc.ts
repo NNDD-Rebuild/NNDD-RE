@@ -134,6 +134,10 @@ export function registerIpcHandlers(
   ipcMain.handle(IpcChannel.DOWNLOAD_CANCEL, (_e, id: string) =>
     dlManager.cancel(id)
   );
+  ipcMain.handle(IpcChannel.DOWNLOAD_CANCEL_ALL, () => {
+    dlManager.cancelAll();
+    return true;
+  });
   ipcMain.handle(IpcChannel.DOWNLOAD_REMOVE, (_e, id: string) =>
     dlManager.remove(id)
   );
