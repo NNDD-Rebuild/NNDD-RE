@@ -4,6 +4,7 @@ import { IpcChannel } from '@shared/types';
 import { VideoCard } from '../common/VideoCard';
 import type { VideoCardData } from '../common/VideoCard';
 import { useAppStore } from '@renderer/store/useAppStore';
+import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
 
 interface FeedResult {
   items: SearchResultItem[];
@@ -118,6 +119,7 @@ export function FollowView(): JSX.Element {
   const showToast = useAppStore((s) => s.showToast);
   const pendingFollowUser = useAppStore((s) => s.pendingFollowUser);
   const setPendingFollowUser = useAppStore((s) => s.setPendingFollowUser);
+  const isLoggedIn = useAppStore((s) => s.isLoggedIn);
   const [displayMode, setDisplayMode] = useState<'grid' | 'list'>(globalMode);
   const LIMIT = 32;
 
@@ -149,18 +151,18 @@ export function FollowView(): JSX.Element {
       allNextCursorRef.current = r.nextCursor;
       checkDownloaded(r.items);
     } catch (e) {
-      setAllError(e instanceof Error ? e.message : String(e));
+      setAllError(toUserFriendlyErrorMessage(e));
     } finally {
       setAllLoading(false);
       allFetchingRef.current = false;
     }
   }, [checkDownloaded]);
 
-  // マウント時に自動読み込み
+  // マウント時 + ログイン状態変化時に自動読み込み
   useEffect(() => {
     void fetchAll(null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isLoggedIn]);
 
   // --- 選択ユーザーフィード取得 (page=1始まり) ---
   const fetchUserPage = async (user: FollowingUser, page: number): Promise<void> => {
@@ -175,7 +177,7 @@ export function FollowView(): JSX.Element {
       setUserApiPage(page);
       checkDownloaded(r.items);
     } catch (e) {
-      setUserError(e instanceof Error ? e.message : String(e));
+      setUserError(toUserFriendlyErrorMessage(e));
     } finally {
       setUserLoading(false);
       userFetchingRef.current = false;
@@ -262,7 +264,7 @@ export function FollowView(): JSX.Element {
     setUsersError(null);
     window.nndd.invoke<FollowingUser[]>(IpcChannel.FOLLOW_USERS)
       .then((users) => setFollowUsers(users))
-      .catch((e: unknown) => setUsersError(e instanceof Error ? e.message : String(e)))
+      .catch((e: unknown) => setUsersError(toUserFriendlyErrorMessage(e)))
       .finally(() => setUsersLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

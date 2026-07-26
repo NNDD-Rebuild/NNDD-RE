@@ -9,6 +9,7 @@ import { NNDDRESearchType, NNDDRESearchSortType } from '@shared/types';
 import { VideoCard } from '../common/VideoCard';
 import { ContinuousPlayButton } from '../common/ContinuousPlayButton';
 import { useAppStore } from '@renderer/store/useAppStore';
+import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
 
 /**
  * 検索タブ。
@@ -112,7 +113,7 @@ export function SearchView(): JSX.Element {
           .then((dl) => setDownloadedIds(new Set(dl)))
           .catch(() => {});
       })
-      .catch((e) => setError(e instanceof Error ? e.message : String(e)))
+      .catch((e) => setError(toUserFriendlyErrorMessage(e)))
       .finally(() => setLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingSearchTag]);
@@ -163,7 +164,7 @@ export function SearchView(): JSX.Element {
         .then((dl) => setDownloadedIds(new Set(dl)))
         .catch(() => {});
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(toUserFriendlyErrorMessage(e));
     } finally {
       setLoading(false);
     }

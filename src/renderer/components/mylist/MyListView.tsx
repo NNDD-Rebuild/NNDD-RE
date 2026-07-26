@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { MyList, MyListItem, Playlist, PlaylistItem, RssTypeValue } from '@shared/types';
 import { IpcChannel, RssType } from '@shared/types';
 import { parseMylistSource } from '@shared/utils/parseMylistUrl';
+import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
 import { VideoCard, type VideoCardData } from '../common/VideoCard';
 import { ContinuousPlayButton } from '../common/ContinuousPlayButton';
 import { useAppStore } from '../../store/useAppStore';
@@ -80,6 +81,7 @@ export function MyListView(): JSX.Element {
   const pendingSeriesId = useAppStore((s) => s.pendingSeriesId);
   const setPendingSeriesId = useAppStore((s) => s.setPendingSeriesId);
   const showToast = useAppStore((s) => s.showToast);
+  const isLoggedIn = useAppStore((s) => s.isLoggedIn);
   // mylists が更新された後に処理するために ref で保持
   const mylistsRef = useRef<MyList[]>([]);
 
@@ -102,7 +104,7 @@ export function MyListView(): JSX.Element {
   useEffect(() => {
     reloadMylists();
     reloadPlaylists();
-  }, []);
+  }, [isLoggedIn]);
 
   // pendingMylistId 処理: マイリストを自動選択/追加
   useEffect(() => {
@@ -240,7 +242,7 @@ export function MyListView(): JSX.Element {
           .catch(() => {});
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(toUserFriendlyErrorMessage(e));
       setItems([]);
       setTotalItems(0);
     } finally {
@@ -267,7 +269,7 @@ export function MyListView(): JSX.Element {
         .then((dl) => setDownloadedIds(new Set(dl)))
         .catch(() => {});
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(toUserFriendlyErrorMessage(e));
       setItems([]);
       setTotalItems(0);
     } finally {
@@ -432,7 +434,7 @@ export function MyListView(): JSX.Element {
       const list = await window.nndd.invoke<MyList[]>(IpcChannel.MYLIST_FETCH_ACCOUNT);
       setAccountMylists(list);
     } catch (e) {
-      setAccountError(e instanceof Error ? e.message : String(e));
+      setAccountError(toUserFriendlyErrorMessage(e));
     } finally {
       setAccountFetching(false);
     }

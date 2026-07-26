@@ -3,6 +3,7 @@ import type { RankingItem, RankingTermValue, RankingGenreInfo } from '@shared/ty
 import { RANKING_GENRES, RANKING_TERMS } from '@shared/constants';
 import { VideoCard } from '../common/VideoCard';
 import { useAppStore } from '@renderer/store/useAppStore';
+import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
 
 const ALL_TAG = '';
 
@@ -22,6 +23,7 @@ export function RankingView(): JSX.Element {
   const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
   const globalMode = useAppStore((s) => s.contentViewMode);
   const showToast = useAppStore((s) => s.showToast);
+  const isLoggedIn = useAppStore((s) => s.isLoggedIn);
   const [displayMode, setDisplayMode] = useState<'grid' | 'list'>(globalMode);
 
   const currentGenre = genres.find((g) => g.id === genre);
@@ -56,7 +58,7 @@ export function RankingView(): JSX.Element {
         .then((dl) => setDownloadedIds(new Set(dl)))
         .catch(() => {});
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(toUserFriendlyErrorMessage(e));
     } finally {
       setLoading(false);
     }
@@ -72,7 +74,7 @@ export function RankingView(): JSX.Element {
   useEffect(() => {
     fetchRanking();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [genre, term, tag]);
+  }, [genre, term, tag, isLoggedIn]);
 
   const handlePlay = (videoId: string): void => {
     window.nndd.invoke(window.nndd.channels.VIDEO_OPEN_PLAYER, { videoId });
