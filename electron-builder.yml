@@ -34,6 +34,7 @@ mac:
         - x64
         - arm64
 linux:
+  artifactName: ${productName}-${version}-${arch}.${ext}
   icon: build/icon.png
   maintainer: NNDD-Rebuild <NNDD-Rebuild@users.noreply.github.com>
   target:
