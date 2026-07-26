@@ -78,6 +78,7 @@ export const IpcChannel = {
   // 動画
   VIDEO_GET_WATCH_INFO: 'nndd:video:getWatchInfo',
   VIDEO_GET_COMMENTS: 'nndd:video:getComments',
+  VIDEO_GET_RELATED: 'nndd:video:getRelated',
   VIDEO_OPEN_PLAYER: 'nndd:video:openPlayer',
   VIDEO_BUILD_LOCAL_URL: 'nndd:video:buildLocalUrl',
   VIDEO_GET_STREAM_URL: 'nndd:video:getStreamUrl',

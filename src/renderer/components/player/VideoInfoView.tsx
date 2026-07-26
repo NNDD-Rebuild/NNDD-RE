@@ -32,11 +32,17 @@ interface Props {
   onAutoNextChange?: (v: boolean) => void;
   /** シリーズページ読み込み完了 */
   onSeriesPageLoaded?: (items: MyListItem[], page: number, totalPages: number, seriesId: string) => void;
+  /** 関連動画連続再生フラグ */
+  autoNextRelated?: boolean;
+  /** 関連動画連続再生トグル */
+  onAutoNextRelatedChange?: (v: boolean) => void;
+  /** 関連動画一覧読み込み完了 */
+  onRelatedLoaded?: (items: MyListItem[]) => void;
   /** タブバーがペイン幅に収まらない時、必要な幅(px)を通知 (スクロールでなくペイン幅拡大で対応するため) */
   onTabsOverflow?: (neededWidth: number) => void;
 }
 
-type Tab = 'info' | 'comments' | 'pastComments' | 'series';
+type Tab = 'info' | 'comments' | 'pastComments' | 'series' | 'related';
 
 /** 分割チャンクサイズ (過去コメント非同期ロード用) */
 const CHUNK_SIZE = 2000;
@@ -61,6 +67,9 @@ export function VideoInfoView({
   autoNextSeries = false,
   onAutoNextChange,
   onSeriesPageLoaded,
+  autoNextRelated = false,
+  onAutoNextRelatedChange,
+  onRelatedLoaded,
   onTabsOverflow
 }: Props): JSX.Element {
   const [tab, setTab] = useState<Tab>('info');
@@ -116,6 +125,13 @@ export function VideoInfoView({
     if (!watch?.series && tab === 'series') setTab('info');
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [watch?.series]);
+
+  // videoId不明、またはローカル再生(連続再生OFF時)に切り替わった時、関連動画タブを 'info' に戻す。
+  // 連続再生ON中はDL済み動画を経由してもタブ・取得を止めない (でないと2本目以降で連続再生が止まる)
+  useEffect(() => {
+    if ((!watch?.videoId || (isLocal && !autoNextRelated)) && tab === 'related') setTab('info');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [watch?.videoId, isLocal, autoNextRelated]);
 
   // タブバーがペイン幅に収まらない時、必要な幅を親に通知 (スクロールでなくペイン幅拡大で対応)
   // outer: overflow-x-auto なスクロールコンテナ。CSSの zoom は「zoom適用要素自身の
@@ -350,6 +366,13 @@ export function VideoInfoView({
               onClick={() => setTab('series')}
             />
           )}
+          {watch?.videoId && (!isLocal || autoNextRelated) && (
+            <TabButton
+              label="関連動画"
+              active={tab === 'related'}
+              onClick={() => setTab('related')}
+            />
+          )}
         </div>
       </div>
 
@@ -365,6 +388,13 @@ export function VideoInfoView({
             autoNext={autoNextSeries}
             onAutoNextChange={onAutoNextChange}
             onPageLoaded={onSeriesPageLoaded}
+          />
+        ) : tab === 'related' && watch?.videoId && (!isLocal || autoNextRelated) ? (
+          <RelatedTabContent
+            videoId={watch.videoId}
+            autoNext={autoNextRelated}
+            onAutoNextChange={onAutoNextRelatedChange}
+            onLoaded={onRelatedLoaded}
           />
         ) : tab === 'comments' ? (
           <CommentList
@@ -917,6 +947,86 @@ function SeriesTabContent({
               className="shrink-0 w-6 h-6 flex items-center justify-center rounded hover:bg-nndd-border/70 text-nndd-subtext hover:text-nndd-text transition-colors disabled:opacity-40"
             >
               {addedIds.has(item.videoId) ? '✓' : '+'}
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RelatedTabContent({
+  videoId,
+  autoNext = false,
+  onAutoNextChange,
+  onLoaded
+}: {
+  videoId: string;
+  autoNext?: boolean;
+  onAutoNextChange?: (v: boolean) => void;
+  onLoaded?: (items: MyListItem[]) => void;
+}): JSX.Element {
+  const [items, setItems] = useState<MyListItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setLoading(true);
+    setError(null);
+    window.nndd
+      .invoke<MyListItem[]>(IpcChannel.VIDEO_GET_RELATED, videoId)
+      .then((r) => {
+        setItems(r);
+        onLoaded?.(r);
+      })
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLoading(false));
+  // videoId が変わるたびに再取得。onLoaded は親のコールバック(再生成される可能性あり)なので依存に含めない
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoId]);
+
+  return (
+    <div className="flex flex-col h-full min-h-0">
+      <div className="shrink-0 px-3 py-2 border-b border-nndd-border">
+        <label className="flex items-center gap-1 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={autoNext}
+            onChange={(e) => onAutoNextChange?.(e.target.checked)}
+            className="accent-nndd-accent"
+          />
+          <span className="text-xs text-nndd-subtext">連続再生</span>
+        </label>
+      </div>
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        {loading && (
+          <div className="p-3 text-xs text-nndd-subtext">読込中…</div>
+        )}
+        {error && (
+          <div className="p-3 text-xs text-red-500 dark:text-red-400">{error}</div>
+        )}
+        {!loading && !error && items.length === 0 && (
+          <div className="p-3 text-xs text-nndd-subtext">関連動画がありません</div>
+        )}
+        {items.map((item) => (
+          <div key={item.videoId} className="flex items-center gap-2 px-2 py-1.5">
+            <button
+              onClick={() =>
+                window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, { videoId: item.videoId })
+              }
+              className="flex gap-2 flex-1 min-w-0 text-left hover:bg-nndd-border/50 rounded transition-colors"
+            >
+              {item.thumbnailUrl && (
+                <LazyThumbnail url={item.thumbnailUrl} />
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="text-xs text-nndd-text leading-tight line-clamp-2">
+                  {item.title}
+                </div>
+                <div className="text-xs text-nndd-subtext mt-0.5">
+                  {item.length} ・ 再生 {item.viewCount.toLocaleString()}
+                </div>
+              </div>
             </button>
           </div>
         ))}

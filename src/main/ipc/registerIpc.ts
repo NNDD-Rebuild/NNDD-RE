@@ -481,6 +481,58 @@ export function registerIpcHandlers(
     return mkResult(firstItems, name, 1, totalPages);
   });
 
+  ipcMain.handle(IpcChannel.VIDEO_GET_RELATED, async (_e, videoId: string) => {
+    const ctx = NicoContext.get();
+    interface RecommendContent {
+      id: string;
+      title?: string;
+      shortDescription?: string;
+      thumbnail?: { url?: string; listingUrl?: string; middleUrl?: string };
+      duration?: number;
+      registeredAt?: string;
+      count?: { view?: number; comment?: number; mylist?: number; like?: number };
+      isChannelVideo?: boolean;
+    }
+    interface RecommendItem {
+      contentType?: string;
+      content?: RecommendContent;
+    }
+    interface RecommendRes {
+      meta?: { status?: number };
+      data?: { items?: RecommendItem[] };
+    }
+    const url = `https://nvapi.nicovideo.jp/v1/recommend?recipeId=video_watch_recommendation&videoId=${encodeURIComponent(videoId)}&site=nicovideo&_frontendId=6&_frontendVersion=0`;
+    log.debug('fetch related videos:', url);
+    const res = await ctx.http.getJson<RecommendRes>(url);
+    if (res.meta?.status && res.meta.status >= 400) {
+      throw new Error(`関連動画取得失敗: status=${res.meta.status}`);
+    }
+    const toLength = (sec: number): string => {
+      const h = Math.floor(sec / 3600);
+      const mm = Math.floor((sec % 3600) / 60);
+      const ss = sec % 60;
+      return h > 0
+        ? `${h}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
+        : `${mm}:${String(ss).padStart(2, '0')}`;
+    };
+    return (res.data?.items ?? [])
+      .filter((i): i is Required<Pick<RecommendItem, 'content'>> & RecommendItem =>
+        i.contentType === 'video' && !!i.content)
+      .map((i) => ({
+        videoId: i.content.id,
+        title: i.content.title ?? '',
+        description: i.content.shortDescription ?? '',
+        thumbnailUrl: i.content.thumbnail?.listingUrl ?? i.content.thumbnail?.url ?? '',
+        length: toLength(i.content.duration ?? 0),
+        pubDate: i.content.registeredAt ?? new Date().toISOString(),
+        viewCount: i.content.count?.view ?? 0,
+        commentCount: i.content.count?.comment ?? 0,
+        mylistCount: i.content.count?.mylist ?? 0,
+        likeCount: i.content.count?.like ?? 0,
+        isChannelVideo: i.content.isChannelVideo ?? false
+      }));
+  });
+
   ipcMain.handle(IpcChannel.MYLIST_ADD_VIDEO_DEFLIST, async (_e, videoId: string) => {
     const ctx = NicoContext.get();
     await ctx.http.postJson(

@@ -94,6 +94,9 @@ export default function PlayerApp(): JSX.Element {
   const seriesPageRef = useRef(1);
   const seriesTotalPagesRef = useRef(1);
   const seriesIdRef = useRef('');
+  const [autoNextRelated, setAutoNextRelated] = useState(false);
+  const autoNextRelatedRef = useRef(false);
+  const relatedItemsRef = useRef<import('@shared/types').MyListItem[]>([]);
   const [autoNextFolder, setAutoNextFolder] = useState(false);
   const autoNextFolderRef = useRef(false);
   const [folderVideos, setFolderVideos] = useState<string[]>([]);
@@ -138,6 +141,17 @@ export default function PlayerApp(): JSX.Element {
   useEffect(() => { isLocalRef.current = isLocal; }, [isLocal]);
   useEffect(() => { searchPlaylistRef.current = searchPlaylist; }, [searchPlaylist]);
   useEffect(() => { watchRef.current = watch; }, [watch]);
+
+  // 関連動画の連続再生ON時、動画切り替わりごとに次動画候補をバックグラウンド取得。
+  // シリーズと違い関連動画リストは動画ごとに変わるため、関連動画タブを開いていない間も
+  // ここで都度取得しないと2本目以降で relatedItemsRef が更新されず連続再生が止まる。
+  useEffect(() => {
+    if (!autoNextRelated || !watch?.videoId) return;
+    window.nndd
+      .invoke<import('@shared/types').MyListItem[]>(IpcChannel.VIDEO_GET_RELATED, watch.videoId)
+      .then((items) => { relatedItemsRef.current = items; })
+      .catch(() => {});
+  }, [watch?.videoId, autoNextRelated]);
 
   // テーマ適用
   useEffect(() => {
@@ -733,6 +747,10 @@ export default function PlayerApp(): JSX.Element {
       const idx = items.findIndex((i) => i.videoId === currentId);
       if (idx >= 0 && idx < items.length - 1) return items[idx + 1].videoId;
     }
+    if (autoNextRelatedRef.current) {
+      const items = relatedItemsRef.current;
+      if (items.length > 0) return items[0].videoId;
+    }
     const pl = searchPlaylistRef.current;
     if (pl.length > 0) {
       const idx = pl.indexOf(currentId ?? '');
@@ -768,6 +786,16 @@ export default function PlayerApp(): JSX.Element {
             });
           }
         }).catch(() => {});
+        return true;
+      }
+    }
+
+    if (autoNextRelatedRef.current) {
+      const items = relatedItemsRef.current;
+      if (items.length > 0) {
+        window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
+          videoId: items[0].videoId, autoNext: true, audioOnly: isAudio,
+        });
         return true;
       }
     }
@@ -1445,7 +1473,11 @@ export default function PlayerApp(): JSX.Element {
             onPastCommentsLoaded={(cs) => setPastComments(cs)}
             onPastCommentTabActive={(active) => setShowPastComments(active)}
             autoNextSeries={autoNextSeries}
-            onAutoNextChange={(v) => { autoNextSeriesRef.current = v; setAutoNextSeries(v); }}
+            onAutoNextChange={(v) => {
+              autoNextSeriesRef.current = v;
+              setAutoNextSeries(v);
+              if (v) { autoNextRelatedRef.current = false; setAutoNextRelated(false); }
+            }}
             onSeriesPageLoaded={(items, page, totalPages, sid) => {
               seriesItemsRef.current = items;
               setSeriesItems(items);
@@ -1453,6 +1485,13 @@ export default function PlayerApp(): JSX.Element {
               seriesTotalPagesRef.current = totalPages;
               seriesIdRef.current = sid;
             }}
+            autoNextRelated={autoNextRelated}
+            onAutoNextRelatedChange={(v) => {
+              autoNextRelatedRef.current = v;
+              setAutoNextRelated(v);
+              if (v) { autoNextSeriesRef.current = false; setAutoNextSeries(false); }
+            }}
+            onRelatedLoaded={(items) => { relatedItemsRef.current = items; }}
             onTabsOverflow={handleTabsOverflow}
           />
         </aside>
