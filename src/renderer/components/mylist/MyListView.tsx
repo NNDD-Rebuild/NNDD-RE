@@ -582,16 +582,26 @@ export function MyListView(): JSX.Element {
   };
 
   const handleBulkDownload = async (): Promise<void> => {
-    const targets = selectedIds.size > 0
+    const candidates = selectedIds.size > 0
       ? filteredItems.filter((it) => selectedIds.has(it.videoId))
       : filteredItems;
-    if (targets.length === 0 || bulkDling) return;
+    if (candidates.length === 0 || bulkDling) return;
+    const targets = candidates.filter((it) => !downloadedIds.has(it.videoId));
+    const skipped = candidates.length - targets.length;
+    if (targets.length === 0) {
+      showToast('選択した動画は全てDL済みです');
+      return;
+    }
     setBulkDling(true);
     try {
       for (const it of targets) {
         await window.nndd.invoke(IpcChannel.DOWNLOAD_ENQUEUE, { videoId: it.videoId });
       }
-      showToast(`${targets.length}件をDLリストに追加しました`);
+      showToast(
+        skipped > 0
+          ? `${targets.length}件をDLリストに追加しました(DL済み${skipped}件はスキップ)`
+          : `${targets.length}件をDLリストに追加しました`
+      );
     } finally {
       setBulkDling(false);
     }
