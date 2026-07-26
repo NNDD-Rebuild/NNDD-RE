@@ -79,4 +79,8 @@ export interface RankingItem {
   registeredAt: Date;
   /** チャンネル動画かどうか (未加入だと再生できない場合がある) */
   isChannelVideo?: boolean;
+  /** 投稿者情報 (取得できる場合のみ) */
+  authorId?: string;
+  authorNickname?: string;
+  authorIconUrl?: string;
 }

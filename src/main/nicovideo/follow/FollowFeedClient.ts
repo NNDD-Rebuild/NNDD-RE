@@ -206,7 +206,8 @@ interface UserVideosResult {
 async function getUserRecentVideos(
   user: FollowingUser,
   pageSize = 10,
-  page = 1
+  page = 1,
+  retried = false
 ): Promise<UserVideosResult> {
   const http = NicoContext.get().http;
   const params = new URLSearchParams({
@@ -220,7 +221,15 @@ async function getUserRecentVideos(
   const url = `https://nvapi.nicovideo.jp/v3/users/${user.id}/videos?${params}`;
   try {
     const res = await http.fetch(url, { timeoutMs: 8000 });
-    if (!res.ok) return { videos: [], totalCount: 0 };
+    if (!res.ok) {
+      // 起動直後などネットワーク接続確立直後は一時的に失敗しやすいため1回だけリトライ
+      if (!retried) {
+        log.debug(`user videos fetch ${res.status}, retrying: ${url}`);
+        await new Promise((r) => setTimeout(r, 500));
+        return getUserRecentVideos(user, pageSize, page, true);
+      }
+      return { videos: [], totalCount: 0 };
+    }
     const json = await res.json() as NvapiVideosResponse;
     const totalCount = json.data?.totalCount ?? 0;
     let videos = (json.data?.items ?? []).map((v): SearchResultItem | null => {
@@ -253,7 +262,12 @@ async function getUserRecentVideos(
       videos = videos.map((v, idx) => ({ ...v, thumbnailUrl: urls[idx] }));
     }
     return { videos, totalCount };
-  } catch {
+  } catch (e) {
+    if (!retried) {
+      log.debug(`user videos fetch error, retrying: ${url}`, e);
+      await new Promise((r) => setTimeout(r, 500));
+      return getUserRecentVideos(user, pageSize, page, true);
+    }
     return { videos: [], totalCount: 0 };
   }
 }

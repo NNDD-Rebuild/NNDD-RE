@@ -1521,6 +1521,65 @@ export function registerIpcHandlers(
     }
   });
 
+  ipcMain.handle(IpcChannel.USER_INFO_FETCH, async (_e, userId: string | number) => {
+    try {
+      const ctx = NicoContext.get();
+      const url = `https://nvapi.nicovideo.jp/v1/users/${encodeURIComponent(String(userId))}`;
+      interface UserRes {
+        meta?: { status?: number };
+        data?: { user?: { nickname?: string; icons?: { small?: string; large?: string } } };
+      }
+      const res = await ctx.http.getJson<UserRes>(url, { timeoutMs: 8000 });
+      const user = res.data?.user;
+      if (!user) return null;
+      let iconUrl = user.icons?.small ?? '';
+      if (iconUrl && ImageCache.isEnabled()) {
+        iconUrl = ImageCache.cacheUrlList([iconUrl], ctx.http)[0];
+      }
+      return { nickname: user.nickname ?? '', iconUrl };
+    } catch {
+      return null;
+    }
+  });
+
+  ipcMain.handle(IpcChannel.USER_MYLISTS_FETCH, async (_e, userId: string) => {
+    return MyListClient.fetchByUserId(userId);
+  });
+
+  ipcMain.handle(IpcChannel.USER_SERIES_FETCH, async (_e, userId: string) => {
+    const ctx = NicoContext.get();
+    const url = `https://nvapi.nicovideo.jp/v1/users/${encodeURIComponent(userId)}/series`;
+    interface NvApiUserSeriesResponse {
+      meta?: { status?: number };
+      data?: {
+        items?: Array<{
+          id: number | string;
+          title: string;
+          isListed?: boolean;
+          itemsCount?: number;
+          thumbnailUrl?: string;
+        }>;
+      };
+    }
+    const res = await ctx.http.getJson<NvApiUserSeriesResponse>(url);
+    const status = res.meta?.status;
+    if (status && status >= 400) {
+      throw new Error(`ユーザーシリーズ一覧の取得に失敗: status=${status}`);
+    }
+    const raw = (res.data?.items ?? []).filter((s) => s.isListed !== false);
+    let items = raw.map((s) => ({
+      id: String(s.id),
+      title: s.title,
+      itemsCount: s.itemsCount ?? 0,
+      thumbnailUrl: s.thumbnailUrl ?? ''
+    }));
+    if (ImageCache.isEnabled()) {
+      const urls = ImageCache.cacheUrlList(items.map((i) => i.thumbnailUrl), ctx.http);
+      items = items.map((i, idx) => ({ ...i, thumbnailUrl: urls[idx] }));
+    }
+    return items;
+  });
+
   // プレイヤーウィンドウ → メインウィンドウへのシリーズナビゲーション
   ipcMain.handle(IpcChannel.NAV_SERIES, (_e, seriesId: string) => {
     const mainWin = mainWindowGetter?.();

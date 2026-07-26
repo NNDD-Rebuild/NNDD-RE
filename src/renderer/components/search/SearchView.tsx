@@ -66,6 +66,8 @@ export function SearchView(): JSX.Element {
   const setActiveTab = useAppStore((s) => s.setActiveTab);
   const setPendingMylistId = useAppStore((s) => s.setPendingMylistId);
   const setPendingSeriesId = useAppStore((s) => s.setPendingSeriesId);
+  const setPendingFollowUser = useAppStore((s) => s.setPendingFollowUser);
+  const setPendingChannelId = useAppStore((s) => s.setPendingChannelId);
   const pendingSearchTag = useAppStore((s) => s.pendingSearchTag);
   const setPendingSearchTag = useAppStore((s) => s.setPendingSearchTag);
   const showToast = useAppStore((s) => s.showToast);
@@ -170,12 +172,58 @@ export function SearchView(): JSX.Element {
     }
   };
 
+  // 検索結果には投稿者ID以外(ニックネーム・アイコン)が含まれないため、表示後に個別補完する
+  useEffect(() => {
+    const targetIds = Array.from(new Set(
+      results
+        .filter((r) => r.author?.id && !r.author.iconUrl)
+        .map((r) => r.author!.id)
+    ));
+    if (targetIds.length === 0) return;
+    let cancelled = false;
+    Promise.all(
+      targetIds.map((id) =>
+        window.nndd
+          .invoke<{ nickname: string; iconUrl: string } | null>(window.nndd.channels.USER_INFO_FETCH, id)
+          .then((info) => [id, info] as const)
+          .catch(() => [id, null] as const)
+      )
+    ).then((pairs) => {
+      if (cancelled) return;
+      const infoMap = new Map(
+        pairs.filter((p): p is [string, { nickname: string; iconUrl: string }] => p[1] !== null)
+      );
+      if (infoMap.size === 0) return;
+      setResults((prev) => prev.map((r) => {
+        const info = r.author?.id ? infoMap.get(r.author.id) : undefined;
+        if (!info) return r;
+        return { ...r, author: { ...r.author!, nickname: info.nickname, iconUrl: info.iconUrl } };
+      }));
+    });
+    return () => { cancelled = true; };
+  }, [results]);
+
   const handlePlay = (videoId: string): void => {
     window.nndd.invoke(window.nndd.channels.VIDEO_OPEN_PLAYER, { videoId });
   };
 
   const handlePlayAudioOnly = (videoId: string): void => {
     window.nndd.invoke(window.nndd.channels.VIDEO_OPEN_PLAYER, { videoId, audioOnly: true });
+  };
+
+  const handleUserPage = (userId: string): void => {
+    if (userId.startsWith('ch')) {
+      setPendingChannelId(userId);
+      setActiveTab('mylist');
+      return;
+    }
+    const author = results.find((r) => r.author?.id === userId)?.author;
+    setPendingFollowUser({
+      id: userId,
+      nickname: author?.nickname ?? '',
+      iconUrl: author?.iconUrl ?? '',
+    });
+    setActiveTab('follow');
   };
 
   const handleDownload = (videoId: string, audioOnly?: boolean): void => {
@@ -383,11 +431,15 @@ export function SearchView(): JSX.Element {
                         mylistCount: r.mylistCount,
                         likeCount: r.likeCount,
                         registeredAt: r.registeredAt,
-                        isChannelVideo: r.isChannelVideo
+                        isChannelVideo: r.isChannelVideo,
+                        authorId: r.author?.id,
+                        authorNickname: r.author?.nickname,
+                        authorIconUrl: r.author?.iconUrl,
                       }}
                       onPlay={handlePlay}
                       onDownload={handleDownload}
                       onPlayAudioOnly={handlePlayAudioOnly}
+                      onUserPage={handleUserPage}
                       isDownloaded={downloadedIds.has(r.videoId)}
                     />
                   ))}
@@ -408,11 +460,15 @@ export function SearchView(): JSX.Element {
                         mylistCount: r.mylistCount,
                         likeCount: r.likeCount,
                         registeredAt: r.registeredAt,
-                        isChannelVideo: r.isChannelVideo
+                        isChannelVideo: r.isChannelVideo,
+                        authorId: r.author?.id,
+                        authorNickname: r.author?.nickname,
+                        authorIconUrl: r.author?.iconUrl,
                       }}
                       onPlay={handlePlay}
                       onDownload={handleDownload}
                       onPlayAudioOnly={handlePlayAudioOnly}
+                      onUserPage={handleUserPage}
                       isDownloaded={downloadedIds.has(r.videoId)}
                     />
                   ))}

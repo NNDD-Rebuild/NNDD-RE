@@ -30,6 +30,7 @@ interface SnapshotV2Item {
   startTime: string;
   tags: string;
   channelId?: number | string | null;
+  userId?: number | string | null;
 }
 
 export interface SearchOptions {
@@ -116,7 +117,7 @@ export class SearchClient {
     );
     params.set(
       'fields',
-      'contentId,title,description,thumbnailUrl,lengthSeconds,viewCounter,commentCounter,mylistCounter,likeCounter,startTime,tags,channelId'
+      'contentId,title,description,thumbnailUrl,lengthSeconds,viewCounter,commentCounter,mylistCounter,likeCounter,startTime,tags,channelId,userId'
     );
     const [sortKey, sortDir] = this.toSortParam(opts.sortType);
     params.set('_sort', `${sortDir === 'asc' ? '+' : '-'}${sortKey}`);
@@ -158,6 +159,7 @@ export class SearchClient {
   }
 
   private static toItem(d: SnapshotV2Item): SearchResultItem {
+    const isChannelVideo = d.channelId !== null && d.channelId !== undefined;
     return {
       videoId: d.contentId,
       title: d.title,
@@ -170,7 +172,12 @@ export class SearchClient {
       likeCount: d.likeCounter,
       registeredAt: new Date(d.startTime),
       tags: (d.tags ?? '').split(/\s+/).filter(Boolean),
-      isChannelVideo: d.channelId !== null && d.channelId !== undefined
+      author: isChannelVideo
+        ? { id: `ch${d.channelId}`, nickname: '', iconUrl: `https://secure-dcdn.cdn.nimg.jp/comch/channel-icon/128x128/ch${d.channelId}.jpg` }
+        : d.userId != null
+        ? { id: String(d.userId), nickname: '', iconUrl: '' }
+        : undefined,
+      isChannelVideo
     };
   }
 }

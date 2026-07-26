@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import type { SearchResultItem } from '@shared/types';
+import type { SearchResultItem, UserMylistSummary, UserSeriesSummary } from '@shared/types';
 import { IpcChannel } from '@shared/types';
 import { VideoCard } from '../common/VideoCard';
 import type { VideoCardData } from '../common/VideoCard';
@@ -119,9 +119,19 @@ export function FollowView(): JSX.Element {
   const showToast = useAppStore((s) => s.showToast);
   const pendingFollowUser = useAppStore((s) => s.pendingFollowUser);
   const setPendingFollowUser = useAppStore((s) => s.setPendingFollowUser);
+  const setPendingMylistId = useAppStore((s) => s.setPendingMylistId);
+  const setPendingSeriesId = useAppStore((s) => s.setPendingSeriesId);
+  const setActiveTab = useAppStore((s) => s.setActiveTab);
   const isLoggedIn = useAppStore((s) => s.isLoggedIn);
   const [displayMode, setDisplayMode] = useState<'grid' | 'list'>(globalMode);
   const LIMIT = 32;
+
+  // --- 選択中ユーザーのサブタブ (投稿動画/マイリスト/シリーズ) ---
+  const [userSubTab, setUserSubTab] = useState<'videos' | 'mylists' | 'series'>('videos');
+  const [userMylists, setUserMylists] = useState<UserMylistSummary[]>([]);
+  const [userSeries, setUserSeries] = useState<UserSeriesSummary[]>([]);
+  const [subTabLoading, setSubTabLoading] = useState(false);
+  const [subTabError, setSubTabError] = useState<string | null>(null);
 
   // グローバル設定変更を即時反映
   useEffect(() => { setDisplayMode(globalMode); }, [globalMode]);
@@ -202,19 +212,43 @@ export function FollowView(): JSX.Element {
 
   // selectedUserId 変化時: ユーザーフィードをリセットして page=1 取得
   useEffect(() => {
+    setUserSubTab('videos');
+    setUserMylists([]);
+    setUserSeries([]);
+    setSubTabError(null);
     if (!selectedUserId) {
       setUserItems([]);
       setUserTotalCount(0);
       setUserApiPage(1);
       setUserError(null);
-      setExtraUser(null);
       return;
     }
     const user = resolveUser(selectedUserId);
     if (!user) return;
     void fetchUserPage(user, 1);
+  // isLoggedIn 確定前に空取得で終わった場合、確定後に再取得するため依存に含める
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedUserId]);
+  }, [selectedUserId, isLoggedIn]);
+
+  // userSubTab 変化時: マイリスト/シリーズ一覧を取得
+  useEffect(() => {
+    if (!selectedUserId || userSubTab === 'videos') return;
+    if (userSubTab === 'mylists' && userMylists.length > 0) return;
+    if (userSubTab === 'series' && userSeries.length > 0) return;
+    setSubTabLoading(true);
+    setSubTabError(null);
+    const channel = userSubTab === 'mylists'
+      ? window.nndd.channels.USER_MYLISTS_FETCH
+      : window.nndd.channels.USER_SERIES_FETCH;
+    window.nndd.invoke<UserMylistSummary[] | UserSeriesSummary[]>(channel, selectedUserId)
+      .then((list) => {
+        if (userSubTab === 'mylists') setUserMylists(list as UserMylistSummary[]);
+        else setUserSeries(list as UserSeriesSummary[]);
+      })
+      .catch((e: unknown) => setSubTabError(toUserFriendlyErrorMessage(e)))
+      .finally(() => setSubTabLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedUserId, userSubTab]);
 
   // --- Next/Prev ---
   const handleNext = async (): Promise<void> => {
@@ -251,13 +285,14 @@ export function FollowView(): JSX.Element {
 
   const handleReload = useCallback((): void => {
     setSelectedUserId(null);
+    setExtraUser(null);
     allCursorStackRef.current = [null];
     allNextCursorRef.current = null;
     setAllPageIdx(0);
     void fetchAll(null);
   }, [fetchAll]);
 
-  // --- フォローユーザー取得 (初回のみ) ---
+  // --- フォローユーザー取得 (isLoggedIn確定前に空取得で終わった場合、確定後に再取得) ---
   useEffect(() => {
     if (followUsers.length > 0 || usersLoading) return;
     setUsersLoading(true);
@@ -267,7 +302,7 @@ export function FollowView(): JSX.Element {
       .catch((e: unknown) => setUsersError(toUserFriendlyErrorMessage(e)))
       .finally(() => setUsersLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [isLoggedIn]);
 
   // --- ユーザーを最新投稿順にソート ---
   const sortedFollowUsers = useMemo((): FollowingUser[] => {
@@ -315,6 +350,14 @@ export function FollowView(): JSX.Element {
   const handleUserPage = (userId: string): void => {
     window.nndd.invoke(window.nndd.channels.SYS_OPEN_PATH, `https://www.nicovideo.jp/user/${userId}`);
   };
+  const handleOpenMylist = (id: string): void => {
+    setPendingMylistId(id);
+    setActiveTab('mylist');
+  };
+  const handleOpenSeries = (id: string): void => {
+    setPendingSeriesId(id);
+    setActiveTab('mylist');
+  };
 
   const headerLabel = isUserMode
     ? `${resolveUser(selectedUserId)?.nickname ?? selectedUserId} の動画`
@@ -330,7 +373,7 @@ export function FollowView(): JSX.Element {
         <div className="flex-1 overflow-auto p-1">
           {/* すべて */}
           <button
-            onClick={() => setSelectedUserId(null)}
+            onClick={() => { setSelectedUserId(null); setExtraUser(null); }}
             className={[
               'block w-full text-left px-2 py-1 rounded text-xs mb-0.5',
               !isUserMode
@@ -389,7 +432,7 @@ export function FollowView(): JSX.Element {
           )}
           {isUserMode && (
             <button
-              onClick={() => setSelectedUserId(null)}
+              onClick={() => { setSelectedUserId(null); setExtraUser(null); }}
               className="text-xs px-2 py-1 bg-nndd-border rounded hover:bg-nndd-accent hover:text-white"
             >
               ✕ 解除
@@ -417,8 +460,30 @@ export function FollowView(): JSX.Element {
           </div>
         </div>
 
+        {/* サブタブ (選択中ユーザー: 投稿動画/マイリスト/シリーズ) */}
+        {isUserMode && (
+          <div className="shrink-0 flex gap-1 px-3 py-1.5 border-b border-nndd-border bg-nndd-panel">
+            {([
+              { id: 'videos', label: '投稿動画' },
+              { id: 'mylists', label: 'マイリスト' },
+              { id: 'series', label: 'シリーズ' },
+            ] as const).map((t) => (
+              <button
+                key={t.id}
+                onClick={() => setUserSubTab(t.id)}
+                className={[
+                  'text-xs px-3 py-1 rounded',
+                  userSubTab === t.id ? 'bg-nndd-accent text-white' : 'bg-nndd-border hover:bg-nndd-accent/70'
+                ].join(' ')}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
+
         {/* ページネーション固定バー */}
-        {(displayItems.length > 0 || displayLoading) && (
+        {userSubTab === 'videos' && (displayItems.length > 0 || displayLoading) && (
           <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-nndd-border bg-nndd-panel text-xs">
             <span className="text-nndd-subtext">
               {isUserMode && userTotalCount > 0
@@ -443,57 +508,111 @@ export function FollowView(): JSX.Element {
 
         {/* コンテンツ */}
         <div className="flex-1 overflow-auto p-3">
-          {displayError && (
-            <div className="text-red-500 dark:text-red-400 text-sm mb-3 whitespace-pre-wrap">
-              ⚠ {displayError}
-              <span className="text-xs text-nndd-subtext ml-2">(ログイン確認)</span>
-            </div>
-          )}
-          {displayLoading && displayItems.length === 0 && (
-            <div className="text-nndd-subtext text-sm">読込中…</div>
-          )}
-          {!displayLoading && !isUserMode && allItems.length === 0 && !displayError && (
-            <div className="text-nndd-subtext text-sm">
-              フォロー中ユーザーの新着動画が見つかりませんでした。
-              <br /><span className="text-xs">ニコニコ動画へのログインが必要です。</span>
-            </div>
-          )}
-          {!displayLoading && isUserMode && userItems.length === 0 && !displayError && (
-            <div className="text-nndd-subtext text-sm">動画が見つかりませんでした。</div>
-          )}
-          {displayItems.length > 0 && (
-            displayMode === 'grid' ? (
-              <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
-                {displayItems.map((r) => (
-                  <VideoCard
-                    key={r.videoId}
-                    data={toCardData(r)}
-                    onPlay={handlePlay}
-                    onDownload={handleDownload}
-                    onNiconico={handleNiconico}
-                    onUserPage={handleUserPage}
-                    onPlayAudioOnly={handlePlayAudioOnly}
-                    isDownloaded={downloadedIds.has(r.videoId)}
-                  />
-                ))}
-              </div>
-            ) : (
-              <div className="flex flex-col gap-1">
-                {displayItems.map((r) => (
-                  <VideoCard
-                    key={r.videoId}
-                    data={toCardData(r)}
-                    layout="list"
-                    onPlay={handlePlay}
-                    onDownload={handleDownload}
-                    onNiconico={handleNiconico}
-                    onUserPage={handleUserPage}
-                    onPlayAudioOnly={handlePlayAudioOnly}
-                    isDownloaded={downloadedIds.has(r.videoId)}
-                  />
-                ))}
-              </div>
-            )
+          {userSubTab !== 'videos' ? (
+            <>
+              {subTabError && (
+                <div className="text-red-500 dark:text-red-400 text-sm mb-3 whitespace-pre-wrap">
+                  ⚠ {subTabError}
+                </div>
+              )}
+              {subTabLoading && (
+                <div className="text-nndd-subtext text-sm">読込中…</div>
+              )}
+              {!subTabLoading && userSubTab === 'mylists' && userMylists.length === 0 && !subTabError && (
+                <div className="text-nndd-subtext text-sm">公開マイリストが見つかりませんでした。</div>
+              )}
+              {!subTabLoading && userSubTab === 'series' && userSeries.length === 0 && !subTabError && (
+                <div className="text-nndd-subtext text-sm">公開シリーズが見つかりませんでした。</div>
+              )}
+              {userSubTab === 'mylists' && userMylists.length > 0 && (
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2">
+                  {userMylists.map((m) => (
+                    <button
+                      key={m.id}
+                      onClick={() => handleOpenMylist(m.id)}
+                      className="text-left p-2 border border-nndd-border rounded hover:bg-nndd-border/50"
+                    >
+                      <div className="text-sm font-medium line-clamp-2">{m.name}</div>
+                      <div className="text-xs text-nndd-subtext mt-1">{m.itemsCount} 件</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+              {userSubTab === 'series' && userSeries.length > 0 && (
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2">
+                  {userSeries.map((s) => (
+                    <button
+                      key={s.id}
+                      onClick={() => handleOpenSeries(s.id)}
+                      className="text-left border border-nndd-border rounded overflow-hidden hover:bg-nndd-border/50"
+                    >
+                      {s.thumbnailUrl && (
+                        <img src={s.thumbnailUrl} alt="" className="w-full aspect-video object-cover" loading="lazy" />
+                      )}
+                      <div className="p-2">
+                        <div className="text-sm font-medium line-clamp-2">{s.title}</div>
+                        <div className="text-xs text-nndd-subtext mt-1">{s.itemsCount} 件</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              {displayError && (
+                <div className="text-red-500 dark:text-red-400 text-sm mb-3 whitespace-pre-wrap">
+                  ⚠ {displayError}
+                  <span className="text-xs text-nndd-subtext ml-2">(ログイン確認)</span>
+                </div>
+              )}
+              {displayLoading && displayItems.length === 0 && (
+                <div className="text-nndd-subtext text-sm">読込中…</div>
+              )}
+              {!displayLoading && !isUserMode && allItems.length === 0 && !displayError && (
+                <div className="text-nndd-subtext text-sm">
+                  フォロー中ユーザーの新着動画が見つかりませんでした。
+                  <br /><span className="text-xs">ニコニコ動画へのログインが必要です。</span>
+                </div>
+              )}
+              {!displayLoading && isUserMode && userItems.length === 0 && !displayError && (
+                <div className="text-nndd-subtext text-sm">動画が見つかりませんでした。</div>
+              )}
+              {displayItems.length > 0 && (
+                displayMode === 'grid' ? (
+                  <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
+                    {displayItems.map((r) => (
+                      <VideoCard
+                        key={r.videoId}
+                        data={toCardData(r)}
+                        onPlay={handlePlay}
+                        onDownload={handleDownload}
+                        onNiconico={handleNiconico}
+                        onUserPage={handleUserPage}
+                        onPlayAudioOnly={handlePlayAudioOnly}
+                        isDownloaded={downloadedIds.has(r.videoId)}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-1">
+                    {displayItems.map((r) => (
+                      <VideoCard
+                        key={r.videoId}
+                        data={toCardData(r)}
+                        layout="list"
+                        onPlay={handlePlay}
+                        onDownload={handleDownload}
+                        onNiconico={handleNiconico}
+                        onUserPage={handleUserPage}
+                        onPlayAudioOnly={handlePlayAudioOnly}
+                        isDownloaded={downloadedIds.has(r.videoId)}
+                      />
+                    ))}
+                  </div>
+                )
+              )}
+            </>
           )}
         </div>
       </div>

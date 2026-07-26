@@ -255,6 +255,12 @@ export const IpcChannel = {
 
   /** ユーザーIDからアイコンURL取得 → string | null */
   USER_ICON_FETCH: 'nndd:user:iconFetch',
+  /** ユーザーIDからニックネーム・アイコンURLを取得 → { nickname: string; iconUrl: string } | null */
+  USER_INFO_FETCH: 'nndd:user:infoFetch',
+  /** ユーザーIDから公開マイリスト一覧を取得 → MyList[] */
+  USER_MYLISTS_FETCH: 'nndd:user:mylistsFetch',
+  /** ユーザーIDから公開シリーズ一覧を取得 → { id: string; title: string; itemsCount: number; thumbnailUrl: string }[] */
+  USER_SERIES_FETCH: 'nndd:user:seriesFetch',
 
   // 画像キャッシュ
   /** 画像URLをImageCacheで取得してローカルURLを返す (url: string) → string */

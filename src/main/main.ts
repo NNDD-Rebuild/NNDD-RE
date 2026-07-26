@@ -105,6 +105,15 @@ function createMainWindow(): BrowserWindow {
     return { action: 'deny' };
   });
 
+  // レンダラーのコンソールログをメインプロセスのログに転送
+  win.webContents.on('console-message', (_e, level, message, line, sourceId) => {
+    const tag = ['verbose', 'info', 'warn', 'error'][level] ?? 'info';
+    const src = sourceId?.split('/').pop() ?? '';
+    log[tag === 'error' ? 'error' : tag === 'warn' ? 'warn' : 'info'](
+      `[renderer:${tag}] ${message} (${src}:${line})`
+    );
+  });
+
   // ウィンドウサイズ・位置を保存
   const saveBounds = (): void => {
     if (!win.isMaximized()) {

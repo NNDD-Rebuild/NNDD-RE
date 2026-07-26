@@ -52,6 +52,10 @@ interface AppState {
   pendingFollowUser: { id: string; nickname: string; iconUrl: string } | null;
   setPendingFollowUser: (user: { id: string; nickname: string; iconUrl: string } | null) => void;
 
+  /** ランキング・検索からチャンネル動画一覧を開く際のチャンネルID (ch数字)。MyListViewが処理後 null にクリア */
+  pendingChannelId: string | null;
+  setPendingChannelId: (id: string | null) => void;
+
   /** 他画面から設定の特定サブタブを開く際に使用。SettingsViewが処理後 null にクリア */
   pendingSettingsTab: SubTab | null;
   setPendingSettingsTab: (tab: SubTab | null) => void;
@@ -89,6 +93,8 @@ export const useAppStore = create<AppState>((set) => ({
   setPendingSearchTag: (tag) => set({ pendingSearchTag: tag }),
   pendingFollowUser: null,
   setPendingFollowUser: (user) => set({ pendingFollowUser: user }),
+  pendingChannelId: null,
+  setPendingChannelId: (id) => set({ pendingChannelId: id }),
   pendingSettingsTab: null,
   setPendingSettingsTab: (tab) => set({ pendingSettingsTab: tab }),
   contentViewMode: 'grid',

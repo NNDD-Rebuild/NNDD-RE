@@ -80,6 +80,8 @@ export function MyListView(): JSX.Element {
   const setPendingMylistId = useAppStore((s) => s.setPendingMylistId);
   const pendingSeriesId = useAppStore((s) => s.pendingSeriesId);
   const setPendingSeriesId = useAppStore((s) => s.setPendingSeriesId);
+  const pendingChannelId = useAppStore((s) => s.pendingChannelId);
+  const setPendingChannelId = useAppStore((s) => s.setPendingChannelId);
   const showToast = useAppStore((s) => s.showToast);
   const isLoggedIn = useAppStore((s) => s.isLoggedIn);
   // mylists が更新された後に処理するために ref で保持
@@ -196,6 +198,31 @@ export function MyListView(): JSX.Element {
     void fetchSeries();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingSeriesId]);
+
+  // pendingChannelId 処理: チャンネル動画一覧を一時表示 (DBには保存しない)
+  useEffect(() => {
+    if (!pendingChannelId) return;
+    const channelId = pendingChannelId;
+    setPendingChannelId(null);
+    const url = `https://ch.nicovideo.jp/${channelId}`;
+    const fetchAndShow = async (): Promise<void> => {
+      const info = await window.nndd.invoke<{ name: string } | null>(
+        IpcChannel.MYLIST_FETCH_INFO,
+        { url, type: RssType.CHANNEL }
+      ).catch(() => null);
+      const tempMl: MyList = {
+        myListUrl: url,
+        myListName: info?.name ?? `チャンネル (${channelId})`,
+        type: RssType.CHANNEL,
+        isDir: false,
+        unPlayVideoCount: 0,
+        myListVideoIds: {},
+      };
+      void fetchItems(tempMl);
+    };
+    void fetchAndShow();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingChannelId]);
 
   const fetchItems = async (ml: MyList, page = 1): Promise<void> => {
     setLoading(true);

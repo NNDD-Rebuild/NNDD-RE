@@ -28,7 +28,7 @@ interface BffRankingItem {
   thumbnail?: { url?: string; middleUrl?: string; largeUrl?: string };
   count?: { view?: number; comment?: number; mylist?: number; like?: number };
   shortDescription?: string;
-  owner?: { name?: string; ownerType?: string };
+  owner?: { id?: string; name?: string; iconUrl?: string; ownerType?: string };
   isChannelVideo?: boolean;
   requireSensitiveMasking?: boolean;
 }
@@ -95,7 +95,8 @@ export class RankingClient {
       mylistCount: Number(v.count?.mylist ?? 0),
       likeCount: Number(v.count?.like ?? 0),
       registeredAt: v.registeredAt ? new Date(v.registeredAt) : new Date(),
-      isChannelVideo: v.isChannelVideo === true || v.owner?.ownerType === 'channel'
+      isChannelVideo: v.isChannelVideo === true || v.owner?.ownerType === 'channel',
+      ...this.toAuthorFields(v.owner)
     }));
 
     const trendTags = res?.data?.response?.$getTeibanRankingFeaturedKeyAndTrendTags?.data?.trendTags ?? [];
@@ -123,11 +124,27 @@ export class RankingClient {
       }));
   }
 
+  private static toAuthorFields(
+    owner: BffRankingItem['owner']
+  ): Pick<RankingItem, 'authorId' | 'authorNickname' | 'authorIconUrl'> {
+    if (!owner?.id || (owner.ownerType !== 'user' && owner.ownerType !== 'channel')) return {};
+    return {
+      authorId: owner.id,
+      authorNickname: owner.name,
+      authorIconUrl: owner.iconUrl
+    };
+  }
+
   private static applyCachedThumbs(items: RankingItem[]): RankingItem[] {
     if (!ImageCache.isEnabled()) return items;
     const http = NicoContext.get().http;
     const urls = ImageCache.cacheUrlList(items.map(i => i.thumbnailUrl), http);
-    return items.map((item, idx) => ({ ...item, thumbnailUrl: urls[idx] }));
+    const iconUrls = ImageCache.cacheUrlList(items.map(i => i.authorIconUrl ?? ''), http);
+    return items.map((item, idx) => ({
+      ...item,
+      thumbnailUrl: urls[idx],
+      authorIconUrl: item.authorIconUrl ? iconUrls[idx] : item.authorIconUrl
+    }));
   }
 
   static async fetchHot(genre: string): Promise<RankingItem[]> {
@@ -148,7 +165,8 @@ export class RankingClient {
         mylistCount: Number(v.count?.mylist ?? 0),
         likeCount: Number(v.count?.like ?? 0),
         registeredAt: v.registeredAt ? new Date(v.registeredAt) : new Date(),
-        isChannelVideo: v.isChannelVideo === true || v.owner?.ownerType === 'channel'
+        isChannelVideo: v.isChannelVideo === true || v.owner?.ownerType === 'channel',
+        ...this.toAuthorFields(v.owner)
       }));
     } catch (e) {
       log.warn('nvapi hot-topic failed, falling back to RSS:', e);

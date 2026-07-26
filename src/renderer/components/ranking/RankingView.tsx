@@ -24,6 +24,9 @@ export function RankingView(): JSX.Element {
   const globalMode = useAppStore((s) => s.contentViewMode);
   const showToast = useAppStore((s) => s.showToast);
   const isLoggedIn = useAppStore((s) => s.isLoggedIn);
+  const setActiveTab = useAppStore((s) => s.setActiveTab);
+  const setPendingFollowUser = useAppStore((s) => s.setPendingFollowUser);
+  const setPendingChannelId = useAppStore((s) => s.setPendingChannelId);
   const [displayMode, setDisplayMode] = useState<'grid' | 'list'>(globalMode);
 
   const currentGenre = genres.find((g) => g.id === genre);
@@ -93,6 +96,20 @@ export function RankingView(): JSX.Element {
   };
   const handlePlayAudioOnly = (videoId: string): void => {
     window.nndd.invoke(window.nndd.channels.VIDEO_OPEN_PLAYER, { videoId, audioOnly: true });
+  };
+  const handleUserPage = (userId: string): void => {
+    if (userId.startsWith('ch')) {
+      setPendingChannelId(userId);
+      setActiveTab('mylist');
+      return;
+    }
+    const author = items.find((r) => r.authorId === userId);
+    setPendingFollowUser({
+      id: userId,
+      nickname: author?.authorNickname ?? '',
+      iconUrl: author?.authorIconUrl ?? '',
+    });
+    setActiveTab('follow');
   };
 
   return (
@@ -180,11 +197,15 @@ export function RankingView(): JSX.Element {
                     rank: r.rank,
                     description: r.description,
                     isChannelVideo: r.isChannelVideo,
+                    authorId: r.authorId,
+                    authorNickname: r.authorNickname,
+                    authorIconUrl: r.authorIconUrl,
                   }}
                   onPlay={handlePlay}
                   onDownload={handleDownload}
                   onNiconico={handleNiconico}
                   onPlayAudioOnly={handlePlayAudioOnly}
+                  onUserPage={handleUserPage}
                   isDownloaded={downloadedIds.has(r.videoId)}
                 />
               ))}
@@ -208,11 +229,15 @@ export function RankingView(): JSX.Element {
                     rank: r.rank,
                     description: r.description,
                     isChannelVideo: r.isChannelVideo,
+                    authorId: r.authorId,
+                    authorNickname: r.authorNickname,
+                    authorIconUrl: r.authorIconUrl,
                   }}
                   onPlay={handlePlay}
                   onDownload={handleDownload}
                   onNiconico={handleNiconico}
                   onPlayAudioOnly={handlePlayAudioOnly}
+                  onUserPage={handleUserPage}
                   isDownloaded={downloadedIds.has(r.videoId)}
                 />
               ))}

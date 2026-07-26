@@ -56,6 +56,25 @@ export interface MyListItem {
 }
 
 /**
+ * ユーザーの公開マイリスト一覧項目 (投稿者ページのマイリストタブ表示用)
+ */
+export interface UserMylistSummary {
+  id: string;
+  name: string;
+  itemsCount: number;
+}
+
+/**
+ * ユーザーの公開シリーズ一覧項目 (投稿者ページのシリーズタブ表示用)
+ */
+export interface UserSeriesSummary {
+  id: string;
+  title: string;
+  itemsCount: number;
+  thumbnailUrl: string;
+}
+
+/**
  * マイリスト更新ソート種別
  * 元: src/org/mineap/nndd/model/MyListSortType.as
  */

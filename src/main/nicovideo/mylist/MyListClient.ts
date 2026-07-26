@@ -1,4 +1,4 @@
-import type { MyListItem, MyList } from '@shared/types';
+import type { MyListItem, MyList, UserMylistSummary } from '@shared/types';
 import { RssType } from '@shared/types';
 import { NicoApi } from '@shared/constants';
 import { NicoContext } from '../NicoContext';
@@ -266,6 +266,39 @@ export class MyListClient {
     }
     log.debug(`user ${userId} page=${page} items=${items.length} total=${total}`);
     return { items, total };
+  }
+
+  /**
+   * 指定ユーザーの公開マイリスト一覧を取得。
+   * GET https://nvapi.nicovideo.jp/v1/users/{userId}/mylists
+   */
+  static async fetchByUserId(userId: string): Promise<UserMylistSummary[]> {
+    interface NvApiUserMylistsResponse {
+      meta?: { status?: number };
+      data?: {
+        mylists?: Array<{
+          id: number | string;
+          isPublic?: boolean;
+          name: string;
+          itemsCount?: number;
+        }>;
+      };
+    }
+    const url = `https://nvapi.nicovideo.jp/v1/users/${encodeURIComponent(userId)}/mylists`;
+    log.debug('fetch user mylists:', url);
+    const res = await NicoContext.get().http.getJson<NvApiUserMylistsResponse>(url);
+    const status = res.meta?.status;
+    if (status && status >= 400) {
+      throw new Error(`ユーザーマイリスト一覧の取得に失敗: status=${status}`);
+    }
+    const raw = res.data?.mylists ?? [];
+    return raw
+      .filter((m) => m.isPublic !== false)
+      .map((m) => ({
+        id: String(m.id),
+        name: m.name,
+        itemsCount: m.itemsCount ?? 0
+      }));
   }
 
   /**
