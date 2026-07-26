@@ -44,6 +44,7 @@ import {
   type OpenPlayerParams
 } from '../player/PlayerManager';
 import { buildLocalVideoUrl, autoConfigureAllowedRoots } from '../player/LocalVideoProtocol';
+import { updateSessionHideHistory } from '../player/HlsSessionInterceptor';
 import { buildHlsProxyBase } from '../player/StreamServer';
 import { encodeProxyUrl } from '../player/HlsProxy';
 import { WatchSession } from '../nicovideo/video/WatchSession';
@@ -647,13 +648,17 @@ export function registerIpcHandlers(
   });
 
   // --- 動画 ---
-  ipcMain.handle(IpcChannel.VIDEO_GET_WATCH_INFO, async (_e, videoId: string) => {
-    const prefetched = watchInfoPrefetchCache.get(videoId);
-    if (prefetched) {
-      watchInfoPrefetchCache.delete(videoId);
-      return prefetched;
+  ipcMain.handle(IpcChannel.VIDEO_GET_WATCH_INFO, async (_e, videoId: string, forceAllowHistory?: boolean) => {
+    // forceAllowHistory再試行時は、hideWatchHistory設定下で取得済み(失敗済み)の
+    // プリフェッチキャッシュを使い回さず、履歴を残して取得し直す。
+    if (!forceAllowHistory) {
+      const prefetched = watchInfoPrefetchCache.get(videoId);
+      if (prefetched) {
+        watchInfoPrefetchCache.delete(videoId);
+        return prefetched;
+      }
     }
-    return WatchInfoHandler.fetchWatchInfo(videoId);
+    return WatchInfoHandler.fetchWatchInfo(videoId, forceAllowHistory);
   });
 
   ipcMain.handle(IpcChannel.VIDEO_GET_COMMENTS, async (_e, videoId: string, watchInfo?: WatchPageInfo) => {
@@ -737,7 +742,13 @@ export function registerIpcHandlers(
       try {
         session = await ensureStreamSession(videoId, watchInfo, audioOnly, videoQualityId);
       } catch (e) {
-        return { contentUrl: null, isDMS: false, error: String(e) };
+        return { contentUrl: null, isDMS: false, error: e instanceof Error ? e.message : String(e) };
+      }
+      // 履歴非表示中に「履歴を残して再生する」を選んだ場合、watchInfoは通常ログイン扱い
+      // (guestFetched=false) で取得されている。ウィンドウ自体はguest partitionのままなので、
+      // HlsSessionInterceptorに実効状態を伝えてCookie扱いを切り替える (ウィンドウ再生成不要)。
+      if (watchInfo && !watchInfo.guestFetched) {
+        updateSessionHideHistory(_e.sender.session, false);
       }
       if (session.domandBidCookie) {
         await injectDomandBidCookie(_e.sender.session, session.domandBidCookie);
@@ -752,7 +763,10 @@ export function registerIpcHandlers(
       try {
         session = await ensureStreamSession(videoId, watchInfo, audioOnly, videoQualityId);
       } catch (e) {
-        return { contentUrl: null, isDMS: false, error: String(e) };
+        return { contentUrl: null, isDMS: false, error: e instanceof Error ? e.message : String(e) };
+      }
+      if (watchInfo && !watchInfo.guestFetched) {
+        updateSessionHideHistory(_e.sender.session, false);
       }
       if (session.domandBidCookie) {
         await injectDomandBidCookie(_e.sender.session, session.domandBidCookie);
@@ -1701,7 +1715,20 @@ async function ensureStreamSession(
     return await new WatchSession(info).ensure(audioOnly, videoQualityId);
   } catch (e) {
     const stillLoggedIn = await AuthManager.checkLoggedIn();
-    if (stillLoggedIn) throw e;
+    const hideHistory = getConfigStore().get('hideWatchHistory') ?? false;
+    log.info(
+      `[DEBUG-HB] ensureStreamSession failed: stillLoggedIn=${stillLoggedIn} hideHistory=${hideHistory} guestFetched=${info.guestFetched} errMsg=${e instanceof Error ? e.message : String(e)}`
+    );
+    if (stillLoggedIn) {
+      // hideWatchHistory設定でゲスト扱い取得された動画 (年齢制限/センシティブ等) は
+      // isDownloadable=false 等でここに失敗する。履歴を残せば再生できる可能性がある旨を
+      // マーカー付きで呼び出し元 (renderer) に伝える。
+      if (hideHistory && info.guestFetched) {
+        const msg = e instanceof Error ? e.message : String(e);
+        throw new Error(`HISTORY_BLOCKED: ${msg}`);
+      }
+      throw e;
+    }
 
     log.warn('stream session failed, session may have expired. trying auto relogin:', videoId, e);
     const relogin = await AuthManager.autoRelogin();

@@ -74,6 +74,15 @@ export interface NnddConfig {
   hideWatchHistory: boolean;
 
   /**
+   * hideWatchHistory ON時、年齢制限/センシティブ動画等でゲスト扱いのため
+   * watch情報取得が失敗した場合の挙動。
+   * 'ask' (デフォルト): 視聴履歴を残して再取得するか、都度ダイアログで確認する。
+   * 'allow': 常に履歴を残して自動的に再取得する。
+   * 'deny': 常に再生をあきらめる (エラー表示のまま)。
+   */
+  sensitiveVideoHistoryPolicy: 'ask' | 'allow' | 'deny';
+
+  /**
    * キャッシュルートディレクトリ (空なら userData/nndd-cache 配下)。
    * 映像キャッシュ: <cacheRoot>/cache/movie (カスタム) or userData/nndd-cache/movie (デフォルト)。
    * 画像キャッシュ: userData/nndd-cache/image (常に userData)。
@@ -303,6 +312,7 @@ const DEFAULTS: NnddConfig = {
   skipCommentsOnAudioOnly: true,
   comment429RetryWaitSec: 185,
   hideWatchHistory: false,
+  sensitiveVideoHistoryPolicy: 'ask',
   cacheRoot: '',
   hideSensitiveContents: true,
   player: {

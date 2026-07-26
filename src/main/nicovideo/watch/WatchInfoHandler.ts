@@ -1,6 +1,7 @@
 import type { WatchPageInfo } from '@shared/types';
 import { NicoApi } from '@shared/constants';
 import { NicoContext } from '../NicoContext';
+import { NicoApiError } from '../NicoHttp';
 import { WatchPageParser } from './WatchPageParser';
 import { ImageCache } from '../../util/ImageCache';
 import { createLogger } from '../../util/Logger';
@@ -17,26 +18,29 @@ const TRACK_ID_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123
  * 優先: /api/watch/v3 (JSON API) → フォールバック: HTML スクレイピング
  */
 export class WatchInfoHandler {
-  static async fetchWatchInfo(rawId: string): Promise<WatchPageInfo> {
-    const info = await WatchInfoHandler.fetchWatchInfoInner(rawId);
+  static async fetchWatchInfo(rawId: string, forceAllowHistory = false): Promise<WatchPageInfo> {
+    const info = await WatchInfoHandler.fetchWatchInfoInner(rawId, forceAllowHistory);
     return WatchInfoHandler.applyImageCache(info);
   }
 
   /** 画像キャッシュを適用しない生 WatchPageInfo を取得する (DL フロー向け) */
-  static async fetchWatchInfoRaw(rawId: string): Promise<WatchPageInfo> {
-    return WatchInfoHandler.fetchWatchInfoInner(rawId);
+  static async fetchWatchInfoRaw(rawId: string, forceAllowHistory = false): Promise<WatchPageInfo> {
+    return WatchInfoHandler.fetchWatchInfoInner(rawId, forceAllowHistory);
   }
 
   /** 画像キャッシュ適用前の生 WatchPageInfo を取得する内部実装 */
-  private static async fetchWatchInfoInner(rawId: string): Promise<WatchPageInfo> {
+  private static async fetchWatchInfoInner(rawId: string, forceAllowHistory = false): Promise<WatchPageInfo> {
     const videoId = WatchInfoHandler.extractVideoId(rawId);
     const ctx = NicoContext.get();
     const loggedIn = await ctx.isLoggedIn();
     const configStore = (await import('../../config/ConfigStore')).getConfigStore();
-    const hideHistory = configStore.get('hideWatchHistory') ?? false;
+    // forceAllowHistory: 「履歴非表示中のため再生失敗」ダイアログでユーザーが
+    // 履歴を残しての再取得を選んだ場合、hideWatchHistory設定を無視する。
+    const hideHistory = !forceAllowHistory && (configStore.get('hideWatchHistory') ?? false);
     // 履歴非表示ON時は最初からゲスト扱い (v3_guest + Cookie無し) で取得する。
     // v3 は Cookie 認証必須のため、Cookie無しで叩いても失敗するだけ。
     const effectiveLoggedIn = loggedIn && !hideHistory;
+    let apiError: NicoApiError | undefined;
     try {
       const info = await WatchInfoHandler.fetchViaJsonApi(videoId, effectiveLoggedIn, hideHistory);
       // v3 APIが series:null を返した場合は HTML から補完を試みる
@@ -49,17 +53,75 @@ export class WatchInfoHandler {
       }
       return info;
     } catch (e) {
+      if (e instanceof NicoApiError) apiError = e;
       // ログイン中で v3 が失敗した場合は v3_guest にもフォールバック
       if (effectiveLoggedIn) {
         try {
           return await WatchInfoHandler.fetchViaJsonApi(videoId, false, hideHistory);
         } catch (e2) {
+          // ゲストでも同じ理由で失敗 → こちらのerrorCodeの方が「本当にダメ」な判定に近い
+          if (e2 instanceof NicoApiError) apiError = e2;
           log.warn('watch v3_guest fallback also failed:', e2);
         }
       }
       log.warn('watch v3 JSON API failed, falling back to HTML scrape:', e);
-      return await WatchInfoHandler.fetchViaHtml(videoId, hideHistory);
+      try {
+        const htmlInfo = await WatchInfoHandler.fetchViaHtml(videoId, hideHistory);
+        log.info(
+          `[DEBUG-HB] HTML scrape OK: isDownloadable=${htmlInfo.isDownloadable} guestFetched=${htmlInfo.guestFetched} accessRightKey=${!!htmlInfo.domandAccessRightKey} videos=${htmlInfo.domandVideos?.length ?? -1} dmc=${!!htmlInfo.dmcSessionRequestJson}`
+        );
+        return htmlInfo;
+      } catch (e3) {
+        // HTML watch page の 404 は「その動画IDが存在しない」ことを示す最も確実な情報。
+        // 削除済みは履歴を残しても絶対に見られないため、hideHistoryチェックより先に
+        // 判定し、HISTORY_BLOCKED (履歴を残せば見れるかも、の確認フロー) には回さない。
+        if (e3 instanceof NicoApiError && (e3.httpStatus === 404 || /NOT_FOUND/.test((e3.errorCode ?? '').toUpperCase()))) {
+          throw new Error('VIDEO_DELETED: 動画が削除されているか、存在しません');
+        }
+        // hideHistory由来のゲスト取得で完全に失敗した場合、年齢制限/限定公開動画の
+        // 可能性がある旨をマーカー付きで呼び出し元 (renderer) に伝える。
+        if (hideHistory) {
+          const msg = e3 instanceof Error ? e3.message : String(e3);
+          throw new Error(`HISTORY_BLOCKED: ${msg}`);
+        }
+        // (JSON API は削除済み/非公開いずれも 400 errorCode=FORBIDDEN 固定で区別できない実測結果あり)
+        if (e3 instanceof NicoApiError) {
+          throw WatchInfoHandler.classifyApiError(e3);
+        }
+        if (apiError) {
+          throw WatchInfoHandler.classifyApiError(apiError);
+        }
+        throw e3;
+      }
     }
+  }
+
+  /**
+   * watch v3/v3_guest/HTML の失敗レスポンスから「削除済み/視聴制限あり」を推定し、
+   * 機械可読prefix付きErrorに変換する。
+   * 実測結果: JSON API (v3/v3_guest) は非公開・削除済みいずれも 400 errorCode=FORBIDDEN 固定で
+   * ログイン要否等の詳細区別はできない。HTML watch page の 404 だけが
+   * 「動画IDが存在しない」ことを示す確実な情報のため、それ以外は
+   * 「非公開・限定公開・ログイン必要等のいずれか」とまとめて扱う。
+   */
+  private static classifyApiError(err: NicoApiError): Error {
+    const code = (err.errorCode ?? '').toUpperCase();
+    const status = err.httpStatus;
+
+    if (status === 404 || /NOT_FOUND/.test(code)) {
+      return new Error('VIDEO_DELETED: 動画が削除されているか、存在しません');
+    }
+    if (/MAINTENANCE/.test(code)) {
+      return new Error('VIDEO_MAINTENANCE: ニコニコ動画がメンテナンス中の可能性があります');
+    }
+    if (status === 400 || status === 401 || status === 403) {
+      return new Error(
+        `VIDEO_RESTRICTED: 非公開・限定公開・ログインが必要な動画のいずれかの可能性があります (errorCode=${err.errorCode ?? '不明'})`
+      );
+    }
+    return new Error(
+      `VIDEO_UNKNOWN_ERROR: 動画情報取得失敗 (status=${status}${err.errorCode ? `, errorCode=${err.errorCode}` : ''})`
+    );
   }
 
   /**

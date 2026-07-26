@@ -140,7 +140,7 @@ export class PlayerManager {
     });
 
     // 'native' モード用: hls.js → ニコニコCDN直接アクセスに必要なCookie/CORS処理
-    setupHlsSessionInterceptor(win.webContents.session);
+    setupHlsSessionInterceptor(win.webContents.session, hideHistory);
     // partition (hideWatchHistory=ON) はdefaultSessionと別セッションのため、
     // nndd-re-local:// プロトコルを個別に登録しないとローカル再生が失敗する。
     if (partition) {

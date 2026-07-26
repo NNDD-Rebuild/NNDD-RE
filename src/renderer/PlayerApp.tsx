@@ -5,10 +5,12 @@ import { buildLocalUrl, COMMENT_FONT_FAMILY } from '@shared/constants';
 import { VideoPlayer } from './components/player/VideoPlayer';
 import { VideoController } from './components/player/VideoController';
 import { VideoInfoView } from './components/player/VideoInfoView';
+import { HistoryBlockedDialog } from './components/player/HistoryBlockedDialog';
 import type { CommentRenderConfig } from './components/player/CommentRenderer';
 import { ensureCommandResolved } from './util/commentCommands';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useConfig } from './hooks/useConfig';
+import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
 
 interface StreamProgress {
   videoId: string;
@@ -70,6 +72,8 @@ export default function PlayerApp(): JSX.Element {
   const [showPastComments, setShowPastComments] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showHistoryBlockedDialog, setShowHistoryBlockedDialog] = useState(false);
+  const historyBlockedResolverRef = useRef<((allow: boolean) => void) | null>(null);
   const [showComments, setShowComments] = useState(true);
   const [video, setVideo] = useState<HTMLVideoElement | null>(null);
   const setVideoWithRef = (el: HTMLVideoElement | null): void => {
@@ -359,7 +363,16 @@ export default function PlayerApp(): JSX.Element {
             setError('再生対象が指定されていません');
           }
         } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
+          const rawMsg = e instanceof Error ? e.message : String(e);
+          console.warn('[DEBUG-HB] player init caught error:', rawMsg);
+          if (rawMsg.includes('HISTORY_BLOCKED:')) {
+            const reopening = await handleHistoryBlocked(params);
+            if (!reopening) {
+              setError('視聴履歴非表示中はこの動画を再生できません（年齢制限・限定公開の可能性があります）。');
+            }
+            return;
+          }
+          const msg = toUserFriendlyErrorMessage(e);
           const isAutoPlay = params.autoNext &&
             (autoNextSeriesRef.current || searchPlaylistRef.current.length > 0 || autoNextFolderRef.current);
           if (isAutoPlay && consecutiveSkipRef.current < MAX_CONSECUTIVE_SKIPS) {
@@ -397,7 +410,7 @@ export default function PlayerApp(): JSX.Element {
         await initStreaming(vid, audioOnlyRef.current);
       } catch (e) {
         const isAutoPlay = autoNextSeriesRef.current || searchPlaylistRef.current.length > 0 || autoNextFolderRef.current;
-        const msg = e instanceof Error ? e.message : String(e);
+        const msg = toUserFriendlyErrorMessage(e);
         if (isAutoPlay && consecutiveSkipRef.current < MAX_CONSECUTIVE_SKIPS) {
           consecutiveSkipRef.current++;
           console.warn(`[AutoPlay] スキップ (${consecutiveSkipRef.current}/${MAX_CONSECUTIVE_SKIPS}):`, vid, msg);
@@ -411,7 +424,61 @@ export default function PlayerApp(): JSX.Element {
     }
   };
 
-  const initStreaming = async (videoId: string, isAudioOnly?: boolean, resumeSec?: number): Promise<void> => {
+  /** 履歴非表示中の再生失敗時、履歴を残して再取得するかユーザーに確認する */
+  const askHistoryBlocked = (): Promise<boolean> => {
+    return new Promise((resolve) => {
+      historyBlockedResolverRef.current = resolve;
+      setShowHistoryBlockedDialog(true);
+    });
+  };
+
+  const handleHistoryBlockedChoice = async (allow: boolean, remember: boolean): Promise<void> => {
+    setShowHistoryBlockedDialog(false);
+    if (remember) {
+      await window.nndd.invoke(
+        window.nndd.channels.CONFIG_SET,
+        'sensitiveVideoHistoryPolicy',
+        allow ? 'allow' : 'deny'
+      ).catch(() => {});
+    }
+    historyBlockedResolverRef.current?.(allow);
+    historyBlockedResolverRef.current = null;
+  };
+
+  /**
+   * hideWatchHistory設定下でゲスト扱いのため再生に失敗した場合 (HISTORY_BLOCKED マーカー) に、
+   * 設定 sensitiveVideoHistoryPolicy に従って対応する。
+   * ウィンドウは開き直さず、同一ウィンドウ内で forceAllowHistory:true として
+   * WatchInfo/ストリームURLを再取得する (main側 HlsSessionInterceptor が
+   * watchInfo.guestFetched を見てCookie扱いを動的に切り替えるため、再生成不要)。
+   * 戻り値 true: 再試行済み (成功/失敗いずれもこの中でハンドリング済み)。false: 拒否/対象外。
+   */
+  const handleHistoryBlocked = async (params: InitParams): Promise<boolean> => {
+    const policy = await window.nndd.invoke<'ask' | 'allow' | 'deny'>(
+      window.nndd.channels.CONFIG_GET,
+      'sensitiveVideoHistoryPolicy'
+    ).catch(() => 'ask' as const);
+
+    if (policy === 'deny') return false;
+    const allow = policy === 'allow' ? true : await askHistoryBlocked();
+    if (!allow) return false;
+
+    if (params.videoId) {
+      try {
+        await initStreaming(params.videoId, !!params.audioOnly, params.resumeSec, true);
+      } catch (e) {
+        setError(toUserFriendlyErrorMessage(e));
+      }
+    }
+    return true;
+  };
+
+  const initStreaming = async (
+    videoId: string,
+    isAudioOnly?: boolean,
+    resumeSec?: number,
+    forceAllowHistory?: boolean
+  ): Promise<void> => {
     const cached = preloadRef.current?.videoId === videoId ? preloadRef.current : null;
     preloadRef.current = null;
 
@@ -428,7 +495,7 @@ export default function PlayerApp(): JSX.Element {
     setSelectedQualityId(null);
     // 1. WatchPageInfo を取得（プリロードキャッシュ優先）
     const w = cached?.watchInfo
-      ?? await window.nndd.invoke<WatchPageInfo>(window.nndd.channels.VIDEO_GET_WATCH_INFO, videoId);
+      ?? await window.nndd.invoke<WatchPageInfo>(window.nndd.channels.VIDEO_GET_WATCH_INFO, videoId, forceAllowHistory);
     setWatch(w);
     if (w.channel !== null && !w.isDownloadable) {
       throw new Error(`チャンネル限定動画です。「${w.channel.name}」への加入が必要です。`);
@@ -1390,6 +1457,9 @@ export default function PlayerApp(): JSX.Element {
           />
         </aside>
       </div>
+      {showHistoryBlockedDialog && (
+        <HistoryBlockedDialog onChoice={(allow, remember) => { handleHistoryBlockedChoice(allow, remember).catch(console.error); }} />
+      )}
     </div>
   );
 }

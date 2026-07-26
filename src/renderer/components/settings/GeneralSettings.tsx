@@ -40,6 +40,10 @@ export function GeneralSettings({ onDeveloperModeChange }: GeneralSettingsProps)
   const [httpEnabled, setHttpEnabled] = useConfig<boolean>('httpServer.enabled', false);
   const [httpPort, setHttpPort] = useConfig<number>('httpServer.port', 12345);
   const [hideWatchHistory, setHideWatchHistory] = useConfig<boolean>('hideWatchHistory', false);
+  const [sensitiveVideoHistoryPolicy, setSensitiveVideoHistoryPolicy] = useConfig<'ask' | 'allow' | 'deny'>(
+    'sensitiveVideoHistoryPolicy',
+    'ask'
+  );
   const [trayEnabled, setTrayEnabled] = useConfig<boolean>('tray.enabled', true);
   const [minimizeToTray, setMinimizeToTray] = useConfig<boolean>(
     'tray.minimizeToTray',
@@ -323,6 +327,33 @@ export function GeneralSettings({ onDeveloperModeChange }: GeneralSettingsProps)
           アカウントの視聴履歴に残しません。年齢制限動画・チャンネル会員限定動画は
           視聴・ダウンロードできなくなる場合があります。
         </p>
+        {hideWatchHistory && (
+          <div className="mt-3 pl-1 space-y-1">
+            <div className="text-xs text-nndd-subtext mb-1">
+              視聴履歴非表示中に再生できない動画（年齢制限等）への対応
+            </div>
+            {(
+              [
+                { value: 'ask', label: '毎回確認する' },
+                { value: 'allow', label: '常に履歴を残して再生する' },
+                { value: 'deny', label: '常に再生しない' }
+              ] as const
+            ).map((opt) => (
+              <label
+                key={opt.value}
+                className="flex items-center gap-2 cursor-pointer select-none text-sm"
+              >
+                <input
+                  type="radio"
+                  name="sensitiveVideoHistoryPolicy"
+                  checked={sensitiveVideoHistoryPolicy === opt.value}
+                  onChange={() => setSensitiveVideoHistoryPolicy(opt.value)}
+                />
+                {opt.label}
+              </label>
+            ))}
+          </div>
+        )}
       </Section>
 
       <Section title="内蔵HTTPサーバー">
