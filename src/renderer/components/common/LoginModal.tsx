@@ -19,6 +19,16 @@ interface Props {
 
 type Stage = 'credentials' | 'mfa';
 
+type SsoProvider = 'apple' | 'google' | 'line' | 'x' | 'facebook';
+
+const SSO_BUTTONS: { id: SsoProvider; label: string }[] = [
+  { id: 'apple', label: 'Apple' },
+  { id: 'google', label: 'Google' },
+  { id: 'line', label: 'LINE' },
+  { id: 'x', label: 'X' },
+  { id: 'facebook', label: 'Facebook' }
+];
+
 /**
  * ログインモーダル。
  * ① ID/PW フォーム入力 (アプリ内ログイン)
@@ -123,11 +133,12 @@ export function LoginModal({ onClose, onLoggedIn, initialStage, initialMfaSubmit
     }
   };
 
-  const openBrowserLogin = async (): Promise<void> => {
+  const openBrowserLogin = async (ssoProvider?: SsoProvider): Promise<void> => {
     setBusy(true);
     try {
       const ok = await window.nndd.invoke<boolean>(
-        window.nndd.channels.AUTH_OPEN_LOGIN_WINDOW
+        window.nndd.channels.AUTH_OPEN_LOGIN_WINDOW,
+        ssoProvider ? { ssoProvider } : undefined
       );
       if (ok) {
         onLoggedIn();
@@ -209,12 +220,26 @@ export function LoginModal({ onClose, onLoggedIn, initialStage, initialMfaSubmit
             </button>
             <div className="my-3 text-center text-nndd-subtext text-xs">または</div>
             <button
-              onClick={openBrowserLogin}
+              onClick={() => openBrowserLogin()}
               disabled={busy}
               className="w-full py-1.5 border border-nndd-border rounded hover:bg-nndd-border disabled:opacity-50"
             >
               ブラウザでログイン
             </button>
+            <div className="my-3 text-center text-nndd-subtext text-xs">またはSSOでログイン</div>
+            <div className="grid grid-cols-3 gap-2">
+              {SSO_BUTTONS.map((sso) => (
+                <button
+                  key={sso.id}
+                  onClick={() => openBrowserLogin(sso.id)}
+                  disabled={busy}
+                  title={`${sso.label}でログイン`}
+                  className="py-1.5 border border-nndd-border rounded hover:bg-nndd-border disabled:opacity-50 text-xs"
+                >
+                  {sso.label}
+                </button>
+              ))}
+            </div>
           </>
         )}
 

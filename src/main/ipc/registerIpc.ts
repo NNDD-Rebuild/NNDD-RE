@@ -24,7 +24,8 @@ import {
   ConnectionDiag,
   fetchMylistLikeItems,
   fetchMylistLikeName,
-  type SearchOptions
+  type SearchOptions,
+  type SsoProvider
 } from '../nicovideo';
 import type { RssTypeValue } from '@shared/types';
 import { NicoContext } from '../nicovideo/NicoContext';
@@ -510,10 +511,13 @@ export function registerIpcHandlers(
     return AuthManager.checkLoggedIn();
   });
 
-  ipcMain.handle(IpcChannel.AUTH_OPEN_LOGIN_WINDOW, async (e) => {
-    const parent = BrowserWindow.fromWebContents(e.sender) ?? undefined;
-    return AuthManager.login(parent);
-  });
+  ipcMain.handle(
+    IpcChannel.AUTH_OPEN_LOGIN_WINDOW,
+    async (e, params?: { ssoProvider?: SsoProvider }) => {
+      const parent = BrowserWindow.fromWebContents(e.sender) ?? undefined;
+      return AuthManager.login(parent, params?.ssoProvider);
+    }
+  );
 
   ipcMain.handle(
     IpcChannel.AUTH_LOGIN_FORM,

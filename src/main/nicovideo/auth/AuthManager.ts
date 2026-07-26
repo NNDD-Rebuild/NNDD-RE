@@ -2,7 +2,7 @@ import { BrowserWindow, safeStorage } from 'electron';
 import { NicoApi } from '@shared/constants';
 import type { AutoReloginResult } from '@shared/types';
 import { NicoContext } from '../NicoContext';
-import { LoginWindow } from './LoginWindow';
+import { LoginWindow, type SsoProvider } from './LoginWindow';
 import { NicoFormLoginClient, type FormLoginResult } from './NicoFormLoginClient';
 import { getConfigStore } from '../../config/ConfigStore';
 import { createLogger } from '../../util/Logger';
@@ -41,10 +41,13 @@ export class AuthManager {
     }
   }
 
-  /** ブラウザログインウィンドウを開いてCookieを取得 */
-  static async login(parent?: BrowserWindow): Promise<boolean> {
+  /**
+   * ブラウザログインウィンドウを開いてCookieを取得。
+   * ssoProvider 指定時は Apple/Google/LINE/X/Facebook ボタンを自動クリックする。
+   */
+  static async login(parent?: BrowserWindow, ssoProvider?: SsoProvider): Promise<boolean> {
     const ctx = NicoContext.get();
-    return LoginWindow.openAndCaptureCookie(ctx.cookieStore, parent);
+    return LoginWindow.openAndCaptureCookie(ctx.cookieStore, parent, ssoProvider);
   }
 
   /**

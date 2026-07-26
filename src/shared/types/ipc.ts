@@ -15,6 +15,7 @@ export const IpcChannel = {
   AUTH_LOGIN: 'nndd:auth:login',
   AUTH_LOGOUT: 'nndd:auth:logout',
   AUTH_STATUS: 'nndd:auth:status',
+  /** ブラウザログインウィンドウを開く。{ ssoProvider?: 'apple'|'google'|'line'|'x'|'facebook' } で該当SSOボタンを自動クリック */
   AUTH_OPEN_LOGIN_WINDOW: 'nndd:auth:openLoginWindow',
   /** メール+パスワード送信 (アプリ内ログイン) */
   AUTH_LOGIN_FORM: 'nndd:auth:loginForm',

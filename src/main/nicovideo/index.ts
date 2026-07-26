@@ -2,7 +2,7 @@ export { NicoContext } from './NicoContext';
 export { NicoHttp } from './NicoHttp';
 export { CookieStore } from './auth/CookieStore';
 export { AuthManager } from './auth/AuthManager';
-export { LoginWindow } from './auth/LoginWindow';
+export { LoginWindow, type SsoProvider } from './auth/LoginWindow';
 export { WatchInfoHandler } from './watch/WatchInfoHandler';
 export { WatchPageParser } from './watch/WatchPageParser';
 export { M3U8Parser } from './video/M3U8Parser';
