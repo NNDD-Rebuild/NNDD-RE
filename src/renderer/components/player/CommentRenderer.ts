@@ -5,6 +5,7 @@ import {
   type NgListItem,
   NgListItemType
 } from '@shared/types';
+import { COMMENT_FONT_FAMILY } from '@shared/constants';
 
 /**
  * ニコニココメント描画エンジン。
@@ -54,7 +55,7 @@ export interface CommentRenderConfig {
 export const DEFAULT_RENDER_CONFIG: CommentRenderConfig = {
   enabled: true,
   opacity: 1,
-  fontFamily: '"MS PGothic", "MSPGothic", "Yu Gothic UI", "Meiryo", sans-serif',
+  fontFamily: COMMENT_FONT_FAMILY,
   antiAlias: true,
   bold: false,
   dropShadow: true,

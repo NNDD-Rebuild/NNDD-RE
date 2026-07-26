@@ -17,7 +17,7 @@ export default {
         }
       },
       fontFamily: {
-        sans: ['"Yu Gothic UI"', '"Meiryo UI"', '"MS UI Gothic"', 'system-ui', 'sans-serif']
+        sans: ['"Yu Gothic UI"', '"Meiryo UI"', '"MS UI Gothic"', '"Noto Sans CJK JP"', '"Noto Sans JP"', 'system-ui', 'sans-serif']
       }
     }
   },

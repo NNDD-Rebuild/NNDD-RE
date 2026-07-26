@@ -1,5 +1,6 @@
 import Store from 'electron-store';
 import type { GitHubSyncConfig, DiscordRpcConfig, WebhookNotifyConfig } from '@shared/types';
+import { COMMENT_FONT_FAMILY } from '@shared/constants';
 
 /**
  * アプリ全体の設定。
@@ -311,7 +312,7 @@ const DEFAULTS: NnddConfig = {
     commentOpacity: 1.0,
     commentShowSeconds: 3,
     commentSizeScale: 1.0,
-    commentFontFamily: '"MS PGothic", "MSPGothic", "Yu Gothic UI", "Meiryo", sans-serif',
+    commentFontFamily: COMMENT_FONT_FAMILY,
     commentAntiAlias: true,
     commentBold: false,
     commentDropShadow: true,

@@ -1,3 +1,5 @@
+import { UI_FONT_FAMILY } from '@shared/constants';
+
 /** ライブラリ配信UI (/library) の HTML を生成する */
 export function generateLibraryPage(): string {
   return `<!DOCTYPE html>
@@ -14,7 +16,7 @@ export function generateLibraryPage(): string {
   --accent:#3b82f6;--accent2:#1d4ed8;--green:#22c55e;
   --radius:6px;
 }
-body{background:var(--bg);color:var(--text);font-family:"MS PGothic","Yu Gothic UI","Meiryo",sans-serif;font-size:14px;min-height:100vh}
+body{background:var(--bg);color:var(--text);font-family:${UI_FONT_FAMILY};font-size:14px;min-height:100vh}
 a{color:var(--accent);text-decoration:none}
 /* Header */
 .hdr{

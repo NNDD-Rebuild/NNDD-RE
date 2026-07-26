@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { NNDDREComment, WatchPageInfo, DomandStreamCandidate } from '@shared/types';
 import { IpcChannel } from '@shared/types';
-import { buildLocalUrl } from '@shared/constants';
+import { buildLocalUrl, COMMENT_FONT_FAMILY } from '@shared/constants';
 import { VideoPlayer } from './components/player/VideoPlayer';
 import { VideoController } from './components/player/VideoController';
 import { VideoInfoView } from './components/player/VideoInfoView';
@@ -231,7 +231,7 @@ export default function PlayerApp(): JSX.Element {
   const [commentShowSec] = useConfig<number>('player.commentShowSeconds', 3);
   const [commentFontFamily] = useConfig<string>(
     'player.commentFontFamily',
-    '"MS PGothic", "MSPGothic", "Yu Gothic UI", "Meiryo", sans-serif'
+    COMMENT_FONT_FAMILY
   );
   const [commentBold] = useConfig<boolean>('player.commentBold', false);
   const [commentDropShadow] = useConfig<boolean>(

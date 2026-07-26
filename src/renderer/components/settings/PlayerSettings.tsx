@@ -1,4 +1,5 @@
 import { useConfig } from '@renderer/hooks/useConfig';
+import { COMMENT_FONT_FAMILY } from '@shared/constants';
 
 /**
  * 設定 > プレイヤー。
@@ -34,7 +35,7 @@ export function PlayerSettings(): JSX.Element {
   );
   const [fontFamily, setFontFamily] = useConfig<string>(
     'player.commentFontFamily',
-    '"MS PGothic", "MSPGothic", "Yu Gothic UI", "Meiryo", sans-serif'
+    COMMENT_FONT_FAMILY
   );
   const [antiAlias, setAntiAlias] = useConfig<boolean>(
     'player.commentAntiAlias',
