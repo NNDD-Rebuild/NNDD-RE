@@ -18,8 +18,8 @@ const TRACK_ID_CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123
  * 優先: /api/watch/v3 (JSON API) → フォールバック: HTML スクレイピング
  */
 export class WatchInfoHandler {
-  static async fetchWatchInfo(rawId: string, forceAllowHistory = false): Promise<WatchPageInfo> {
-    const info = await WatchInfoHandler.fetchWatchInfoInner(rawId, forceAllowHistory);
+  static async fetchWatchInfo(rawId: string, forceAllowHistory = false, forceHideHistory = false): Promise<WatchPageInfo> {
+    const info = await WatchInfoHandler.fetchWatchInfoInner(rawId, forceAllowHistory, forceHideHistory);
     return WatchInfoHandler.applyImageCache(info);
   }
 
@@ -29,14 +29,16 @@ export class WatchInfoHandler {
   }
 
   /** 画像キャッシュ適用前の生 WatchPageInfo を取得する内部実装 */
-  private static async fetchWatchInfoInner(rawId: string, forceAllowHistory = false): Promise<WatchPageInfo> {
+  private static async fetchWatchInfoInner(rawId: string, forceAllowHistory = false, forceHideHistory = false): Promise<WatchPageInfo> {
     const videoId = WatchInfoHandler.extractVideoId(rawId);
     const ctx = NicoContext.get();
     const loggedIn = await ctx.isLoggedIn();
     const configStore = (await import('../../config/ConfigStore')).getConfigStore();
     // forceAllowHistory: 「履歴非表示中のため再生失敗」ダイアログでユーザーが
     // 履歴を残しての再取得を選んだ場合、hideWatchHistory設定を無視する。
-    const hideHistory = !forceAllowHistory && (configStore.get('hideWatchHistory') ?? false);
+    // forceHideHistory: サムネイルホバープレビュー等、hideWatchHistory設定に関わらず
+    // 常にゲスト扱いで取得したい呼び出し元向け。
+    const hideHistory = forceHideHistory || (!forceAllowHistory && (configStore.get('hideWatchHistory') ?? false));
     // 履歴非表示ON時は最初からゲスト扱い (v3_guest + Cookie無し) で取得する。
     // v3 は Cookie 認証必須のため、Cookie無しで叩いても失敗するだけ。
     const effectiveLoggedIn = loggedIn && !hideHistory;

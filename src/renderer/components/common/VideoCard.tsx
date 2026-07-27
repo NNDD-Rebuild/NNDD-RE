@@ -133,6 +133,8 @@ export function VideoCard({
   );
 }
 
+const PREVIEW_HOVER_DELAY_MS = 500;
+
 function Thumb({
   data,
   small
@@ -140,12 +142,35 @@ function Thumb({
   data: VideoCardData;
   small?: boolean;
 }): JSX.Element {
+  const [showPreview, setShowPreview] = useState(false);
+  const hoverTimerRef = useRef<number | null>(null);
+
+  const clearHoverTimer = (): void => {
+    if (hoverTimerRef.current !== null) {
+      window.clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+  };
+
+  const handleMouseEnter = (): void => {
+    clearHoverTimer();
+    hoverTimerRef.current = window.setTimeout(() => setShowPreview(true), PREVIEW_HOVER_DELAY_MS);
+  };
+  const handleMouseLeave = (): void => {
+    clearHoverTimer();
+    setShowPreview(false);
+  };
+
+  useEffect(() => clearHoverTimer, []);
+
   return (
     <div
       className={[
         'relative bg-black flex-shrink-0 overflow-hidden aspect-video',
         small ? 'w-32' : 'w-full'
       ].join(' ')}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
     >
       {data.thumbnailUrl && (
         <img
@@ -160,6 +185,7 @@ function Thumb({
           }}
         />
       )}
+      {showPreview && <ThumbPreview videoId={data.videoId} />}
       <span className="absolute right-1 bottom-1 bg-black/70 text-white text-xs px-1 rounded">
         {formatLen(data.length)}
       </span>
@@ -177,6 +203,82 @@ function Thumb({
         </span>
       )}
     </div>
+  );
+}
+
+/**
+ * サムネイルホバー時の冒頭プレビュー再生。
+ * VIDEO_GET_PREVIEW_STREAM_URL は常にゲスト扱いで取得するため、視聴履歴には残らない。
+ */
+const PREVIEW_LOOP_SEC = 12;
+
+function ThumbPreview({ videoId }: { videoId: string }): JSX.Element | null {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [ready, setReady] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let hls: import('hls.js').default | null = null;
+    const videoEl = videoRef.current;
+
+    (async () => {
+      try {
+        const result = await window.nndd.invoke<{ contentUrl: string | null; isHls?: boolean; error?: string }>(
+          window.nndd.channels.VIDEO_GET_PREVIEW_STREAM_URL,
+          videoId
+        );
+        if (cancelled || !videoEl || !result.contentUrl) {
+          if (!cancelled) setFailed(true);
+          return;
+        }
+        if (result.isHls) {
+          const { default: Hls } = await import('hls.js');
+          if (cancelled) return;
+          if (Hls.isSupported()) {
+            hls = new Hls({ maxBufferLength: 15 });
+            hls.loadSource(result.contentUrl);
+            hls.attachMedia(videoEl);
+          } else {
+            videoEl.src = result.contentUrl;
+          }
+        } else {
+          videoEl.src = result.contentUrl;
+        }
+        await videoEl.play();
+        if (!cancelled) setReady(true);
+      } catch {
+        if (!cancelled) setFailed(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      hls?.destroy();
+      if (videoEl) {
+        videoEl.pause();
+        videoEl.removeAttribute('src');
+        videoEl.load();
+      }
+    };
+  }, [videoId]);
+
+  if (failed) return null;
+
+  return (
+    <video
+      ref={videoRef}
+      className={[
+        'absolute inset-0 w-full h-full object-cover transition-opacity',
+        ready ? 'opacity-100' : 'opacity-0'
+      ].join(' ')}
+      muted
+      playsInline
+      loop
+      onTimeUpdate={(e) => {
+        if (e.currentTarget.currentTime > PREVIEW_LOOP_SEC) e.currentTarget.currentTime = 0;
+      }}
+    />
   );
 }
 

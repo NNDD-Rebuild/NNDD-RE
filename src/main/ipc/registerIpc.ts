@@ -852,6 +852,26 @@ export function registerIpcHandlers(
     return { contentUrl: null, isDMS: false, error: 'unsupported streaming mode' };
   });
 
+  // サムネイルホバープレビュー用。hideWatchHistory設定に関わらず常にゲスト扱いで
+  // 取得することで、プレビュー再生がニコニコ側の視聴履歴に残らないようにする。
+  ipcMain.handle(IpcChannel.VIDEO_GET_PREVIEW_STREAM_URL, async (_e, videoId: string) => {
+    const mode = getConfigStore().get('player').streamingMode ?? 'native';
+    if (mode === 'niconico') {
+      return { contentUrl: null, error: 'niconicoモードではプレビュー非対応です' };
+    }
+    const cachedPath = YtDlpStreamer.getCachedPath(videoId);
+    if (cachedPath) {
+      return { contentUrl: buildLocalVideoUrl(cachedPath), isHls: false };
+    }
+    try {
+      const watchInfo = await WatchInfoHandler.fetchWatchInfo(videoId, false, true);
+      const session = await ensureStreamSession(videoId, watchInfo, false, undefined);
+      return { contentUrl: session.contentUrl, isHls: true };
+    } catch (e) {
+      return { contentUrl: null, error: e instanceof Error ? e.message : String(e) };
+    }
+  });
+
   // --- 検索 ---
   ipcMain.handle(IpcChannel.SEARCH_EXECUTE, async (_e, opts: SearchOptions) => {
     return SearchClient.search(opts);

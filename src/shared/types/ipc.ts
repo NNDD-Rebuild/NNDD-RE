@@ -85,6 +85,8 @@ export const IpcChannel = {
   VIDEO_OPEN_PLAYER: 'nndd:video:openPlayer',
   VIDEO_BUILD_LOCAL_URL: 'nndd:video:buildLocalUrl',
   VIDEO_GET_STREAM_URL: 'nndd:video:getStreamUrl',
+  /** サムネイルホバープレビュー用。常に視聴履歴を残さずにストリームURLを取得する */
+  VIDEO_GET_PREVIEW_STREAM_URL: 'nndd:video:getPreviewStreamUrl',
   /** ストリーミング (yt-dlp 経由) の進捗通知 */
   VIDEO_STREAM_PROGRESS_EVENT: 'nndd:video:streamProgress',
 
