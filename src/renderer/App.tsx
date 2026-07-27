@@ -8,6 +8,7 @@ import { MyListView } from './components/mylist/MyListView';
 import { DownloadView } from './components/download/DownloadView';
 import { LibraryView } from './components/library/LibraryView';
 import { HistoryView } from './components/history/HistoryView';
+import { StatsView } from './components/stats/StatsView';
 import { SettingsView } from './components/settings/SettingsView';
 import { LoginArea } from './components/common/LoginArea';
 import { StatusBar } from './components/common/StatusBar';
@@ -113,6 +114,7 @@ export default function App(): JSX.Element {
       case 'download': return <DownloadView />;
       case 'library': return <LibraryView />;
       case 'history': return <HistoryView />;
+      case 'stats': return <StatsView />;
       case 'settings': return <SettingsView />;
     }
   }

@@ -13,6 +13,7 @@ export type MainTab =
   | 'download'
   | 'library'
   | 'history'
+  | 'stats'
   | 'settings';
 
 export const MAIN_TABS: { id: MainTab; label: string }[] = [
@@ -23,6 +24,7 @@ export const MAIN_TABS: { id: MainTab; label: string }[] = [
   { id: 'download', label: 'DLリスト' },
   { id: 'library', label: 'ライブラリ' },
   { id: 'history', label: '履歴' },
+  { id: 'stats', label: '統計' },
   { id: 'settings', label: '設定' }
 ];
 
