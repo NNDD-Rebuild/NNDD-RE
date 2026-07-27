@@ -16,6 +16,7 @@ interface VideoRow {
   yetReading: number;
   pubDate: number | null;
   isFavorite: number;
+  description: string | null;
 }
 
 /**
@@ -89,7 +90,8 @@ export class VideoDao {
         video.lastPlayDate ? video.lastPlayDate.getTime() / 1000 : null,
         video.yetReading ? 1 : 0,
         video.pubDate ? video.pubDate.getTime() / 1000 : null,
-        existing?.isFavorite ?? 0
+        existing?.isFavorite ?? 0,
+        video.description
       );
       const id = Number(info.lastInsertRowid);
       this.setTags(id, video.tagStrings);
@@ -175,7 +177,8 @@ export class VideoDao {
       lastPlayDate: r.lastPlayDate ? new Date(r.lastPlayDate * 1000) : null,
       yetReading: r.yetReading === 1,
       pubDate: r.pubDate ? new Date(r.pubDate * 1000) : null,
-      isFavorite: r.isFavorite === 1
+      isFavorite: r.isFavorite === 1,
+      description: r.description ?? ''
     };
   }
 

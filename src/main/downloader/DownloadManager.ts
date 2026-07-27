@@ -358,7 +358,8 @@ export class DownloadManager extends EventEmitter {
           lastPlayDate: null,
           yetReading: true,
           pubDate: watch.registeredAt ? new Date(watch.registeredAt) : null,
-          isFavorite: false
+          isFavorite: false,
+          description: watch.description ?? ''
         };
         const dirId = this.library.videoDao.ensureFileDir(baseDir);
         this.library.videoDao.insertOrUpdate(video, dirId);

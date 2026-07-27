@@ -178,7 +178,11 @@ export function LibraryView(): JSX.Element {
       if (favoriteOnly && !v.isFavorite) return false;
       if (searchText.trim()) {
         const q = searchText.toLowerCase();
-        if (!v.videoName.toLowerCase().includes(q)) return false;
+        const hit =
+          v.videoName.toLowerCase().includes(q) ||
+          v.description.toLowerCase().includes(q) ||
+          v.tagStrings.some((t) => t.toLowerCase().includes(q));
+        if (!hit) return false;
       }
       return true;
     });
@@ -609,7 +613,7 @@ export function LibraryView(): JSX.Element {
               <input
                 value={searchText}
                 onChange={(e) => setSearchText(e.target.value)}
-                placeholder="タイトルで絞り込み"
+                placeholder="タイトル・説明文・タグで絞り込み"
                 className="flex-1 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
               />
               <button

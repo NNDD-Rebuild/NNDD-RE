@@ -6,7 +6,7 @@
  * 既存のオフライン NNDD ライブラリ DB をそのまま読み込めるようにする。
  */
 
-export const DB_SCHEMA_VERSION = '6';
+export const DB_SCHEMA_VERSION = '7';
 
 export const CREATE_TABLES = [
   /* NNDDREVideo - 動画本体 */
@@ -24,7 +24,8 @@ export const CREATE_TABLES = [
     lastPlayDate REAL,
     yetReading INTEGER,
     pubDate REAL,
-    isFavorite INTEGER DEFAULT 0
+    isFavorite INTEGER DEFAULT 0,
+    description TEXT
   );`,
 
   `CREATE INDEX IF NOT EXISTS keyindex ON NNDDREVideo (key);`,
@@ -160,20 +161,20 @@ export const Q = {
   SELECT_VIDEO_ALL: `
     SELECT v.id, v.key, v.uri, v.videoName,
            v.modificationDate, v.creationDate, v.thumbUrl,
-           v.playCount, v.time, v.lastPlayDate, v.yetReading, v.pubDate, v.isFavorite
+           v.playCount, v.time, v.lastPlayDate, v.yetReading, v.pubDate, v.isFavorite, v.description
     FROM NNDDREVideo v
     ORDER BY v.pubDate DESC;`,
 
   SELECT_VIDEO_BY_KEY: `
     SELECT id, key, uri, videoName,
            modificationDate, creationDate, thumbUrl,
-           playCount, time, lastPlayDate, yetReading, pubDate, isFavorite
+           playCount, time, lastPlayDate, yetReading, pubDate, isFavorite, description
     FROM NNDDREVideo WHERE key = ?;`,
 
   SELECT_VIDEO_BY_ID: `
     SELECT id, key, uri, videoName,
            modificationDate, creationDate, thumbUrl,
-           playCount, time, lastPlayDate, yetReading, pubDate, isFavorite
+           playCount, time, lastPlayDate, yetReading, pubDate, isFavorite, description
     FROM NNDDREVideo WHERE id = ?;`,
 
   SELECT_VIDEO_FAVORITE_BY_KEY: `SELECT isFavorite FROM NNDDREVideo WHERE key = ?;`,
@@ -182,8 +183,8 @@ export const Q = {
     INSERT OR REPLACE INTO NNDDREVideo
       (key, uri, dirpath_id, videoName,
        modificationDate, creationDate, thumbUrl, playCount,
-       time, lastPlayDate, yetReading, pubDate, isFavorite)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+       time, lastPlayDate, yetReading, pubDate, isFavorite, description)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
 
   UPDATE_VIDEO_FAVORITE: `UPDATE NNDDREVideo SET isFavorite = ? WHERE id = ?;`,
 
