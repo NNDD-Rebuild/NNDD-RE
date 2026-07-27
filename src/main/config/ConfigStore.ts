@@ -20,6 +20,12 @@ export interface NnddConfig {
    */
   downloadCooldownMs: number;
 
+  /**
+   * 動画DLの帯域制限 (Mbps)。0 = 無制限。
+   * yt-dlp経路 (--limit-rate) / ネイティブHLS経路 (SegmentDownloader) 両方に適用。
+   */
+  downloadRateLimitMbps: number;
+
   /** yt-dlp 実行ファイルのパス (空なら自動探索) */
   ytDlpPath: string;
 
@@ -324,6 +330,7 @@ const DEFAULTS: NnddConfig = {
   maxConcurrentDownloads: 2,
   downloadRetryCount: 3,
   downloadCooldownMs: 0,
+  downloadRateLimitMbps: 0,
   ytDlpPath: '',
   useNativeVideoDownloader: true,
   downloadMuxImplementation: 'mediabunny',

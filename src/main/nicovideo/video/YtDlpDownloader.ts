@@ -45,8 +45,14 @@ export class YtDlpDownloader {
         '--newline',
         '--no-part',
         '--no-warnings',
-        url,
       ];
+
+      const rateLimitMbps = getConfigStore().get('downloadRateLimitMbps') ?? 0;
+      if (rateLimitMbps > 0) {
+        // yt-dlp の --limit-rate はバイト/秒。Mbps → バイト/秒 (÷8)
+        args.push('--limit-rate', `${Math.round((rateLimitMbps * 1_000_000) / 8)}`);
+      }
+      args.push(url);
 
       log.info('yt-dlp start:', exePath, url);
       log.debug('yt-dlp args:', args.join(' '));

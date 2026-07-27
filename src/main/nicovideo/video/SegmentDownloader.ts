@@ -4,6 +4,8 @@ import type { HlsSegment } from '@shared/types';
 import { NicoContext } from '../NicoContext';
 import { Aes128Decryptor } from './Aes128Decryptor';
 import { createLogger } from '../../util/Logger';
+import { RateLimiter } from '../../util/RateLimiter';
+import { getConfigStore } from '../../config/ConfigStore';
 
 const log = createLogger('SegmentDownloader');
 
@@ -24,6 +26,8 @@ export interface SegmentDownloadOptions {
   onProgress?: (done: number, total: number) => void;
   /** AbortController で中断可能 */
   signal?: AbortSignal;
+  /** 帯域制限 (downloadAll 内で全ワーカー共有、未指定なら設定値から自動生成) */
+  rateLimiter?: RateLimiter;
 }
 
 /**
@@ -59,6 +63,7 @@ export class SegmentDownloader {
         const ciphertext = await NicoContext.get().http.getBinary(seg.url, {
           signal: opts.signal
         });
+        await opts.rateLimiter?.consume(ciphertext.length);
         const plaintext =
           opts.key && opts.iv
             ? Aes128Decryptor.decrypt(ciphertext, opts.key, opts.iv)
@@ -89,6 +94,13 @@ export class SegmentDownloader {
     opts: SegmentDownloadOptions
   ): Promise<void> {
     fs.mkdirSync(opts.outputDir, { recursive: true });
+
+    if (!opts.rateLimiter) {
+      const rateLimitMbps = getConfigStore().get('downloadRateLimitMbps') ?? 0;
+      if (rateLimitMbps > 0) {
+        opts = { ...opts, rateLimiter: new RateLimiter((rateLimitMbps * 1_000_000) / 8) };
+      }
+    }
 
     const concurrency = Math.max(1, opts.concurrency ?? 3);
     let done = 0;
