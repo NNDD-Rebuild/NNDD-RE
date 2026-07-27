@@ -58,6 +58,11 @@ export function VideoController({
   const [rate, setRate] = useState(1.0);
   const [inPip, setInPip] = useState(false);
   const pipSupported = typeof document !== 'undefined' && document.pictureInPictureEnabled;
+  const [volumeNormalize] = useConfig<boolean>('player.volumeNormalize', false);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const compressorRef = useRef<DynamicsCompressorNode | null>(null);
+  const connectedVideoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
     if (!video) return;
@@ -105,6 +110,46 @@ export function VideoController({
       video.removeEventListener('leavepictureinpicture', onLeavePip);
     };
   }, [video]);
+
+  // 音量ノーマライズ: DynamicsCompressorNode を挟むかどうかをルーティングで切替。
+  // MediaElementAudioSourceNode は同一 video 要素に対して一度しか作成できないため、
+  // 初回接続時に作成し、以降は ON/OFF で source→destination / source→compressor→destination の
+  // 経路を切り替えるだけにする (作り直すと動画によっては無音になる)。
+  useEffect(() => {
+    if (!video) return;
+    if (connectedVideoRef.current !== video) {
+      try {
+        const ctx = audioCtxRef.current ?? new AudioContext();
+        audioCtxRef.current = ctx;
+        const source = ctx.createMediaElementSource(video);
+        const compressor = ctx.createDynamicsCompressor();
+        compressor.threshold.value = -24;
+        compressor.knee.value = 30;
+        compressor.ratio.value = 6;
+        compressor.attack.value = 0.02;
+        compressor.release.value = 0.25;
+        sourceNodeRef.current = source;
+        compressorRef.current = compressor;
+        connectedVideoRef.current = video;
+      } catch (e) {
+        console.warn('volume normalize: audio graph setup failed:', e);
+        return;
+      }
+    }
+    const ctx = audioCtxRef.current;
+    const source = sourceNodeRef.current;
+    const compressor = compressorRef.current;
+    if (!ctx || !source || !compressor) return;
+    if (ctx.state === 'suspended') ctx.resume().catch(() => undefined);
+    source.disconnect();
+    compressor.disconnect();
+    if (volumeNormalize) {
+      source.connect(compressor);
+      compressor.connect(ctx.destination);
+    } else {
+      source.connect(ctx.destination);
+    }
+  }, [video, volumeNormalize]);
 
   const togglePlay = (): void => {
     if (!video) return;

@@ -55,6 +55,10 @@ export function PlayerSettings(): JSX.Element {
     true
   );
   const [rate, setRate] = useConfig<number>('player.playbackRate', 1.0);
+  const [volumeNormalize, setVolumeNormalize] = useConfig<boolean>(
+    'player.volumeNormalize',
+    false
+  );
   const [defaultQuality, setDefaultQuality] = useConfig<'highest' | number>(
     'player.defaultQuality',
     'highest'
@@ -376,6 +380,16 @@ export function PlayerSettings(): JSX.Element {
             onChange={(e) => setVolume(Number(e.target.value))}
             className="w-64"
           />
+        </Row>
+        <Row label="音量ノーマライズ">
+          <input
+            type="checkbox"
+            checked={volumeNormalize}
+            onChange={(e) => setVolumeNormalize(e.target.checked)}
+          />
+          <p className="text-xs text-nndd-subtext mt-0.5">
+            動画間の音量差を自動で平滑化します (静かな動画は持ち上げ、大音量はピークを抑える)
+          </p>
         </Row>
         <Row label="デフォルト再生速度">
           <div className="flex gap-1">

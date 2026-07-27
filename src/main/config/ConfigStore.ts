@@ -151,6 +151,11 @@ export interface NnddConfig {
     commentOutlineIntensity: 'light' | 'normal';
     /** デフォルト再生速度 */
     playbackRate: number;
+    /**
+     * 音量ノーマライズ。ON にすると Web Audio API の DynamicsCompressorNode で
+     * 動画間の音量差を平滑化する (静かな動画は持ち上げ、大音量はピークを抑える)。
+     */
+    volumeNormalize: boolean;
     /** リピート再生 */
     repeat: boolean;
     /**
@@ -358,6 +363,7 @@ const DEFAULTS: NnddConfig = {
     commentDropShadow: true,
     commentOutlineIntensity: 'light',
     playbackRate: 1.0,
+    volumeNormalize: false,
     repeat: false,
     niconicoInheritLogin: true,
     commentListDisplay: 'tab',
