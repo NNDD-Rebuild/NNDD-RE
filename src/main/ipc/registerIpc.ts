@@ -872,8 +872,11 @@ export function registerIpcHandlers(
       return { contentUrl: buildLocalVideoUrl(cachedPath), isHls: false };
     }
     try {
-      const watchInfo = await WatchInfoHandler.fetchWatchInfo(videoId, false, true);
+      const watchInfo = await WatchInfoHandler.fetchWatchInfo(videoId, false, true, true);
       const session = await ensureStreamSession(videoId, watchInfo, false, undefined);
+      if (session.domandBidCookie) {
+        await injectDomandBidCookie(_e.sender.session, session.domandBidCookie);
+      }
       return { contentUrl: session.contentUrl, isHls: true };
     } catch (e) {
       return { contentUrl: null, error: e instanceof Error ? e.message : String(e) };

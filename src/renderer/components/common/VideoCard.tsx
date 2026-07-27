@@ -90,7 +90,11 @@ export function VideoCard({
 
   if (layout === 'list') {
     return (
-      <div className="flex gap-2 p-2 bg-nndd-panel hover:bg-nndd-border rounded items-start" onContextMenu={handleContextMenu}>
+      <div
+        className="flex gap-2 p-2 bg-nndd-panel hover:bg-nndd-border rounded items-start"
+        onContextMenu={handleContextMenu}
+        onDoubleClick={() => onPlay?.(data.videoId)}
+      >
         <Thumb data={data} small />
         <div className="flex-1 min-w-0">
           <Title data={data} onUserPage={onUserPage} />
@@ -111,7 +115,11 @@ export function VideoCard({
     );
   }
   return (
-    <div className="bg-nndd-panel hover:bg-nndd-border rounded overflow-hidden flex flex-col" onContextMenu={handleContextMenu}>
+    <div
+      className="bg-nndd-panel hover:bg-nndd-border rounded overflow-hidden flex flex-col"
+      onContextMenu={handleContextMenu}
+      onDoubleClick={() => onPlay?.(data.videoId)}
+    >
       <Thumb data={data} />
       <div className="p-2 flex-1 flex flex-col">
         <Title data={data} onUserPage={onUserPage} />
@@ -212,6 +220,29 @@ function Thumb({
  */
 const PREVIEW_LOOP_SEC = 12;
 
+type PreviewStreamResult = { contentUrl: string | null; isHls?: boolean; error?: string };
+
+/**
+ * React.StrictMode の二重effect実行で同一videoIdのプレビュー取得IPCが
+ * 短時間に2回飛ぶのを防ぐための in-flight キャッシュ。
+ * DMS session ensure 等サーバー側に負荷をかけるAPIを含むため、結果を使い回す。
+ */
+const previewRequestCache = new Map<string, Promise<PreviewStreamResult>>();
+
+function getPreviewStreamUrl(videoId: string): Promise<PreviewStreamResult> {
+  let p = previewRequestCache.get(videoId);
+  if (!p) {
+    p = window.nndd.invoke<PreviewStreamResult>(window.nndd.channels.VIDEO_GET_PREVIEW_STREAM_URL, videoId);
+    previewRequestCache.set(videoId, p);
+    p.finally(() => {
+      setTimeout(() => {
+        if (previewRequestCache.get(videoId) === p) previewRequestCache.delete(videoId);
+      }, 2000);
+    });
+  }
+  return p;
+}
+
 function ThumbPreview({ videoId }: { videoId: string }): JSX.Element | null {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [ready, setReady] = useState(false);
@@ -224,10 +255,7 @@ function ThumbPreview({ videoId }: { videoId: string }): JSX.Element | null {
 
     (async () => {
       try {
-        const result = await window.nndd.invoke<{ contentUrl: string | null; isHls?: boolean; error?: string }>(
-          window.nndd.channels.VIDEO_GET_PREVIEW_STREAM_URL,
-          videoId
-        );
+        const result = await getPreviewStreamUrl(videoId);
         if (cancelled || !videoEl || !result.contentUrl) {
           if (!cancelled) setFailed(true);
           return;
@@ -236,9 +264,18 @@ function ThumbPreview({ videoId }: { videoId: string }): JSX.Element | null {
           const { default: Hls } = await import('hls.js');
           if (cancelled) return;
           if (Hls.isSupported()) {
-            hls = new Hls({ maxBufferLength: 15 });
-            hls.loadSource(result.contentUrl);
-            hls.attachMedia(videoEl);
+            const h = new Hls({ maxBufferLength: 15 });
+            hls = h;
+            h.attachMedia(videoEl);
+            h.loadSource(result.contentUrl);
+            h.on(Hls.Events.MANIFEST_PARSED, () => {
+              if (cancelled) return;
+              videoEl.play().then(() => setReady(true)).catch(() => setFailed(true));
+            });
+            h.on(Hls.Events.ERROR, (_e, data) => {
+              if (data.fatal && !cancelled) setFailed(true);
+            });
+            return;
           } else {
             videoEl.src = result.contentUrl;
           }

@@ -18,6 +18,7 @@ import {
   stopStreamServer
 } from './player/StreamServer';
 import { PlayerManager } from './player/PlayerManager';
+import { setupHlsSessionInterceptor } from './player/HlsSessionInterceptor';
 import { NnddHttpServer } from './server/NnddHttpServer';
 import { TrayManager } from './tray/TrayManager';
 import { BackupManager } from './githubSync/BackupManager';
@@ -82,6 +83,10 @@ function createMainWindow(): BrowserWindow {
       nodeIntegration: false
     }
   });
+
+  // サムネイルホバー時のプレビュー再生 (常にゲスト扱い) が domand CDN に直接アクセスするため、
+  // プレイヤーウィンドウと同様に CORS ヘッダー注入が必要
+  setupHlsSessionInterceptor(win.webContents.session, true);
 
   if (winConfig.maximized) {
     win.maximize();
