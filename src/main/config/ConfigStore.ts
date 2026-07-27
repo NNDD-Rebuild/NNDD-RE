@@ -108,6 +108,12 @@ export interface NnddConfig {
      *                  (公式機能フル利用可、コメント制御・シークバー制御不可)
      */
     streamingMode: 'hls' | 'native' | 'niconico';
+    /**
+     * デフォルト画質。
+     *   - 'highest': 常に最高画質 (デフォルト)
+     *   - number: 指定高さ(px)以下で最大の画質。該当なしなら最高画質にフォールバック
+     */
+    defaultQuality: 'highest' | number;
     /** コメント表示 */
     showComments: boolean;
     /** コメント不透明度 0..1 */
@@ -326,6 +332,7 @@ const DEFAULTS: NnddConfig = {
   player: {
     volume: 1.0,
     streamingMode: 'native',
+    defaultQuality: 'highest',
     showComments: true,
     commentOpacity: 1.0,
     commentShowSeconds: 3,

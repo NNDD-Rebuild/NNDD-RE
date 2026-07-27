@@ -244,6 +244,9 @@ export default function PlayerApp(): JSX.Element {
     discordThumbnailUrl?: string;
     isLocal: boolean;
   } | null>(null);
+  const [defaultQuality] = useConfig<'highest' | number>('player.defaultQuality', 'highest');
+  const defaultQualityRef = useRef(defaultQuality);
+  defaultQualityRef.current = defaultQuality;
   const [commentOpacity] = useConfig<number>('player.commentOpacity', 1);
   const [commentSizeScale] = useConfig<number>('player.commentSizeScale', 1);
   const [commentShowSec] = useConfig<number>('player.commentShowSeconds', 3);
@@ -529,7 +532,7 @@ export default function PlayerApp(): JSX.Element {
       .filter(v => v.isAvailable)
       .sort((a, b) => b.qualityLevel - a.qualityLevel);
     setAvailableQualities(available);
-    const defaultQualityId = available[0]?.id ?? null;
+    const defaultQualityId = pickDefaultQualityId(available, defaultQualityRef.current);
     setSelectedQualityId(defaultQualityId);
 
     // 2. コメント取得をバックグラウンドで開始（ストリームURL取得と並列実行）
@@ -1083,7 +1086,7 @@ export default function PlayerApp(): JSX.Element {
                 const avail = watchInfo.domandVideos
                   .filter((q) => q.isAvailable)
                   .sort((a, b) => b.qualityLevel - a.qualityLevel);
-                const qualityId = avail[0]?.id ?? null;
+                const qualityId = pickDefaultQualityId(avail, defaultQualityRef.current);
                 const stream = await window.nndd.invoke<{
                   contentUrl: string | null;
                   isDMS: boolean;
@@ -1501,6 +1504,22 @@ export default function PlayerApp(): JSX.Element {
       )}
     </div>
   );
+}
+
+/**
+ * 設定の defaultQuality に従って画質候補から初期選択IDを決める。
+ * available は qualityLevel (height) 降順ソート済みの前提。
+ *   - 'highest': 先頭 (最高画質)
+ *   - number: 指定高さ以下で最大のもの。該当なしなら最高画質にフォールバック
+ */
+function pickDefaultQualityId(
+  available: DomandStreamCandidate[],
+  preset: 'highest' | number
+): string | null {
+  if (available.length === 0) return null;
+  if (preset === 'highest') return available[0].id;
+  const fit = available.find((v) => (v.height ?? 0) <= preset);
+  return (fit ?? available[0]).id;
 }
 
 /**
