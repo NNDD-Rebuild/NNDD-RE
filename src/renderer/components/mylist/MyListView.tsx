@@ -71,6 +71,9 @@ export function MyListView(): JSX.Element {
   const [editingPlaylistId, setEditingPlaylistId] = useState<number | null>(null);
   const [editingPlaylistName, setEditingPlaylistName] = useState('');
 
+  // アイコン選択ポップオーバー
+  const [iconPickerUrl, setIconPickerUrl] = useState<string | null>(null);
+
   // 一括DL中
   const [bulkDling, setBulkDling] = useState(false);
   const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
@@ -537,6 +540,15 @@ export function MyListView(): JSX.Element {
     }
   };
 
+  const handleIconChange = async (ml: MyList, icon: string | null): Promise<void> => {
+    await window.nndd.invoke(IpcChannel.MYLIST_UPDATE_ICON, { url: ml.myListUrl, icon });
+    setIconPickerUrl(null);
+    reloadMylists();
+    if (selected?.kind === 'mylist' && selected.mylist.myListUrl === ml.myListUrl) {
+      setSelected({ kind: 'mylist', mylist: { ...selected.mylist, icon } });
+    }
+  };
+
   // --- プレイリスト (完全ローカル) 操作 ---
   const handleCreatePlaylist = async (): Promise<void> => {
     const name = newPlaylistName.trim();
@@ -794,7 +806,7 @@ export function MyListView(): JSX.Element {
             <div
               key={ml.myListUrl}
               className={[
-                'flex items-center gap-1 px-2 py-1 text-xs border-b border-nndd-border cursor-pointer',
+                'relative flex items-center gap-1 px-2 py-1 text-xs border-b border-nndd-border cursor-pointer',
                 selected?.kind === 'mylist' && selected.mylist.myListUrl === ml.myListUrl ? 'bg-nndd-bg' : 'hover:bg-nndd-border'
               ].join(' ')}
               onClick={() => editingUrl !== ml.myListUrl && fetchItems(ml)}
@@ -804,7 +816,51 @@ export function MyListView(): JSX.Element {
                 setEditingName(ml.myListName);
               }}
             >
-              <span className="text-nndd-subtext shrink-0">{typeLabel(ml.type)}</span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIconPickerUrl(iconPickerUrl === ml.myListUrl ? null : ml.myListUrl);
+                }}
+                className="text-nndd-subtext shrink-0 hover:opacity-70"
+                title="アイコンを変更"
+              >
+                {ml.icon ?? typeLabel(ml.type)}
+              </button>
+              {iconPickerUrl === ml.myListUrl && (
+                <>
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={(e) => { e.stopPropagation(); setIconPickerUrl(null); }}
+                  />
+                  <div
+                    className="absolute left-0 top-full z-20 mt-1 p-2 bg-nndd-bg border border-nndd-border rounded shadow-lg w-max"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {ICON_PRESET_GROUPS.map((group) => (
+                      <div key={group.label} className="mb-1.5 last:mb-0">
+                        <div className="text-[10px] text-nndd-subtext mb-0.5">{group.label}</div>
+                        <div className="grid grid-cols-8 gap-0.5">
+                          {group.icons.map((emoji) => (
+                            <button
+                              key={emoji}
+                              onClick={() => handleIconChange(ml, emoji)}
+                              className="text-base p-1 hover:bg-nndd-border rounded"
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                    <button
+                      onClick={() => handleIconChange(ml, null)}
+                      className="w-full text-[10px] text-nndd-subtext hover:text-nndd-accent mt-1 pt-1 border-t border-nndd-border"
+                    >
+                      種別デフォルトに戻す
+                    </button>
+                  </div>
+                </>
+              )}
               {editingUrl === ml.myListUrl ? (
                 <input
                   autoFocus
@@ -1164,6 +1220,11 @@ function extractId(url: string): string {
   const raw = m ? m[1] : url;
   return raw.replace(/\.0$/, '');
 }
+
+const ICON_PRESET_GROUPS: { label: string; icons: string[] }[] = [
+  { label: 'カラー', icons: ['🔴', '🟠', '🟡', '🟢', '🔵', '🟣', '🟤', '⚫', '⚪'] },
+  { label: 'カテゴリ', icons: ['🎵', '🎮', '🎨', '⚽', '🍳', '📚', '🎬', '✈️', '💻', '🌙', '💎', '🏆', '📌', '❤️', '😂', '🔥'] }
+];
 
 function typeLabel(t: RssTypeValue): string {
   switch (t) {

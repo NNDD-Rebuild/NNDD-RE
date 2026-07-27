@@ -6,7 +6,7 @@
  * 既存のオフライン NNDD ライブラリ DB をそのまま読み込めるようにする。
  */
 
-export const DB_SCHEMA_VERSION = '5';
+export const DB_SCHEMA_VERSION = '6';
 
 export const CREATE_TABLES = [
   /* NNDDREVideo - 動画本体 */
@@ -62,7 +62,8 @@ export const CREATE_TABLES = [
     type TEXT,
     isDir INTEGER DEFAULT 0,
     unPlayCount INTEGER DEFAULT 0,
-    lastRenewed REAL
+    lastRenewed REAL,
+    icon TEXT
   );`,
 
   /* 視聴履歴 */
@@ -215,8 +216,9 @@ export const Q = {
   // マイリスト
   SELECT_MYLISTS: `SELECT * FROM mylist ORDER BY name;`,
   INSERT_MYLIST: `
-    INSERT OR REPLACE INTO mylist (url, name, type, isDir, unPlayCount, lastRenewed)
-    VALUES (?, ?, ?, ?, ?, ?);`,
+    INSERT OR REPLACE INTO mylist (url, name, type, isDir, unPlayCount, lastRenewed, icon)
+    VALUES (?, ?, ?, ?, ?, ?, ?);`,
+  UPDATE_MYLIST_ICON: `UPDATE mylist SET icon = ? WHERE url = ?;`,
   DELETE_MYLIST: `DELETE FROM mylist WHERE url = ?;`,
   DELETE_ALL_MYLIST: `DELETE FROM mylist;`,
 

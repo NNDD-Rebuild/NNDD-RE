@@ -10,6 +10,7 @@ interface MyListRow {
   isDir: number;
   unPlayCount: number;
   lastRenewed: number | null;
+  icon: string | null;
 }
 
 /**
@@ -27,7 +28,8 @@ export class MyListDao {
       type: r.type as RssTypeValue,
       isDir: r.isDir === 1,
       unPlayVideoCount: r.unPlayCount,
-      myListVideoIds: {}
+      myListVideoIds: {},
+      icon: r.icon
     }));
   }
 
@@ -40,12 +42,17 @@ export class MyListDao {
         myList.type,
         myList.isDir ? 1 : 0,
         myList.unPlayVideoCount,
-        Date.now() / 1000
+        Date.now() / 1000,
+        myList.icon ?? null
       );
   }
 
   updateName(url: string, name: string): void {
     this.db.prepare('UPDATE mylist SET name = ? WHERE url = ?').run(name, url);
+  }
+
+  updateIcon(url: string, icon: string | null): void {
+    this.db.prepare(Q.UPDATE_MYLIST_ICON).run(icon, url);
   }
 
   remove(url: string): void {

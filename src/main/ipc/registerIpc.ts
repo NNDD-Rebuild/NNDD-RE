@@ -361,6 +361,14 @@ export function registerIpcHandlers(
   });
 
   ipcMain.handle(
+    IpcChannel.MYLIST_UPDATE_ICON,
+    (_e, args: { url: string; icon: string | null }) => {
+      library.myListDao.updateIcon(args.url, args.icon);
+      return true;
+    }
+  );
+
+  ipcMain.handle(
     IpcChannel.MYLIST_RENEW,
     async (_e, args: string | { url: string; type?: RssTypeValue }) => {
       const mylistUrl = typeof args === 'string' ? args : args.url;

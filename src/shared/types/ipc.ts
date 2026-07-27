@@ -73,6 +73,8 @@ export const IpcChannel = {
   SERIES_FETCH: 'nndd:series:fetch',
   /** マイリストの表示名を更新 */
   MYLIST_UPDATE_NAME: 'nndd:mylist:updateName',
+  /** マイリストのカスタムアイコン (絵文字) を更新 */
+  MYLIST_UPDATE_ICON: 'nndd:mylist:updateIcon',
   /** 動画をとりあえずマイリストに追加 → true */
   MYLIST_ADD_VIDEO_DEFLIST: 'nndd:mylist:addVideoDeflist',
 

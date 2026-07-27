@@ -29,6 +29,8 @@ export interface MyList {
   type: RssTypeValue;
   /** 含まれる動画ID一覧 (重複検査用) */
   myListVideoIds: Record<string, boolean>;
+  /** ユーザーが選択したカスタムアイコン (絵文字)。未設定なら種別のデフォルトアイコンを使用 */
+  icon?: string | null;
 }
 
 /**
