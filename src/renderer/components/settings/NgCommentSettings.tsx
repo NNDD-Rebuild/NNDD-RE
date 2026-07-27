@@ -1,6 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { NgListItem, NgListItemTypeValue } from '@shared/types';
 import { NgListItemType } from '@shared/types';
+import { useConfig } from '@renderer/hooks/useConfig';
+
+const STRENGTH_OPTIONS: { value: 'weak' | 'medium' | 'strong'; label: string; desc: string }[] = [
+  { value: 'weak', label: '弱', desc: 'NGワードは完全一致のみ適用' },
+  { value: 'medium', label: '中', desc: '部分一致も適用 (デフォルト)' },
+  { value: 'strong', label: '強', desc: '上記に加え、短時間の連投コメントも自動非表示' }
+];
 
 const KIND_OPTIONS: { value: NgListItemTypeValue; label: string; placeholder: string; hasMatch?: true }[] = [
   { value: NgListItemType.WORD,    label: 'NGワード',   placeholder: 'NGワードを入力 (例: 荒らし)', hasMatch: true },
@@ -16,6 +23,10 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 export function NgCommentSettings(): JSX.Element {
+  const [ngStrength, setNgStrength] = useConfig<'weak' | 'medium' | 'strong'>(
+    'player.ngStrength',
+    'medium'
+  );
   const [ngList, setNgList] = useState<NgListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [kind, setKind] = useState<NgListItemTypeValue>(NgListItemType.WORD);
@@ -60,6 +71,29 @@ export function NgCommentSettings(): JSX.Element {
         <h2 className="text-base font-bold text-nndd-text mb-1">NGコメント設定</h2>
         <p className="text-xs text-nndd-subtext">
           ここで登録したNG設定は全動画に適用されます。プレイヤー内の右クリックからも追加できます。
+        </p>
+      </div>
+
+      {/* NG強度プリセット */}
+      <div>
+        <div className="flex gap-1">
+          {STRENGTH_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => setNgStrength(opt.value)}
+              className={[
+                'text-xs px-3 py-1 rounded',
+                ngStrength === opt.value
+                  ? 'bg-nndd-accent text-white'
+                  : 'bg-nndd-border hover:bg-nndd-accent/70'
+              ].join(' ')}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        <p className="text-xs text-nndd-subtext mt-1">
+          {STRENGTH_OPTIONS.find((o) => o.value === ngStrength)?.desc}
         </p>
       </div>
 

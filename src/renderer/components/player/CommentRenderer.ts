@@ -50,6 +50,13 @@ export interface CommentRenderConfig {
   keepCA: boolean;
   /** NGリスト */
   ngList: NgListItem[];
+  /**
+   * NGフィルタの強度。
+   *   - 'weak':   NGワードは完全一致のみ適用 (誤爆を避けたい場合)
+   *   - 'medium': 部分一致も適用 (デフォルト)
+   *   - 'strong': 上記に加え、短時間の連投コメントも自動非表示
+   */
+  ngStrength: 'weak' | 'medium' | 'strong';
 }
 
 export const DEFAULT_RENDER_CONFIG: CommentRenderConfig = {
@@ -65,7 +72,8 @@ export const DEFAULT_RENDER_CONFIG: CommentRenderConfig = {
   showSecNaka: 3,
   showSecFixed: 3,
   keepCA: true,
-  ngList: []
+  ngList: [],
+  ngStrength: 'medium'
 };
 
 export class CommentRenderer {
@@ -261,10 +269,13 @@ export class CommentRenderer {
 
   /** NGリストで除外 */
   private filterComments(comments: NNDDREComment[]): NNDDREComment[] {
+    const strength = this.config.ngStrength ?? 'medium';
+    const spamUserIds = strength === 'strong' ? this.detectSpamUsers(comments) : null;
     return comments.filter((c) => {
       if (!c.isShow) return false;
+      if (spamUserIds?.has(c.userId)) return false;
       for (const ng of this.config.ngList) {
-        if (ng.type === NgListItemType.WORD && c.text.includes(ng.value))
+        if (strength !== 'weak' && ng.type === NgListItemType.WORD && c.text.includes(ng.value))
           return false;
         if (ng.type === NgListItemType.WORD_EXACT && c.text === ng.value)
           return false;
@@ -275,6 +286,36 @@ export class CommentRenderer {
       }
       return true;
     });
+  }
+
+  /**
+   * strong モード用: 同一ユーザーが SPAM_WINDOW_MS 以内に SPAM_THRESHOLD 件以上
+   * 投稿している場合、そのユーザーの全コメントを連投スパムとして扱う。
+   */
+  private detectSpamUsers(comments: NNDDREComment[]): Set<string> {
+    const SPAM_WINDOW_MS = 10_000;
+    const SPAM_THRESHOLD = 5;
+    const byUser = new Map<string, number[]>();
+    for (const c of comments) {
+      let arr = byUser.get(c.userId);
+      if (!arr) {
+        arr = [];
+        byUser.set(c.userId, arr);
+      }
+      arr.push(c.vposMs);
+    }
+    const spam = new Set<string>();
+    for (const [userId, times] of byUser) {
+      if (times.length < SPAM_THRESHOLD) continue;
+      times.sort((a, b) => a - b);
+      for (let i = 0; i + SPAM_THRESHOLD - 1 < times.length; i++) {
+        if (times[i + SPAM_THRESHOLD - 1] - times[i] <= SPAM_WINDOW_MS) {
+          spam.add(userId);
+          break;
+        }
+      }
+    }
+    return spam;
   }
 
   private clearCanvas(): void {

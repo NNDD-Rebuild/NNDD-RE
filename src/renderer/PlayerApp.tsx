@@ -247,6 +247,7 @@ export default function PlayerApp(): JSX.Element {
   const [defaultQuality] = useConfig<'highest' | number>('player.defaultQuality', 'highest');
   const defaultQualityRef = useRef(defaultQuality);
   defaultQualityRef.current = defaultQuality;
+  const [ngStrength] = useConfig<'weak' | 'medium' | 'strong'>('player.ngStrength', 'medium');
   const [commentOpacity] = useConfig<number>('player.commentOpacity', 1);
   const [commentSizeScale] = useConfig<number>('player.commentSizeScale', 1);
   const [commentShowSec] = useConfig<number>('player.commentShowSeconds', 3);
@@ -305,7 +306,8 @@ export default function PlayerApp(): JSX.Element {
       dropShadow: commentDropShadow,
       outlineIntensity: commentOutlineIntensity,
       antiAlias: commentAntiAlias,
-      keepCA: commentKeepCA
+      keepCA: commentKeepCA,
+      ngStrength
     }),
     [
       commentOpacity,
@@ -316,7 +318,8 @@ export default function PlayerApp(): JSX.Element {
       commentDropShadow,
       commentOutlineIntensity,
       commentAntiAlias,
-      commentKeepCA
+      commentKeepCA,
+      ngStrength
     ]
   );
 

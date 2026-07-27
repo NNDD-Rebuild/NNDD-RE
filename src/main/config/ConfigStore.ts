@@ -114,6 +114,13 @@ export interface NnddConfig {
      *   - number: 指定高さ(px)以下で最大の画質。該当なしなら最高画質にフォールバック
      */
     defaultQuality: 'highest' | number;
+    /**
+     * NGフィルタ強度。
+     *   - 'weak':   NGワードは完全一致のみ適用
+     *   - 'medium': 部分一致も適用 (デフォルト)
+     *   - 'strong': 上記に加え短時間の連投コメントも自動非表示
+     */
+    ngStrength: 'weak' | 'medium' | 'strong';
     /** コメント表示 */
     showComments: boolean;
     /** コメント不透明度 0..1 */
@@ -333,6 +340,7 @@ const DEFAULTS: NnddConfig = {
     volume: 1.0,
     streamingMode: 'native',
     defaultQuality: 'highest',
+    ngStrength: 'medium',
     showComments: true,
     commentOpacity: 1.0,
     commentShowSeconds: 3,
