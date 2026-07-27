@@ -1,18 +1,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { app } from 'electron';
+import { getConfigStore } from '../config/ConfigStore';
 
 /**
  * ロガー (元: src/org/mineap/nndd/LogManager.as)
  *
  * - コンソール出力
  * - ファイル出力 (`<userData>/log/nndd.log`)
- * - サイズが大きくなったら自動ローテート
+ * - サイズが大きくなったら自動ローテート (設定 > logRotation で上限サイズ・保持世代数を変更可能)
  */
 
 let logFilePath: string | null = null;
 let initialized = false;
-const MAX_LOG_BYTES = 1_000_000; // 1MB
 let currentLogLevel: 'standard' | 'verbose' = 'standard';
 
 export function setLogLevel(level: 'standard' | 'verbose'): void {
@@ -35,17 +35,26 @@ function ensureInit(): void {
   }
 }
 
+/** .{maxFiles-1} → .{maxFiles}, ..., .1 → .2, 本体 → .1 の順に世代をずらす */
+function rotateLogFile(filePath: string, maxFiles: number): void {
+  const oldest = `${filePath}.${maxFiles}`;
+  if (fs.existsSync(oldest)) fs.unlinkSync(oldest);
+  for (let i = maxFiles - 1; i >= 1; i--) {
+    const src = `${filePath}.${i}`;
+    if (fs.existsSync(src)) fs.renameSync(src, `${filePath}.${i + 1}`);
+  }
+  fs.renameSync(filePath, `${filePath}.1`);
+}
+
 function writeToFile(level: string, tag: string, message: string): void {
   if (!initialized) ensureInit();
   if (!logFilePath) return;
   try {
     if (fs.existsSync(logFilePath)) {
       const stat = fs.statSync(logFilePath);
-      if (stat.size > MAX_LOG_BYTES) {
-        // 単純ローテート: 旧ログを .1 にして新規作成
-        const rotated = `${logFilePath}.1`;
-        if (fs.existsSync(rotated)) fs.unlinkSync(rotated);
-        fs.renameSync(logFilePath, rotated);
+      const rotation = getConfigStore().get('logRotation') ?? { maxSizeMb: 1, maxFiles: 3 };
+      if (stat.size > rotation.maxSizeMb * 1_000_000) {
+        rotateLogFile(logFilePath, Math.max(1, rotation.maxFiles));
       }
     }
     const line = `${new Date().toISOString()} [${level}][${tag}] ${message}\n`;

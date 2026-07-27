@@ -254,6 +254,14 @@ export interface NnddConfig {
   /** ログレベル: 'standard' = 重要ログのみ, 'verbose' = 全ログ */
   logLevel: 'standard' | 'verbose';
 
+  /** ログファイルの自動ローテーション設定 */
+  logRotation: {
+    /** 1ファイルあたりの最大サイズ (MB)。超過したら nndd.log.1 にローテート */
+    maxSizeMb: number;
+    /** 保持する世代数 (nndd.log.1 ～ nndd.log.<N>)。超過分は古いものから削除 */
+    maxFiles: number;
+  };
+
   /** 開発者オプション */
   developer: {
     /** 開発者モードを有効にするか */
@@ -378,6 +386,10 @@ const DEFAULTS: NnddConfig = {
     maxSizeMb: 1000
   },
   logLevel: 'standard',
+  logRotation: {
+    maxSizeMb: 1,
+    maxFiles: 3
+  },
   developer: {
     enabled: false,
     apiDumpPath: undefined,
