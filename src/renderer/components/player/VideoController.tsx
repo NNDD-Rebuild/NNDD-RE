@@ -56,6 +56,8 @@ export function VideoController({
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
   const [rate, setRate] = useState(1.0);
+  const [inPip, setInPip] = useState(false);
+  const pipSupported = typeof document !== 'undefined' && document.pictureInPictureEnabled;
 
   useEffect(() => {
     if (!video) return;
@@ -82,6 +84,10 @@ export function VideoController({
     video.addEventListener('volumechange', onVol);
     video.addEventListener('ratechange', onRate);
     video.addEventListener('progress', onProgress);
+    const onEnterPip = (): void => setInPip(true);
+    const onLeavePip = (): void => setInPip(false);
+    video.addEventListener('enterpictureinpicture', onEnterPip);
+    video.addEventListener('leavepictureinpicture', onLeavePip);
     setPlaying(!video.paused);
     onDur();
     onVol();
@@ -95,6 +101,8 @@ export function VideoController({
       video.removeEventListener('volumechange', onVol);
       video.removeEventListener('ratechange', onRate);
       video.removeEventListener('progress', onProgress);
+      video.removeEventListener('enterpictureinpicture', onEnterPip);
+      video.removeEventListener('leavepictureinpicture', onLeavePip);
     };
   }, [video]);
 
@@ -123,6 +131,19 @@ export function VideoController({
   const changeRate = (r: number): void => {
     if (!video) return;
     video.playbackRate = r;
+  };
+
+  const togglePip = async (): Promise<void> => {
+    if (!video) return;
+    try {
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+      } else {
+        await video.requestPictureInPicture();
+      }
+    } catch (e) {
+      console.warn('Picture-in-Picture failed:', e);
+    }
   };
 
   return (
@@ -265,6 +286,12 @@ export function VideoController({
           title={showComments ? 'コメント非表示' : 'コメント表示'}
         >
           {showComments ? '💬 ON' : '💬 OFF'}
+        </Btn>
+      )}
+
+      {!audioOnly && pipSupported && (
+        <Btn onClick={() => { togglePip().catch(console.error); }} title="ミニプレイヤー (Picture-in-Picture)">
+          {inPip ? '🗗' : '🗖'}
         </Btn>
       )}
 
