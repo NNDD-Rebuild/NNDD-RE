@@ -53,7 +53,7 @@ export class NnddDatabase {
       }
     }
     // v5 → v6: mylist / playlist に icon カラム追加
-    if (from === '4' || from === '5') {
+    if (from === '4' || from === '5' || from === '6') {
       try {
         this.db.exec(`ALTER TABLE mylist ADD COLUMN icon TEXT;`);
         console.log('[DB] added mylist.icon column');
