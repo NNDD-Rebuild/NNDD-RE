@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { NNDDREVideo } from '@shared/types';
 import { IpcChannel } from '@shared/types';
 import { ContinuousPlayButton } from '../common/ContinuousPlayButton';
+import { ContextMenuPopup, MenuItem } from '../common/VideoCard';
 import { useAppStore } from '@renderer/store/useAppStore';
 
 type ViewMode = 'tag' | 'folder';
@@ -31,6 +32,7 @@ export function LibraryView(): JSX.Element {
   const [displayMode, setDisplayMode] = useState<LibraryDisplayMode>(globalLibraryMode);
   const [sortCol, setSortCol] = useState<SortCol>('pubDate');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
+  const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; video: NNDDREVideo } | null>(null);
 
   // LAN
   const [lanEnabled, setLanEnabled] = useState(false);
@@ -294,6 +296,12 @@ export function LibraryView(): JSX.Element {
     const next = !v.isFavorite;
     await window.nndd.invoke(window.nndd.channels.LIBRARY_SET_FAVORITE, v.id, next);
     setVideos((prev) => prev.map((x) => (x.id === v.id ? { ...x, isFavorite: next } : x)));
+  };
+
+  const handleVideoContextMenu = (e: React.MouseEvent, v: NNDDREVideo): void => {
+    e.preventDefault();
+    e.stopPropagation();
+    setCtxMenu({ x: e.clientX, y: e.clientY, video: v });
   };
 
   const handleOpenFolder = (v: NNDDREVideo): void => {
@@ -700,6 +708,7 @@ export function LibraryView(): JSX.Element {
                       onClick={(e) => handleVideoClick(v, e)}
                       onDoubleClick={() => handlePlay(v)}
                       onDragStart={(e) => handleVideoDragStart(e, v)}
+                      onContextMenu={(e) => handleVideoContextMenu(e, v)}
                     >
                       <div className="relative bg-black aspect-video overflow-hidden w-full">
                         <img
@@ -776,6 +785,7 @@ export function LibraryView(): JSX.Element {
                         onClick={(e) => handleVideoClick(v, e)}
                         onDoubleClick={() => handlePlay(v)}
                         onDragStart={(e) => handleVideoDragStart(e, v)}
+                        onContextMenu={(e) => handleVideoContextMenu(e, v)}
                       >
                         <td className="p-0.5 text-center">
                           <button
@@ -826,6 +836,17 @@ export function LibraryView(): JSX.Element {
           </>
         )}
       </main>
+      {ctxMenu && (
+        <ContextMenuPopup
+          x={ctxMenu.x}
+          y={ctxMenu.y}
+          onClose={() => setCtxMenu(null)}
+        >
+          <MenuItem onClick={() => { void handleToggleFavorite(ctxMenu.video); setCtxMenu(null); }}>
+            {ctxMenu.video.isFavorite ? '☆ お気に入りから外す' : '★ お気に入りに追加'}
+          </MenuItem>
+        </ContextMenuPopup>
+      )}
     </div>
   );
 }
