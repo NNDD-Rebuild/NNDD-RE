@@ -227,6 +227,14 @@ export function registerIpcHandlers(
     }
   );
 
+  ipcMain.handle(
+    IpcChannel.LIBRARY_SET_FAVORITE,
+    (_e, id: number, isFavorite: boolean) => {
+      library.videoDao.setFavorite(id, isFavorite);
+      return true;
+    }
+  );
+
   // --- 履歴 ---
   ipcMain.handle(IpcChannel.HISTORY_LIST, (_e, limit?: number) => {
     return library.historyDao.list(limit ?? 1000);

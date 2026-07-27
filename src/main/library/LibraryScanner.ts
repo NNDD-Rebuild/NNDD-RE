@@ -120,7 +120,8 @@ export class LibraryScanner {
       time: meta?.length ?? 0,
       lastPlayDate: null,
       yetReading: true,
-      pubDate: meta?.pubDate ?? null
+      pubDate: meta?.pubDate ?? null,
+      isFavorite: false
     };
 
     if (existing) {

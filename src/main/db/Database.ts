@@ -66,6 +66,12 @@ export class NnddDatabase {
       } catch {
         // 既にカラムあり — 無視
       }
+      try {
+        this.db.exec(`ALTER TABLE NNDDREVideo ADD COLUMN isFavorite INTEGER DEFAULT 0;`);
+        console.log('[DB] added NNDDREVideo.isFavorite column');
+      } catch {
+        // 既にカラムあり — 無視
+      }
     }
   }
 

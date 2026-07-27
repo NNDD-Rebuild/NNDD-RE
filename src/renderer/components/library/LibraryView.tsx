@@ -26,6 +26,7 @@ export function LibraryView(): JSX.Element {
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [selectedFolder, setSelectedFolder] = useState<string | null>(null);
   const [searchText, setSearchText] = useState('');
+  const [favoriteOnly, setFavoriteOnly] = useState(false);
   const globalLibraryMode = useAppStore((s) => s.libraryViewMode);
   const [displayMode, setDisplayMode] = useState<LibraryDisplayMode>(globalLibraryMode);
   const [sortCol, setSortCol] = useState<SortCol>('pubDate');
@@ -174,13 +175,14 @@ export function LibraryView(): JSX.Element {
         const d = v.uri.replace(/[/\\][^/\\]+$/, '');
         if (d !== selectedFolder) return false;
       }
+      if (favoriteOnly && !v.isFavorite) return false;
       if (searchText.trim()) {
         const q = searchText.toLowerCase();
         if (!v.videoName.toLowerCase().includes(q)) return false;
       }
       return true;
     });
-  }, [videos, mode, selectedTag, selectedFolder, searchText]);
+  }, [videos, mode, selectedTag, selectedFolder, favoriteOnly, searchText]);
 
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
@@ -282,6 +284,12 @@ export function LibraryView(): JSX.Element {
     await window.nndd.invoke(window.nndd.channels.LIBRARY_DELETE, v.id);
     setSelected(null);
     reload();
+  };
+
+  const handleToggleFavorite = async (v: NNDDREVideo): Promise<void> => {
+    const next = !v.isFavorite;
+    await window.nndd.invoke(window.nndd.channels.LIBRARY_SET_FAVORITE, v.id, next);
+    setVideos((prev) => prev.map((x) => (x.id === v.id ? { ...x, isFavorite: next } : x)));
   };
 
   const handleOpenFolder = (v: NNDDREVideo): void => {
@@ -604,6 +612,16 @@ export function LibraryView(): JSX.Element {
                 placeholder="タイトルで絞り込み"
                 className="flex-1 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
               />
+              <button
+                onClick={() => setFavoriteOnly((v) => !v)}
+                title="お気に入りのみ表示"
+                className={[
+                  'text-xs px-2 py-1 rounded',
+                  favoriteOnly ? 'bg-yellow-500 text-black' : 'bg-nndd-border hover:opacity-80'
+                ].join(' ')}
+              >
+                ★ お気に入りのみ
+              </button>
               <span className="text-xs text-nndd-subtext">{filtered.length} 件</span>
               {moving && (
                 <span className="text-xs text-nndd-accent animate-pulse">移動中…</span>
@@ -700,6 +718,16 @@ export function LibraryView(): JSX.Element {
                             ♪ 音声のみ
                           </span>
                         )}
+                        <button
+                          onClick={(e) => { e.stopPropagation(); void handleToggleFavorite(v); }}
+                          title={v.isFavorite ? 'お気に入りから外す' : 'お気に入りに追加'}
+                          className={[
+                            'absolute right-1 top-1 text-base leading-none drop-shadow',
+                            v.isFavorite ? 'text-yellow-400' : 'text-white/70 hover:text-yellow-400'
+                          ].join(' ')}
+                        >
+                          {v.isFavorite ? '★' : '☆'}
+                        </button>
                       </div>
                       <div className="p-1.5 bg-nndd-panel flex-1 flex flex-col gap-0.5">
                         <div className="text-xs line-clamp-2 leading-tight" title={v.videoName}>
@@ -724,6 +752,7 @@ export function LibraryView(): JSX.Element {
                 <table className="nndd-datagrid">
                   <thead>
                     <tr>
+                      <th className="w-6"></th>
                       <th className="w-10"></th>
                       <th className="cursor-pointer select-none hover:opacity-70" onClick={() => handleSort('videoName')}>タイトル{sortIndicator('videoName')}</th>
                       <th className="w-24 cursor-pointer select-none hover:opacity-70" onClick={() => handleSort('time')}>時間{sortIndicator('time')}</th>
@@ -744,6 +773,15 @@ export function LibraryView(): JSX.Element {
                         onDoubleClick={() => handlePlay(v)}
                         onDragStart={(e) => handleVideoDragStart(e, v)}
                       >
+                        <td className="p-0.5 text-center">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); void handleToggleFavorite(v); }}
+                            title={v.isFavorite ? 'お気に入りから外す' : 'お気に入りに追加'}
+                            className={v.isFavorite ? 'text-yellow-400' : 'text-nndd-subtext hover:text-yellow-400'}
+                          >
+                            {v.isFavorite ? '★' : '☆'}
+                          </button>
+                        </td>
                         <td className="p-0.5">
                           <img
                             src={thumbPrimaryUrl(v)}

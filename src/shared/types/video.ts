@@ -16,6 +16,7 @@ export interface NNDDREVideo {
   lastPlayDate: Date | null;
   yetReading: boolean;
   pubDate: Date | null;
+  isFavorite: boolean;
 }
 
 /**

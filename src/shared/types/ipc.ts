@@ -10,6 +10,7 @@ export const IpcChannel = {
   LIBRARY_DELETE: 'nndd:library:delete',
   LIBRARY_SCAN: 'nndd:library:scan',
   LIBRARY_UPDATE_TAGS: 'nndd:library:updateTags',
+  LIBRARY_SET_FAVORITE: 'nndd:library:setFavorite',
 
   // 認証
   AUTH_LOGIN: 'nndd:auth:login',
