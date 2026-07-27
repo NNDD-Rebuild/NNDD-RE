@@ -52,11 +52,17 @@ export class NnddDatabase {
         // 古い SQLite か既にカラムなし — 無視
       }
     }
-    // v5 → v6: mylist に icon カラム追加
+    // v5 → v6: mylist / playlist に icon カラム追加
     if (from === '4' || from === '5') {
       try {
         this.db.exec(`ALTER TABLE mylist ADD COLUMN icon TEXT;`);
         console.log('[DB] added mylist.icon column');
+      } catch {
+        // 既にカラムあり — 無視
+      }
+      try {
+        this.db.exec(`ALTER TABLE playlist ADD COLUMN icon TEXT;`);
+        console.log('[DB] added playlist.icon column');
       } catch {
         // 既にカラムあり — 無視
       }

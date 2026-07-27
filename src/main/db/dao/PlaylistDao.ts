@@ -7,6 +7,7 @@ interface PlaylistRow {
   name: string;
   createdAt: number | null;
   updatedAt: number | null;
+  icon: string | null;
 }
 
 interface PlaylistItemRow {
@@ -39,6 +40,10 @@ export class PlaylistDao {
 
   rename(id: number, name: string): void {
     this.db.prepare(Q.UPDATE_PLAYLIST_NAME).run(name, Date.now() / 1000, id);
+  }
+
+  updateIcon(id: number, icon: string | null): void {
+    this.db.prepare(Q.UPDATE_PLAYLIST_ICON).run(icon, id);
   }
 
   remove(id: number): void {
@@ -97,7 +102,8 @@ export class PlaylistDao {
       id: r.id,
       name: r.name,
       createdAt: new Date((r.createdAt ?? 0) * 1000),
-      updatedAt: new Date((r.updatedAt ?? 0) * 1000)
+      updatedAt: new Date((r.updatedAt ?? 0) * 1000),
+      icon: r.icon
     };
   }
 

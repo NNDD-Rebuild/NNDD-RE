@@ -73,6 +73,7 @@ export function MyListView(): JSX.Element {
 
   // アイコン選択ポップオーバー
   const [iconPickerUrl, setIconPickerUrl] = useState<string | null>(null);
+  const [iconPickerPlaylistId, setIconPickerPlaylistId] = useState<number | null>(null);
 
   // 一括DL中
   const [bulkDling, setBulkDling] = useState(false);
@@ -549,6 +550,15 @@ export function MyListView(): JSX.Element {
     }
   };
 
+  const handlePlaylistIconChange = async (pl: Playlist, icon: string | null): Promise<void> => {
+    await window.nndd.invoke(IpcChannel.PLAYLIST_UPDATE_ICON, { id: pl.id, icon });
+    setIconPickerPlaylistId(null);
+    reloadPlaylists();
+    if (selected?.kind === 'playlist' && selected.playlist.id === pl.id) {
+      setSelected({ kind: 'playlist', playlist: { ...selected.playlist, icon } });
+    }
+  };
+
   // --- プレイリスト (完全ローカル) 操作 ---
   const handleCreatePlaylist = async (): Promise<void> => {
     const name = newPlaylistName.trim();
@@ -912,7 +922,7 @@ export function MyListView(): JSX.Element {
             <div
               key={pl.id}
               className={[
-                'flex items-center gap-1 px-2 py-1 text-xs border-b border-nndd-border cursor-pointer',
+                'relative flex items-center gap-1 px-2 py-1 text-xs border-b border-nndd-border cursor-pointer',
                 selected?.kind === 'playlist' && selected.playlist.id === pl.id ? 'bg-nndd-bg' : 'hover:bg-nndd-border'
               ].join(' ')}
               onClick={() => editingPlaylistId !== pl.id && fetchPlaylistItems(pl)}
@@ -922,7 +932,51 @@ export function MyListView(): JSX.Element {
                 setEditingPlaylistName(pl.name);
               }}
             >
-              <span className="text-nndd-subtext shrink-0">📑</span>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIconPickerPlaylistId(iconPickerPlaylistId === pl.id ? null : pl.id);
+                }}
+                className="text-nndd-subtext shrink-0 hover:opacity-70"
+                title="アイコンを変更"
+              >
+                {pl.icon ?? '📑'}
+              </button>
+              {iconPickerPlaylistId === pl.id && (
+                <>
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={(e) => { e.stopPropagation(); setIconPickerPlaylistId(null); }}
+                  />
+                  <div
+                    className="absolute left-0 top-full z-20 mt-1 p-2 bg-nndd-bg border border-nndd-border rounded shadow-lg w-max"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {ICON_PRESET_GROUPS.map((group) => (
+                      <div key={group.label} className="mb-1.5 last:mb-0">
+                        <div className="text-[10px] text-nndd-subtext mb-0.5">{group.label}</div>
+                        <div className="grid grid-cols-8 gap-0.5">
+                          {group.icons.map((emoji) => (
+                            <button
+                              key={emoji}
+                              onClick={() => handlePlaylistIconChange(pl, emoji)}
+                              className="text-base p-1 hover:bg-nndd-border rounded"
+                            >
+                              {emoji}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                    <button
+                      onClick={() => handlePlaylistIconChange(pl, null)}
+                      className="w-full text-[10px] text-nndd-subtext hover:text-nndd-accent mt-1 pt-1 border-t border-nndd-border"
+                    >
+                      既定に戻す
+                    </button>
+                  </div>
+                </>
+              )}
               {editingPlaylistId === pl.id ? (
                 <input
                   autoFocus

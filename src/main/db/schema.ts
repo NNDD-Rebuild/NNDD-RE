@@ -121,7 +121,8 @@ export const CREATE_TABLES = [
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     createdAt REAL,
-    updatedAt REAL
+    updatedAt REAL,
+    icon TEXT
   );`,
 
   /* プレイリスト内動画 (追加時のタイトル等スナップショットを保持) */
@@ -268,6 +269,7 @@ export const Q = {
   SELECT_PLAYLISTS: `SELECT * FROM playlist ORDER BY name;`,
   INSERT_PLAYLIST: `INSERT INTO playlist (name, createdAt, updatedAt) VALUES (?, ?, ?);`,
   UPDATE_PLAYLIST_NAME: `UPDATE playlist SET name = ?, updatedAt = ? WHERE id = ?;`,
+  UPDATE_PLAYLIST_ICON: `UPDATE playlist SET icon = ? WHERE id = ?;`,
   DELETE_PLAYLIST: `DELETE FROM playlist WHERE id = ?;`,
   DELETE_ALL_PLAYLIST: `DELETE FROM playlist;`,
 

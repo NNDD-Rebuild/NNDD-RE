@@ -97,6 +97,7 @@ export const IpcChannel = {
   PLAYLIST_LIST: 'nndd:playlist:list',
   PLAYLIST_CREATE: 'nndd:playlist:create',
   PLAYLIST_RENAME: 'nndd:playlist:rename',
+  PLAYLIST_UPDATE_ICON: 'nndd:playlist:updateIcon',
   PLAYLIST_REMOVE: 'nndd:playlist:remove',
   PLAYLIST_GET_ITEMS: 'nndd:playlist:getItems',
   PLAYLIST_ADD_VIDEO: 'nndd:playlist:addVideo',

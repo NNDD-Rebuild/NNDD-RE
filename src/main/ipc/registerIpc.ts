@@ -273,6 +273,14 @@ export function registerIpcHandlers(
     return true;
   });
 
+  ipcMain.handle(
+    IpcChannel.PLAYLIST_UPDATE_ICON,
+    (_e, args: { id: number; icon: string | null }) => {
+      library.playlistDao.updateIcon(args.id, args.icon);
+      return true;
+    }
+  );
+
   ipcMain.handle(IpcChannel.PLAYLIST_REMOVE, (_e, id: number) => {
     library.playlistDao.remove(id);
     return true;

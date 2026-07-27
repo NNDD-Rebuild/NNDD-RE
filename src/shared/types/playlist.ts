@@ -40,6 +40,8 @@ export interface Playlist {
   name: string;
   createdAt: Date;
   updatedAt: Date;
+  /** ユーザーが選択したカスタムアイコン (絵文字)。未設定なら既定表示 */
+  icon?: string | null;
 }
 
 /**
