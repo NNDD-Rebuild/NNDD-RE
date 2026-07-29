@@ -40,6 +40,7 @@ export function MyListView(): JSX.Element {
   const [loadedCount, setLoadedCount] = useState(0);
   const cancelLoadAllRef = useRef(false);
   const isLoadingAllRef = useRef(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   // マイリスト追加フォーム (URLから種別を自動判定)
   const [newUrl, setNewUrl] = useState('');
@@ -278,6 +279,7 @@ export function MyListView(): JSX.Element {
       setTotalItems(0);
     } finally {
       setLoading(false);
+      requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 0 }));
     }
   };
 
@@ -1131,7 +1133,7 @@ export function MyListView(): JSX.Element {
               </div>
             )}
 
-            <div className="flex-1 overflow-auto p-3">
+            <div ref={scrollRef} className="flex-1 overflow-auto p-3">
               {loading ? (
                 <div className="text-nndd-subtext text-sm">読み込み中…</div>
               ) : filteredItems.length === 0 ? (

@@ -104,6 +104,7 @@ export function FollowView(): JSX.Element {
   const [userLoading, setUserLoading] = useState(false);
   const [userError, setUserError] = useState<string | null>(null);
   const userFetchingRef = useRef(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   // --- フォローユーザー state ---
   const [followUsers, setFollowUsers] = useState<FollowingUser[]>([]);
@@ -165,6 +166,7 @@ export function FollowView(): JSX.Element {
     } finally {
       setAllLoading(false);
       allFetchingRef.current = false;
+      requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 0 }));
     }
   }, [checkDownloaded]);
 
@@ -191,6 +193,7 @@ export function FollowView(): JSX.Element {
     } finally {
       setUserLoading(false);
       userFetchingRef.current = false;
+      requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 0 }));
     }
   };
 
@@ -507,7 +510,7 @@ export function FollowView(): JSX.Element {
         )}
 
         {/* コンテンツ */}
-        <div className="flex-1 overflow-auto p-3">
+        <div ref={scrollRef} className="flex-1 overflow-auto p-3">
           {userSubTab !== 'videos' ? (
             <>
               {subTabError && (

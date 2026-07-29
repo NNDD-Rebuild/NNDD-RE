@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type {
   SearchItem,
   SearchResultItem,
@@ -60,6 +60,7 @@ export function SearchView(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [savedSearches, setSavedSearches] = useState<SearchItem[]>([]);
   const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
+  const scrollRef = useRef<HTMLDivElement>(null);
   const [saveName, setSaveName] = useState('');
   const globalMode = useAppStore((s) => s.contentViewMode);
   const [displayMode, setDisplayMode] = useState<DisplayMode>(globalMode as DisplayMode);
@@ -160,6 +161,7 @@ export function SearchView(): JSX.Element {
       setResults(r.items);
       setTotal(r.totalCount);
       setPage(targetPage);
+      scrollRef.current?.scrollTo({ top: 0 });
       const ids = r.items.map((i) => i.videoId);
       window.nndd
         .invoke<string[]>(window.nndd.channels.LIBRARY_CHECK_BATCH, ids)
@@ -406,7 +408,7 @@ export function SearchView(): JSX.Element {
           </div>
         )}
 
-        <div className="flex-1 overflow-auto p-3">
+        <div ref={scrollRef} className="flex-1 overflow-auto p-3">
           {error && (
             <div className="text-red-500 dark:text-red-400 text-sm mb-3">エラー: {error}</div>
           )}

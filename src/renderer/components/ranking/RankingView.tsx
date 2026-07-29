@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { RankingItem, RankingTermValue, RankingGenreInfo } from '@shared/types';
 import { RANKING_GENRES, RANKING_TERMS } from '@shared/constants';
 import { VideoCard } from '../common/VideoCard';
@@ -28,6 +28,7 @@ export function RankingView(): JSX.Element {
   const setPendingFollowUser = useAppStore((s) => s.setPendingFollowUser);
   const setPendingChannelId = useAppStore((s) => s.setPendingChannelId);
   const [displayMode, setDisplayMode] = useState<'grid' | 'list'>(globalMode);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const currentGenre = genres.find((g) => g.id === genre);
 
@@ -64,6 +65,7 @@ export function RankingView(): JSX.Element {
       setError(toUserFriendlyErrorMessage(e));
     } finally {
       setLoading(false);
+      requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 0 }));
     }
   };
 
@@ -172,7 +174,7 @@ export function RankingView(): JSX.Element {
         </div>
       </div>
 
-      <div className="flex-1 overflow-auto p-3">
+      <div ref={scrollRef} className="flex-1 overflow-auto p-3">
         {error && <div className="text-red-500 dark:text-red-400 text-sm mb-3">エラー: {error}</div>}
         {loading && <div className="text-nndd-subtext text-sm">読み込み中…</div>}
         {!loading && items.length === 0 && !error && (
