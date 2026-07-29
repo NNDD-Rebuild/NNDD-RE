@@ -90,7 +90,11 @@ export function VideoCard({
 
   if (layout === 'list') {
     return (
-      <div className="flex gap-2 p-2 bg-nndd-panel hover:bg-nndd-border rounded items-start" onContextMenu={handleContextMenu}>
+      <div
+        className="flex gap-2 p-2 bg-nndd-panel hover:bg-nndd-border rounded items-start"
+        onContextMenu={handleContextMenu}
+        onDoubleClick={() => onPlay?.(data.videoId)}
+      >
         <Thumb data={data} small />
         <div className="flex-1 min-w-0">
           <Title data={data} onUserPage={onUserPage} />
@@ -111,7 +115,11 @@ export function VideoCard({
     );
   }
   return (
-    <div className="bg-nndd-panel hover:bg-nndd-border rounded overflow-hidden flex flex-col" onContextMenu={handleContextMenu}>
+    <div
+      className="bg-nndd-panel hover:bg-nndd-border rounded overflow-hidden flex flex-col"
+      onContextMenu={handleContextMenu}
+      onDoubleClick={() => onPlay?.(data.videoId)}
+    >
       <Thumb data={data} />
       <div className="p-2 flex-1 flex flex-col">
         <Title data={data} onUserPage={onUserPage} />
@@ -133,6 +141,8 @@ export function VideoCard({
   );
 }
 
+const PREVIEW_HOVER_DELAY_MS = 500;
+
 function Thumb({
   data,
   small
@@ -140,12 +150,35 @@ function Thumb({
   data: VideoCardData;
   small?: boolean;
 }): JSX.Element {
+  const [showPreview, setShowPreview] = useState(false);
+  const hoverTimerRef = useRef<number | null>(null);
+
+  const clearHoverTimer = (): void => {
+    if (hoverTimerRef.current !== null) {
+      window.clearTimeout(hoverTimerRef.current);
+      hoverTimerRef.current = null;
+    }
+  };
+
+  const handleMouseEnter = (): void => {
+    clearHoverTimer();
+    hoverTimerRef.current = window.setTimeout(() => setShowPreview(true), PREVIEW_HOVER_DELAY_MS);
+  };
+  const handleMouseLeave = (): void => {
+    clearHoverTimer();
+    setShowPreview(false);
+  };
+
+  useEffect(() => clearHoverTimer, []);
+
   return (
     <div
       className={[
         'relative bg-black flex-shrink-0 overflow-hidden aspect-video',
         small ? 'w-32' : 'w-full'
       ].join(' ')}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
     >
       {data.thumbnailUrl && (
         <img
@@ -160,6 +193,7 @@ function Thumb({
           }}
         />
       )}
+      {showPreview && <ThumbPreview videoId={data.videoId} />}
       <span className="absolute right-1 bottom-1 bg-black/70 text-white text-xs px-1 rounded">
         {formatLen(data.length)}
       </span>
@@ -177,6 +211,111 @@ function Thumb({
         </span>
       )}
     </div>
+  );
+}
+
+/**
+ * サムネイルホバー時の冒頭プレビュー再生。
+ * VIDEO_GET_PREVIEW_STREAM_URL は常にゲスト扱いで取得するため、視聴履歴には残らない。
+ */
+const PREVIEW_LOOP_SEC = 12;
+
+type PreviewStreamResult = { contentUrl: string | null; isHls?: boolean; error?: string };
+
+/**
+ * React.StrictMode の二重effect実行で同一videoIdのプレビュー取得IPCが
+ * 短時間に2回飛ぶのを防ぐための in-flight キャッシュ。
+ * DMS session ensure 等サーバー側に負荷をかけるAPIを含むため、結果を使い回す。
+ */
+const previewRequestCache = new Map<string, Promise<PreviewStreamResult>>();
+
+function getPreviewStreamUrl(videoId: string): Promise<PreviewStreamResult> {
+  let p = previewRequestCache.get(videoId);
+  if (!p) {
+    p = window.nndd.invoke<PreviewStreamResult>(window.nndd.channels.VIDEO_GET_PREVIEW_STREAM_URL, videoId);
+    previewRequestCache.set(videoId, p);
+    p.finally(() => {
+      setTimeout(() => {
+        if (previewRequestCache.get(videoId) === p) previewRequestCache.delete(videoId);
+      }, 2000);
+    });
+  }
+  return p;
+}
+
+function ThumbPreview({ videoId }: { videoId: string }): JSX.Element | null {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [ready, setReady] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let hls: import('hls.js').default | null = null;
+    const videoEl = videoRef.current;
+
+    (async () => {
+      try {
+        const result = await getPreviewStreamUrl(videoId);
+        if (cancelled || !videoEl || !result.contentUrl) {
+          if (!cancelled) setFailed(true);
+          return;
+        }
+        if (result.isHls) {
+          const { default: Hls } = await import('hls.js');
+          if (cancelled) return;
+          if (Hls.isSupported()) {
+            const h = new Hls({ maxBufferLength: 15 });
+            hls = h;
+            h.attachMedia(videoEl);
+            h.loadSource(result.contentUrl);
+            h.on(Hls.Events.MANIFEST_PARSED, () => {
+              if (cancelled) return;
+              videoEl.play().then(() => setReady(true)).catch(() => setFailed(true));
+            });
+            h.on(Hls.Events.ERROR, (_e, data) => {
+              if (data.fatal && !cancelled) setFailed(true);
+            });
+            return;
+          } else {
+            videoEl.src = result.contentUrl;
+          }
+        } else {
+          videoEl.src = result.contentUrl;
+        }
+        await videoEl.play();
+        if (!cancelled) setReady(true);
+      } catch {
+        if (!cancelled) setFailed(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      hls?.destroy();
+      if (videoEl) {
+        videoEl.pause();
+        videoEl.removeAttribute('src');
+        videoEl.load();
+      }
+    };
+  }, [videoId]);
+
+  if (failed) return null;
+
+  return (
+    <video
+      ref={videoRef}
+      className={[
+        'absolute inset-0 w-full h-full object-cover transition-opacity',
+        ready ? 'opacity-100' : 'opacity-0'
+      ].join(' ')}
+      muted
+      playsInline
+      loop
+      onTimeUpdate={(e) => {
+        if (e.currentTarget.currentTime > PREVIEW_LOOP_SEC) e.currentTarget.currentTime = 0;
+      }}
+    />
   );
 }
 

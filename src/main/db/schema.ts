@@ -6,7 +6,7 @@
  * 既存のオフライン NNDD ライブラリ DB をそのまま読み込めるようにする。
  */
 
-export const DB_SCHEMA_VERSION = '5';
+export const DB_SCHEMA_VERSION = '7';
 
 export const CREATE_TABLES = [
   /* NNDDREVideo - 動画本体 */
@@ -23,7 +23,9 @@ export const CREATE_TABLES = [
     time REAL,
     lastPlayDate REAL,
     yetReading INTEGER,
-    pubDate REAL
+    pubDate REAL,
+    isFavorite INTEGER DEFAULT 0,
+    description TEXT
   );`,
 
   `CREATE INDEX IF NOT EXISTS keyindex ON NNDDREVideo (key);`,
@@ -62,7 +64,8 @@ export const CREATE_TABLES = [
     type TEXT,
     isDir INTEGER DEFAULT 0,
     unPlayCount INTEGER DEFAULT 0,
-    lastRenewed REAL
+    lastRenewed REAL,
+    icon TEXT
   );`,
 
   /* 視聴履歴 */
@@ -120,7 +123,8 @@ export const CREATE_TABLES = [
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     createdAt REAL,
-    updatedAt REAL
+    updatedAt REAL,
+    icon TEXT
   );`,
 
   /* プレイリスト内動画 (追加時のタイトル等スナップショットを保持) */
@@ -157,28 +161,32 @@ export const Q = {
   SELECT_VIDEO_ALL: `
     SELECT v.id, v.key, v.uri, v.videoName,
            v.modificationDate, v.creationDate, v.thumbUrl,
-           v.playCount, v.time, v.lastPlayDate, v.yetReading, v.pubDate
+           v.playCount, v.time, v.lastPlayDate, v.yetReading, v.pubDate, v.isFavorite, v.description
     FROM NNDDREVideo v
     ORDER BY v.pubDate DESC;`,
 
   SELECT_VIDEO_BY_KEY: `
     SELECT id, key, uri, videoName,
            modificationDate, creationDate, thumbUrl,
-           playCount, time, lastPlayDate, yetReading, pubDate
+           playCount, time, lastPlayDate, yetReading, pubDate, isFavorite, description
     FROM NNDDREVideo WHERE key = ?;`,
 
   SELECT_VIDEO_BY_ID: `
     SELECT id, key, uri, videoName,
            modificationDate, creationDate, thumbUrl,
-           playCount, time, lastPlayDate, yetReading, pubDate
+           playCount, time, lastPlayDate, yetReading, pubDate, isFavorite, description
     FROM NNDDREVideo WHERE id = ?;`,
+
+  SELECT_VIDEO_FAVORITE_BY_KEY: `SELECT isFavorite FROM NNDDREVideo WHERE key = ?;`,
 
   INSERT_VIDEO: `
     INSERT OR REPLACE INTO NNDDREVideo
       (key, uri, dirpath_id, videoName,
        modificationDate, creationDate, thumbUrl, playCount,
-       time, lastPlayDate, yetReading, pubDate)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+       time, lastPlayDate, yetReading, pubDate, isFavorite, description)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+
+  UPDATE_VIDEO_FAVORITE: `UPDATE NNDDREVideo SET isFavorite = ? WHERE id = ?;`,
 
   UPDATE_VIDEO: `
     UPDATE NNDDREVideo SET
@@ -215,8 +223,9 @@ export const Q = {
   // マイリスト
   SELECT_MYLISTS: `SELECT * FROM mylist ORDER BY name;`,
   INSERT_MYLIST: `
-    INSERT OR REPLACE INTO mylist (url, name, type, isDir, unPlayCount, lastRenewed)
-    VALUES (?, ?, ?, ?, ?, ?);`,
+    INSERT OR REPLACE INTO mylist (url, name, type, isDir, unPlayCount, lastRenewed, icon)
+    VALUES (?, ?, ?, ?, ?, ?, ?);`,
+  UPDATE_MYLIST_ICON: `UPDATE mylist SET icon = ? WHERE url = ?;`,
   DELETE_MYLIST: `DELETE FROM mylist WHERE url = ?;`,
   DELETE_ALL_MYLIST: `DELETE FROM mylist;`,
 
@@ -266,6 +275,7 @@ export const Q = {
   SELECT_PLAYLISTS: `SELECT * FROM playlist ORDER BY name;`,
   INSERT_PLAYLIST: `INSERT INTO playlist (name, createdAt, updatedAt) VALUES (?, ?, ?);`,
   UPDATE_PLAYLIST_NAME: `UPDATE playlist SET name = ?, updatedAt = ? WHERE id = ?;`,
+  UPDATE_PLAYLIST_ICON: `UPDATE playlist SET icon = ? WHERE id = ?;`,
   DELETE_PLAYLIST: `DELETE FROM playlist WHERE id = ?;`,
   DELETE_ALL_PLAYLIST: `DELETE FROM playlist;`,
 

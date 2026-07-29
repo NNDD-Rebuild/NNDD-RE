@@ -15,6 +15,8 @@ interface VideoRow {
   lastPlayDate: number | null;
   yetReading: number;
   pubDate: number | null;
+  isFavorite: number;
+  description: string | null;
 }
 
 /**
@@ -69,6 +71,11 @@ export class VideoDao {
   insertOrUpdate(video: NNDDREVideo, dirpathId: number | null): number {
     const key = this.extractKey(video.uri);
     return this.db.transaction(() => {
+      // INSERT OR REPLACE は既存行を丸ごと入れ替えるため、お気に入り状態を
+      // 明示的に引き継がないとライブラリ再スキャンのたびにリセットされてしまう。
+      const existing = this.db.prepare(Q.SELECT_VIDEO_FAVORITE_BY_KEY).get(key) as
+        | { isFavorite: number }
+        | undefined;
       const stmt = this.db.prepare(Q.INSERT_VIDEO);
       const info = stmt.run(
         key,
@@ -82,12 +89,18 @@ export class VideoDao {
         video.time,
         video.lastPlayDate ? video.lastPlayDate.getTime() / 1000 : null,
         video.yetReading ? 1 : 0,
-        video.pubDate ? video.pubDate.getTime() / 1000 : null
+        video.pubDate ? video.pubDate.getTime() / 1000 : null,
+        existing?.isFavorite ?? 0,
+        video.description
       );
       const id = Number(info.lastInsertRowid);
       this.setTags(id, video.tagStrings);
       return id;
     });
+  }
+
+  setFavorite(id: number, isFavorite: boolean): void {
+    this.db.prepare(Q.UPDATE_VIDEO_FAVORITE).run(isFavorite ? 1 : 0, id);
   }
 
   delete(id: number): void {
@@ -163,7 +176,9 @@ export class VideoDao {
       time: r.time,
       lastPlayDate: r.lastPlayDate ? new Date(r.lastPlayDate * 1000) : null,
       yetReading: r.yetReading === 1,
-      pubDate: r.pubDate ? new Date(r.pubDate * 1000) : null
+      pubDate: r.pubDate ? new Date(r.pubDate * 1000) : null,
+      isFavorite: r.isFavorite === 1,
+      description: r.description ?? ''
     };
   }
 

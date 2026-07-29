@@ -52,6 +52,36 @@ export class NnddDatabase {
         // 古い SQLite か既にカラムなし — 無視
       }
     }
+    // v5 → v6: mylist / playlist に icon カラム追加
+    if (from === '4' || from === '5' || from === '6') {
+      try {
+        this.db.exec(`ALTER TABLE mylist ADD COLUMN icon TEXT;`);
+        console.log('[DB] added mylist.icon column');
+      } catch {
+        // 既にカラムあり — 無視
+      }
+      try {
+        this.db.exec(`ALTER TABLE playlist ADD COLUMN icon TEXT;`);
+        console.log('[DB] added playlist.icon column');
+      } catch {
+        // 既にカラムあり — 無視
+      }
+      try {
+        this.db.exec(`ALTER TABLE NNDDREVideo ADD COLUMN isFavorite INTEGER DEFAULT 0;`);
+        console.log('[DB] added NNDDREVideo.isFavorite column');
+      } catch {
+        // 既にカラムあり — 無視
+      }
+    }
+    // v6 → v7: NNDDREVideo に description カラム追加 (オフライン全文検索用)
+    if (from === '4' || from === '5' || from === '6') {
+      try {
+        this.db.exec(`ALTER TABLE NNDDREVideo ADD COLUMN description TEXT;`);
+        console.log('[DB] added NNDDREVideo.description column');
+      } catch {
+        // 既にカラムあり — 無視
+      }
+    }
   }
 
   /** プリペアドステートメントの取得 */

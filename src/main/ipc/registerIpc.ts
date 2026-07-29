@@ -227,6 +227,14 @@ export function registerIpcHandlers(
     }
   );
 
+  ipcMain.handle(
+    IpcChannel.LIBRARY_SET_FAVORITE,
+    (_e, id: number, isFavorite: boolean) => {
+      library.videoDao.setFavorite(id, isFavorite);
+      return true;
+    }
+  );
+
   // --- 履歴 ---
   ipcMain.handle(IpcChannel.HISTORY_LIST, (_e, limit?: number) => {
     return library.historyDao.list(limit ?? 1000);
@@ -272,6 +280,14 @@ export function registerIpcHandlers(
     library.playlistDao.rename(args.id, args.name);
     return true;
   });
+
+  ipcMain.handle(
+    IpcChannel.PLAYLIST_UPDATE_ICON,
+    (_e, args: { id: number; icon: string | null }) => {
+      library.playlistDao.updateIcon(args.id, args.icon);
+      return true;
+    }
+  );
 
   ipcMain.handle(IpcChannel.PLAYLIST_REMOVE, (_e, id: number) => {
     library.playlistDao.remove(id);
@@ -359,6 +375,14 @@ export function registerIpcHandlers(
     library.myListDao.updateName(args.url, args.name);
     return true;
   });
+
+  ipcMain.handle(
+    IpcChannel.MYLIST_UPDATE_ICON,
+    (_e, args: { url: string; icon: string | null }) => {
+      library.myListDao.updateIcon(args.url, args.icon);
+      return true;
+    }
+  );
 
   ipcMain.handle(
     IpcChannel.MYLIST_RENEW,
@@ -834,6 +858,29 @@ export function registerIpcHandlers(
     }
 
     return { contentUrl: null, isDMS: false, error: 'unsupported streaming mode' };
+  });
+
+  // サムネイルホバープレビュー用。hideWatchHistory設定に関わらず常にゲスト扱いで
+  // 取得することで、プレビュー再生がニコニコ側の視聴履歴に残らないようにする。
+  ipcMain.handle(IpcChannel.VIDEO_GET_PREVIEW_STREAM_URL, async (_e, videoId: string) => {
+    const mode = getConfigStore().get('player').streamingMode ?? 'native';
+    if (mode === 'niconico') {
+      return { contentUrl: null, error: 'niconicoモードではプレビュー非対応です' };
+    }
+    const cachedPath = YtDlpStreamer.getCachedPath(videoId);
+    if (cachedPath) {
+      return { contentUrl: buildLocalVideoUrl(cachedPath), isHls: false };
+    }
+    try {
+      const watchInfo = await WatchInfoHandler.fetchWatchInfo(videoId, false, true, true);
+      const session = await ensureStreamSession(videoId, watchInfo, false, undefined);
+      if (session.domandBidCookie) {
+        await injectDomandBidCookie(_e.sender.session, session.domandBidCookie);
+      }
+      return { contentUrl: session.contentUrl, isHls: true };
+    } catch (e) {
+      return { contentUrl: null, error: e instanceof Error ? e.message : String(e) };
+    }
   });
 
   // --- 検索 ---

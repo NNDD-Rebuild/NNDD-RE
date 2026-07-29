@@ -20,6 +20,12 @@ export interface NnddConfig {
    */
   downloadCooldownMs: number;
 
+  /**
+   * 動画DLの帯域制限 (Mbps)。0 = 無制限。
+   * yt-dlp経路 (--limit-rate) / ネイティブHLS経路 (SegmentDownloader) 両方に適用。
+   */
+  downloadRateLimitMbps: number;
+
   /** yt-dlp 実行ファイルのパス (空なら自動探索) */
   ytDlpPath: string;
 
@@ -108,6 +114,19 @@ export interface NnddConfig {
      *                  (公式機能フル利用可、コメント制御・シークバー制御不可)
      */
     streamingMode: 'hls' | 'native' | 'niconico';
+    /**
+     * デフォルト画質。
+     *   - 'highest': 常に最高画質 (デフォルト)
+     *   - number: 指定高さ(px)以下で最大の画質。該当なしなら最高画質にフォールバック
+     */
+    defaultQuality: 'highest' | number;
+    /**
+     * NGフィルタ強度。
+     *   - 'weak':   NGワードは完全一致のみ適用
+     *   - 'medium': 部分一致も適用 (デフォルト)
+     *   - 'strong': 上記に加え短時間の連投コメントも自動非表示
+     */
+    ngStrength: 'weak' | 'medium' | 'strong';
     /** コメント表示 */
     showComments: boolean;
     /** コメント不透明度 0..1 */
@@ -132,6 +151,11 @@ export interface NnddConfig {
     commentOutlineIntensity: 'light' | 'normal';
     /** デフォルト再生速度 */
     playbackRate: number;
+    /**
+     * 音量ノーマライズ。ON にすると Web Audio API の DynamicsCompressorNode で
+     * 動画間の音量差を平滑化する (静かな動画は持ち上げ、大音量はピークを抑える)。
+     */
+    volumeNormalize: boolean;
     /** リピート再生 */
     repeat: boolean;
     /**
@@ -254,6 +278,14 @@ export interface NnddConfig {
   /** ログレベル: 'standard' = 重要ログのみ, 'verbose' = 全ログ */
   logLevel: 'standard' | 'verbose';
 
+  /** ログファイルの自動ローテーション設定 */
+  logRotation: {
+    /** 1ファイルあたりの最大サイズ (MB)。超過したら nndd.log.1 にローテート */
+    maxSizeMb: number;
+    /** 保持する世代数 (nndd.log.1 ～ nndd.log.<N>)。超過分は古いものから削除 */
+    maxFiles: number;
+  };
+
   /** 開発者オプション */
   developer: {
     /** 開発者モードを有効にするか */
@@ -303,6 +335,7 @@ const DEFAULTS: NnddConfig = {
   maxConcurrentDownloads: 2,
   downloadRetryCount: 3,
   downloadCooldownMs: 0,
+  downloadRateLimitMbps: 0,
   ytDlpPath: '',
   useNativeVideoDownloader: true,
   downloadMuxImplementation: 'mediabunny',
@@ -318,6 +351,8 @@ const DEFAULTS: NnddConfig = {
   player: {
     volume: 1.0,
     streamingMode: 'native',
+    defaultQuality: 'highest',
+    ngStrength: 'medium',
     showComments: true,
     commentOpacity: 1.0,
     commentShowSeconds: 3,
@@ -328,6 +363,7 @@ const DEFAULTS: NnddConfig = {
     commentDropShadow: true,
     commentOutlineIntensity: 'light',
     playbackRate: 1.0,
+    volumeNormalize: false,
     repeat: false,
     niconicoInheritLogin: true,
     commentListDisplay: 'tab',
@@ -378,6 +414,10 @@ const DEFAULTS: NnddConfig = {
     maxSizeMb: 1000
   },
   logLevel: 'standard',
+  logRotation: {
+    maxSizeMb: 1,
+    maxFiles: 3
+  },
   developer: {
     enabled: false,
     apiDumpPath: undefined,

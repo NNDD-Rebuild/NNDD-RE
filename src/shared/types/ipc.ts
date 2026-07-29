@@ -10,6 +10,7 @@ export const IpcChannel = {
   LIBRARY_DELETE: 'nndd:library:delete',
   LIBRARY_SCAN: 'nndd:library:scan',
   LIBRARY_UPDATE_TAGS: 'nndd:library:updateTags',
+  LIBRARY_SET_FAVORITE: 'nndd:library:setFavorite',
 
   // 認証
   AUTH_LOGIN: 'nndd:auth:login',
@@ -73,6 +74,8 @@ export const IpcChannel = {
   SERIES_FETCH: 'nndd:series:fetch',
   /** マイリストの表示名を更新 */
   MYLIST_UPDATE_NAME: 'nndd:mylist:updateName',
+  /** マイリストのカスタムアイコン (絵文字) を更新 */
+  MYLIST_UPDATE_ICON: 'nndd:mylist:updateIcon',
   /** 動画をとりあえずマイリストに追加 → true */
   MYLIST_ADD_VIDEO_DEFLIST: 'nndd:mylist:addVideoDeflist',
 
@@ -83,6 +86,8 @@ export const IpcChannel = {
   VIDEO_OPEN_PLAYER: 'nndd:video:openPlayer',
   VIDEO_BUILD_LOCAL_URL: 'nndd:video:buildLocalUrl',
   VIDEO_GET_STREAM_URL: 'nndd:video:getStreamUrl',
+  /** サムネイルホバープレビュー用。常に視聴履歴を残さずにストリームURLを取得する */
+  VIDEO_GET_PREVIEW_STREAM_URL: 'nndd:video:getPreviewStreamUrl',
   /** ストリーミング (yt-dlp 経由) の進捗通知 */
   VIDEO_STREAM_PROGRESS_EVENT: 'nndd:video:streamProgress',
 
@@ -95,6 +100,7 @@ export const IpcChannel = {
   PLAYLIST_LIST: 'nndd:playlist:list',
   PLAYLIST_CREATE: 'nndd:playlist:create',
   PLAYLIST_RENAME: 'nndd:playlist:rename',
+  PLAYLIST_UPDATE_ICON: 'nndd:playlist:updateIcon',
   PLAYLIST_REMOVE: 'nndd:playlist:remove',
   PLAYLIST_GET_ITEMS: 'nndd:playlist:getItems',
   PLAYLIST_ADD_VIDEO: 'nndd:playlist:addVideo',

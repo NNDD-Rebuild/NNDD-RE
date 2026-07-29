@@ -119,19 +119,9 @@ export function VideoPlayer({
       // 二重effect実行で1回目が先に消費してしまい、2回目 (実際に残る方) でシークされなくなるのを防ぐ)
       const resumeAt = pendingSeekRef?.current ?? 0;
 
-      // Safari 互換ブラウザは native HLS
-      if (video.canPlayType('application/vnd.apple.mpegurl')) {
-        video.src = src;
-        if (resumeAt > 0) {
-          video.addEventListener('loadedmetadata', () => {
-            video.currentTime = resumeAt;
-            if (pendingSeekRef) pendingSeekRef.current = 0;
-          }, { once: true });
-        }
-        video.play().catch(() => {});
-        return;
-      }
-      // hls.js でストリーミング
+      // hls.js でストリーミング (Chromium/Electronはこちらが常に対応。
+      // canPlayType('application/vnd.apple.mpegurl')はEnvironmentによって
+      // 誤ってtrueを返すことがあるため、native HLSより優先する)
       if (Hls.isSupported()) {
         const hls = new Hls({
           enableWorker: true,
@@ -155,9 +145,26 @@ export function VideoPlayer({
           hls.destroy();
           hlsRef.current = null;
         };
-      } else {
-        setError('HLS は非対応ブラウザです');
       }
+      // Safari 等 hls.js 非対応ブラウザは native HLS にフォールバック
+      if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        video.src = src;
+        if (resumeAt > 0) {
+          video.addEventListener('loadedmetadata', () => {
+            video.currentTime = resumeAt;
+            if (pendingSeekRef) pendingSeekRef.current = 0;
+          }, { once: true });
+        }
+        video.addEventListener('error', () => {
+          const code = video.error?.code ?? 0;
+          const msg = video.error?.message ?? 'unknown error';
+          setError(`再生エラー (code=${code}): ${msg}`);
+          onVideoError?.(code, msg);
+        }, { once: true });
+        video.play().catch(() => {});
+        return;
+      }
+      setError('HLS は非対応ブラウザです');
     } else if (/\.flv(\?|$)/i.test(src) && mpegts.isSupported()) {
       const player = mpegts.createPlayer({ type: 'flv', url: src });
       mpegtsRef.current = player;

@@ -26,6 +26,10 @@ export function LibrarySettings(): JSX.Element {
     'downloadCooldownMs',
     0
   );
+  const [rateLimitMbps, setRateLimitMbps] = useConfig<number>(
+    'downloadRateLimitMbps',
+    0
+  );
   const [downloadEasyComments, setDownloadEasyComments] = useConfig<boolean>(
     'downloadEasyComments',
     false
@@ -122,6 +126,19 @@ export function LibrarySettings(): JSX.Element {
           />
           <span className="text-xs text-nndd-subtext ml-2">
             秒 (0=無効。コメント取得・動画DL完了後、次の動画開始まで待機)
+          </span>
+        </Row>
+        <Row label="DL帯域制限">
+          <input
+            type="number"
+            min={0}
+            step={1}
+            value={rateLimitMbps}
+            onChange={(e) => setRateLimitMbps(Math.max(0, Number(e.target.value) || 0))}
+            className="w-24 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
+          />
+          <span className="text-xs text-nndd-subtext ml-2">
+            Mbps (0=無制限。yt-dlp / ネイティブHLS どちらのDL方式にも適用)
           </span>
         </Row>
         <Row label="全コメント取得">

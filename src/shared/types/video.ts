@@ -16,6 +16,9 @@ export interface NNDDREVideo {
   lastPlayDate: Date | null;
   yetReading: boolean;
   pubDate: Date | null;
+  isFavorite: boolean;
+  /** 動画説明文 (オフライン全文検索対象)。DL/スキャン時に取得できなかった場合は空文字 */
+  description: string;
 }
 
 /**

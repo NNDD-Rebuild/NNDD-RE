@@ -55,6 +55,14 @@ export function PlayerSettings(): JSX.Element {
     true
   );
   const [rate, setRate] = useConfig<number>('player.playbackRate', 1.0);
+  const [volumeNormalize, setVolumeNormalize] = useConfig<boolean>(
+    'player.volumeNormalize',
+    false
+  );
+  const [defaultQuality, setDefaultQuality] = useConfig<'highest' | number>(
+    'player.defaultQuality',
+    'highest'
+  );
   const [repeat, setRepeat] = useConfig<boolean>('player.repeat', false);
   const [streamingMode, setStreamingMode] = useConfig<'hls' | 'native' | 'niconico'>(
     'player.streamingMode',
@@ -373,6 +381,16 @@ export function PlayerSettings(): JSX.Element {
             className="w-64"
           />
         </Row>
+        <Row label="音量ノーマライズ">
+          <input
+            type="checkbox"
+            checked={volumeNormalize}
+            onChange={(e) => setVolumeNormalize(e.target.checked)}
+          />
+          <p className="text-xs text-nndd-subtext mt-0.5">
+            動画間の音量差を自動で平滑化します (静かな動画は持ち上げ、大音量はピークを抑える)
+          </p>
+        </Row>
         <Row label="デフォルト再生速度">
           <div className="flex gap-1">
             {[0.5, 0.75, 1.0, 1.25, 1.5, 2.0].map((r) => (
@@ -390,6 +408,33 @@ export function PlayerSettings(): JSX.Element {
               </button>
             ))}
           </div>
+        </Row>
+        <Row label="デフォルト画質">
+          <div className="flex gap-1 flex-wrap">
+            {([
+              { value: 'highest' as const, label: '自動 (最高画質)' },
+              { value: 1080, label: '1080p以下' },
+              { value: 720, label: '720p以下' },
+              { value: 480, label: '480p以下' },
+              { value: 360, label: '360p以下' }
+            ]).map((opt) => (
+              <button
+                key={opt.label}
+                onClick={() => setDefaultQuality(opt.value)}
+                className={[
+                  'text-xs px-2 py-1 rounded',
+                  defaultQuality === opt.value
+                    ? 'bg-nndd-accent text-white'
+                    : 'bg-nndd-border hover:bg-nndd-accent/70'
+                ].join(' ')}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-nndd-subtext mt-0.5">
+            指定画質が無い動画では自動的に最高画質にフォールバックします
+          </p>
         </Row>
         <Row label="リピート再生">
           <input

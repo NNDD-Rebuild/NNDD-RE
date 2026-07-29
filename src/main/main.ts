@@ -18,6 +18,7 @@ import {
   stopStreamServer
 } from './player/StreamServer';
 import { PlayerManager } from './player/PlayerManager';
+import { setupHlsSessionInterceptor } from './player/HlsSessionInterceptor';
 import { NnddHttpServer } from './server/NnddHttpServer';
 import { TrayManager } from './tray/TrayManager';
 import { BackupManager } from './githubSync/BackupManager';
@@ -32,7 +33,10 @@ let trayManager: TrayManager | null = null;
 let backupManager: BackupManager | null = null;
 
 // Windows: setZoomFactor後にGPUデコード動画が黒くなるバグ対策 (Electron 33 / Chromium 130)
-if (process.platform === 'win32') {
+// setZoomFactorはniconico埋め込みプレイヤー (player.streamingMode: 'niconico') でのみ呼ばれるため、
+// 通常再生 (native/hls) まで巻き込んでGPUデコードを無効化しないよう起動時のモードで絞る。
+// (設定変更はアプリ再起動後から反映)
+if (process.platform === 'win32' && getConfigStore().get('player').streamingMode === 'niconico') {
   app.commandLine.appendSwitch('disable-accelerated-video-decode');
   app.commandLine.appendSwitch('disable-features', 'D3D11VideoDecoder,D3D12VideoDecoder');
 }
@@ -82,6 +86,10 @@ function createMainWindow(): BrowserWindow {
       nodeIntegration: false
     }
   });
+
+  // サムネイルホバー時のプレビュー再生 (常にゲスト扱い) が domand CDN に直接アクセスするため、
+  // プレイヤーウィンドウと同様に CORS ヘッダー注入が必要
+  setupHlsSessionInterceptor(win.webContents.session, true);
 
   if (winConfig.maximized) {
     win.maximize();

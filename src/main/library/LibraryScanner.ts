@@ -120,7 +120,9 @@ export class LibraryScanner {
       time: meta?.length ?? 0,
       lastPlayDate: null,
       yetReading: true,
-      pubDate: meta?.pubDate ?? null
+      pubDate: meta?.pubDate ?? null,
+      isFavorite: false,
+      description: meta?.description ?? ''
     };
 
     if (existing) {
@@ -136,6 +138,7 @@ export class LibraryScanner {
         video.tagStrings = meta.tags;
         video.time = meta.length;
         video.pubDate = meta.pubDate;
+        video.description = meta.description;
       }
     } else {
       void title;
@@ -167,14 +170,15 @@ export class LibraryScanner {
    */
   static readThumbInfoXml(
     filePath: string
-  ): { tags: string[]; length: number; pubDate: Date | null } | null {
+  ): { tags: string[]; length: number; pubDate: Date | null; description: string } | null {
     // 新形式: [ThumbInfo].xml
     const parsed = ThumbInfoXmlReader.parseFile(filePath);
     if (parsed) {
       return {
         tags: parsed.tags,
         length: parsed.length,
-        pubDate: parsed.registeredAt ? new Date(parsed.registeredAt) : null
+        pubDate: parsed.registeredAt ? new Date(parsed.registeredAt) : null,
+        description: parsed.description
       };
     }
     // 旧形式: [info].txt (後方互換)
@@ -184,7 +188,8 @@ export class LibraryScanner {
       return {
         tags: legacy.tags,
         length: legacy.length,
-        pubDate: legacy.registeredAt ? new Date(legacy.registeredAt) : null
+        pubDate: legacy.registeredAt ? new Date(legacy.registeredAt) : null,
+        description: legacy.description
       };
     }
     return null;

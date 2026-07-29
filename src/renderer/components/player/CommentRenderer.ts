@@ -50,6 +50,13 @@ export interface CommentRenderConfig {
   keepCA: boolean;
   /** NGリスト */
   ngList: NgListItem[];
+  /**
+   * NGフィルタの強度。
+   *   - 'weak':   NGワードは完全一致のみ適用 (誤爆を避けたい場合)
+   *   - 'medium': 部分一致も適用 (デフォルト)
+   *   - 'strong': 上記に加え、短時間の連投コメントも自動非表示
+   */
+  ngStrength: 'weak' | 'medium' | 'strong';
 }
 
 export const DEFAULT_RENDER_CONFIG: CommentRenderConfig = {
@@ -65,10 +72,12 @@ export const DEFAULT_RENDER_CONFIG: CommentRenderConfig = {
   showSecNaka: 3,
   showSecFixed: 3,
   keepCA: true,
-  ngList: []
+  ngList: [],
+  ngStrength: 'medium'
 };
 
 export class CommentRenderer {
+  private container: HTMLElement;
   private canvas: HTMLCanvasElement;
   private video: HTMLVideoElement | null = null;
   private nc: NiconiComments | null = null;
@@ -78,9 +87,47 @@ export class CommentRenderer {
   private lastVpos = -1;
   private lastW = 0;
   private lastH = 0;
+  private rebuildSeq = 0;
 
-  constructor(canvas: HTMLCanvasElement) {
-    this.canvas = canvas;
+  /**
+   * @param container コメント canvas を配置するコンテナ要素。
+   *   CommentRenderer が内部で `<canvas>` を生成・差し替えして管理する。
+   *   React 側は canvas を直接 ref せず、この div のみを描画する。
+   */
+  constructor(container: HTMLElement) {
+    this.container = container;
+    // StrictMode の再マウント等で前回の canvas が残っていれば除去する
+    container.querySelectorAll('canvas').forEach((c) => c.remove());
+    this.canvas = this.newCanvasElement();
+    container.appendChild(this.canvas);
+  }
+
+  /** コンテナ内に配置する新しい canvas 要素を生成する (DOM 追加はしない) */
+  private newCanvasElement(): HTMLCanvasElement {
+    const c = document.createElement('canvas');
+    c.className = 'absolute inset-0 w-full h-full';
+    c.style.opacity = String(this.config.opacity);
+    return c;
+  }
+
+  /**
+   * 現在の canvas を新しい canvas に差し替える。
+   *
+   * NiconiComments (WebGL2Renderer) の destroy() は
+   * `WEBGL_lose_context.loseContext()` で GL コンテキストを明示的にロストさせる。
+   * ロストしたコンテキストは restoreContext() を呼ぶまで自動復元されず、
+   * 同じ canvas で getContext('webgl2') を呼んでもロスト済みの古いコンテキストが
+   * 返るため、続くシェーダーコンパイルが `Shader compile: null` で失敗する。
+   * そこで destroy() 済み canvas は二度と再利用せず、常に真新しい canvas を
+   * NiconiComments に渡すことで WebGL2 を確実に初期化させる。
+   */
+  private swapToFreshCanvas(): void {
+    const fresh = this.newCanvasElement();
+    fresh.width = this.lastW > 0 ? this.lastW : this.canvas.width;
+    fresh.height = this.lastH > 0 ? this.lastH : this.canvas.height;
+    this.container.appendChild(fresh);
+    this.canvas.remove();
+    this.canvas = fresh;
   }
 
   setConfig(cfg: Partial<CommentRenderConfig>): void {
@@ -125,6 +172,7 @@ export class CommentRenderer {
       cancelAnimationFrame(this.rafId);
       this.rafId = null;
     }
+    this.rebuildSeq++; // 待機中の rebuildEngine RAF コールバックを無効化
     this.nc?.destroy();
     this.nc = null;
     this.video = null;
@@ -174,6 +222,21 @@ export class CommentRenderer {
       return;
     }
 
+    // 複数のトリガ (setComments/setConfig/onResize) が同一フレーム内で連続して
+    // 呼ばれても canvas 差し替えとエンジン生成を1回にまとめるため、RAF で遅延し
+    // rebuildSeq で最後の1回だけ実行する。
+    const seq = ++this.rebuildSeq;
+    requestAnimationFrame(() => {
+      if (seq !== this.rebuildSeq) return; // 待機中により新しい rebuild が来ていれば破棄
+      this.createEngine();
+    });
+  }
+
+  private createEngine(): void {
+    // 直前の destroy() で loseContext 済みの canvas は再利用不可。
+    // 毎回まっさらな canvas に差し替えてから NiconiComments を生成する。
+    this.swapToFreshCanvas();
+
     // Canvas サイズが未確定の場合は getBoundingClientRect() で補完、
     // それでも 0 なら ResizeObserver の発火を待つ
     if (this.canvas.width <= 0 || this.canvas.height <= 0) {
@@ -185,11 +248,6 @@ export class CommentRenderer {
         return; // レイアウト未確定 — onResize() で再呼び出しされる
       }
     }
-
-    // CanvasRenderer.setScale() は context.scale() を呼ぶため累積する。
-    // NiconiComments を再生成するたびに canvas.width を再代入して
-    // 2D context の transform をリセットする (サイズ変更なしでも必須)。
-    this.canvas.width = this.canvas.width;
 
     const formatted = this.toFormattedComments(
       this.filterComments(this.comments)
@@ -261,10 +319,13 @@ export class CommentRenderer {
 
   /** NGリストで除外 */
   private filterComments(comments: NNDDREComment[]): NNDDREComment[] {
+    const strength = this.config.ngStrength ?? 'medium';
+    const spamUserIds = strength === 'strong' ? this.detectSpamUsers(comments) : null;
     return comments.filter((c) => {
       if (!c.isShow) return false;
+      if (spamUserIds?.has(c.userId)) return false;
       for (const ng of this.config.ngList) {
-        if (ng.type === NgListItemType.WORD && c.text.includes(ng.value))
+        if (strength !== 'weak' && ng.type === NgListItemType.WORD && c.text.includes(ng.value))
           return false;
         if (ng.type === NgListItemType.WORD_EXACT && c.text === ng.value)
           return false;
@@ -277,8 +338,43 @@ export class CommentRenderer {
     });
   }
 
+  /**
+   * strong モード用: 同一ユーザーが SPAM_WINDOW_MS 以内に SPAM_THRESHOLD 件以上
+   * 投稿している場合、そのユーザーの全コメントを連投スパムとして扱う。
+   */
+  private detectSpamUsers(comments: NNDDREComment[]): Set<string> {
+    const SPAM_WINDOW_MS = 10_000;
+    const SPAM_THRESHOLD = 5;
+    const byUser = new Map<string, number[]>();
+    for (const c of comments) {
+      let arr = byUser.get(c.userId);
+      if (!arr) {
+        arr = [];
+        byUser.set(c.userId, arr);
+      }
+      arr.push(c.vposMs);
+    }
+    const spam = new Set<string>();
+    for (const [userId, times] of byUser) {
+      if (times.length < SPAM_THRESHOLD) continue;
+      times.sort((a, b) => a - b);
+      for (let i = 0; i + SPAM_THRESHOLD - 1 < times.length; i++) {
+        if (times[i + SPAM_THRESHOLD - 1] - times[i] <= SPAM_WINDOW_MS) {
+          spam.add(userId);
+          break;
+        }
+      }
+    }
+    return spam;
+  }
+
+  /**
+   * canvas.getContext('2d') は呼ばない — 一度でも呼ぶとその canvas は
+   * 以後 'webgl2' コンテキストを取得できなくなる (ブラウザ仕様上、同一
+   * canvas 要素で異なる種類のコンテキストは共存不可)。width の自己代入は
+   * getContext を呼ばずに canvas の内容を全クリアできる。
+   */
   private clearCanvas(): void {
-    const ctx = this.canvas.getContext('2d');
-    ctx?.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.canvas.width = this.canvas.width;
   }
 }
