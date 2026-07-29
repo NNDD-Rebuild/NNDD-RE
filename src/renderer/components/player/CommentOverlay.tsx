@@ -61,12 +61,20 @@ export const CommentOverlay = forwardRef<CommentOverlayHandle, Props>(
       let started = false;
       let resizeTimer: number | null = null;
 
+      let startRafId: number | null = null;
+
       const tryStart = (width: number, height: number): void => {
         if (started || width <= 0 || height <= 0) return;
         started = true;
-        // onResize で canvas サイズを確定してから start
-        renderer.onResize(width, height);
-        renderer.start(video);
+        // canvas がブラウザ側でレイアウト/コンポジット確定する前に
+        // WebGL2 コンテキストを取得するとシェーダーコンパイルが失敗することがあるため、
+        // 1フレーム遅延させてから開始する
+        startRafId = requestAnimationFrame(() => {
+          startRafId = null;
+          // onResize で canvas サイズを確定してから start
+          renderer.onResize(width, height);
+          renderer.start(video);
+        });
       };
 
       const resize = (): void => {
@@ -95,6 +103,7 @@ export const CommentOverlay = forwardRef<CommentOverlayHandle, Props>(
 
       return () => {
         if (resizeTimer !== null) window.clearTimeout(resizeTimer);
+        if (startRafId !== null) cancelAnimationFrame(startRafId);
         ro.disconnect();
         video.removeEventListener('seeking', onSeek);
         video.removeEventListener('seeked', onSeek);

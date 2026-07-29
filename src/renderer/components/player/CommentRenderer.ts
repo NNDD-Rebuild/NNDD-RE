@@ -86,6 +86,7 @@ export class CommentRenderer {
   private lastVpos = -1;
   private lastW = 0;
   private lastH = 0;
+  private rebuildSeq = 0;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -133,6 +134,7 @@ export class CommentRenderer {
       cancelAnimationFrame(this.rafId);
       this.rafId = null;
     }
+    this.rebuildSeq++; // 待機中の rebuildEngine RAF コールバックを無効化
     this.nc?.destroy();
     this.nc = null;
     this.video = null;
@@ -182,6 +184,18 @@ export class CommentRenderer {
       return;
     }
 
+    // NiconiComments.destroy() は WEBGL_lose_context 拡張で GL コンテキストを
+    // 明示的にロストさせる。ロスト処理が完了する前に同じ canvas へ同期的に
+    // 新しい WebGL2 コンテキストを取得すると、シェーダーコンパイルが失敗する
+    // ことがあるため、1フレーム待ってから再生成する。
+    const seq = ++this.rebuildSeq;
+    requestAnimationFrame(() => {
+      if (seq !== this.rebuildSeq) return; // 待機中により新しい rebuild が来ていれば破棄
+      this.createEngine();
+    });
+  }
+
+  private createEngine(): void {
     // Canvas サイズが未確定の場合は getBoundingClientRect() で補完、
     // それでも 0 なら ResizeObserver の発火を待つ
     if (this.canvas.width <= 0 || this.canvas.height <= 0) {
@@ -318,8 +332,13 @@ export class CommentRenderer {
     return spam;
   }
 
+  /**
+   * canvas.getContext('2d') は呼ばない — 一度でも呼ぶとその canvas は
+   * 以後 'webgl2' コンテキストを取得できなくなる (ブラウザ仕様上、同一
+   * canvas 要素で異なる種類のコンテキストは共存不可)。width の自己代入は
+   * getContext を呼ばずに canvas の内容を全クリアできる。
+   */
   private clearCanvas(): void {
-    const ctx = this.canvas.getContext('2d');
-    ctx?.clearRect(0, 0, this.canvas.width, this.canvas.height);
+    this.canvas.width = this.canvas.width;
   }
 }
