@@ -26,7 +26,7 @@ export function StatsView(): JSX.Element {
   const stats = useMemo(() => {
     const totalCount = videos.length;
     const favoriteCount = videos.filter((v) => v.isFavorite).length;
-    const totalSeconds = videos.reduce((sum, v) => sum + (v.time || 0), 0);
+    const totalSeconds = history.reduce((sum, h) => sum + (h.watchSeconds || 0), 0);
     const totalPlayCount = videos.reduce((sum, v) => sum + (v.playCount || 0), 0);
 
     const tagCounts = new Map<string, number>();

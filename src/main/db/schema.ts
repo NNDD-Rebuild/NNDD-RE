@@ -6,7 +6,7 @@
  * 既存のオフライン NNDD ライブラリ DB をそのまま読み込めるようにする。
  */
 
-export const DB_SCHEMA_VERSION = '7';
+export const DB_SCHEMA_VERSION = '9';
 
 export const CREATE_TABLES = [
   /* NNDDREVideo - 動画本体 */
@@ -75,7 +75,8 @@ export const CREATE_TABLES = [
     title TEXT,
     thumbnailUrl TEXT,
     watchedAt REAL,
-    isLocal INTEGER
+    isLocal INTEGER,
+    watchSeconds REAL DEFAULT 0
   );`,
 
   /* ダウンロードスケジュール */
@@ -148,6 +149,15 @@ export const CREATE_TABLES = [
     positionSec REAL,
     durationSec REAL,
     updatedAt REAL
+  );`,
+
+  /* ニコニコ動画本家 (公式サイト) 側の視聴履歴。アプリ内history (自前計測) とは別出所 */
+  `CREATE TABLE IF NOT EXISTS nico_watch_history (
+    videoId TEXT PRIMARY KEY,
+    title TEXT,
+    thumbnailUrl TEXT,
+    watchedAt REAL,
+    fetchedAt REAL
   );`
 ];
 
@@ -234,9 +244,10 @@ export const Q = {
   /** バックアップ用: 上限付きで全件相当を取得 */
   SELECT_HISTORY_ALL: `SELECT * FROM history ORDER BY watchedAt DESC LIMIT ?;`,
   INSERT_HISTORY: `
-    INSERT INTO history (videoId, title, thumbnailUrl, watchedAt, isLocal)
-    VALUES (?, ?, ?, ?, ?);`,
+    INSERT INTO history (videoId, title, thumbnailUrl, watchedAt, isLocal, watchSeconds)
+    VALUES (?, ?, ?, ?, ?, ?);`,
   DELETE_HISTORY: `DELETE FROM history;`,
+  SELECT_HISTORY_EXISTS: `SELECT 1 FROM history WHERE videoId = ?;`,
 
   // スケジュール
   SELECT_SCHEDULES: `SELECT * FROM schedule;`,
@@ -296,5 +307,14 @@ export const Q = {
   UPSERT_RESUME: `
     INSERT OR REPLACE INTO resume_position (videoKey, positionSec, durationSec, updatedAt)
     VALUES (?, ?, ?, ?);`,
-  DELETE_RESUME: `DELETE FROM resume_position WHERE videoKey = ?;`
+  DELETE_RESUME: `DELETE FROM resume_position WHERE videoKey = ?;`,
+
+  // ニコニコ動画本家 視聴履歴
+  SELECT_NICO_WATCH_HISTORY: `SELECT * FROM nico_watch_history ORDER BY watchedAt DESC LIMIT ?;`,
+  SELECT_NICO_WATCH_HISTORY_VIDEO_IDS: `SELECT videoId FROM nico_watch_history;`,
+  SELECT_NICO_WATCH_HISTORY_EXISTS: `SELECT 1 FROM nico_watch_history WHERE videoId = ?;`,
+  UPSERT_NICO_WATCH_HISTORY: `
+    INSERT OR REPLACE INTO nico_watch_history (videoId, title, thumbnailUrl, watchedAt, fetchedAt)
+    VALUES (?, ?, ?, ?, ?);`,
+  DELETE_NICO_WATCH_HISTORY: `DELETE FROM nico_watch_history;`
 } as const;

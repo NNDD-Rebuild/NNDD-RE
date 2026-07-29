@@ -6,6 +6,7 @@ import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
 import { VideoCard, type VideoCardData } from '../common/VideoCard';
 import { ContinuousPlayButton } from '../common/ContinuousPlayButton';
 import { useAppStore } from '../../store/useAppStore';
+import { useWatchedIds } from '@renderer/hooks/useWatchedIds';
 
 type Selected =
   | { kind: 'mylist'; mylist: MyList }
@@ -79,6 +80,8 @@ export function MyListView(): JSX.Element {
   // 一括DL中
   const [bulkDling, setBulkDling] = useState(false);
   const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
+  const videoIds = useMemo(() => items.map((it) => it.videoId), [items]);
+  const watchedIds = useWatchedIds(videoIds);
 
   // プレイヤーウィンドウからのナビゲーション
   const pendingMylistId = useAppStore((s) => s.pendingMylistId);
@@ -1164,6 +1167,7 @@ export function MyListView(): JSX.Element {
                         onNiconico={handleNiconico}
                         onPlayAudioOnly={handlePlayAudioOnly}
                         isDownloaded={downloadedIds.has(it.videoId)}
+                        isWatched={watchedIds.has(it.videoId)}
                         onRemove={isPlaylistSelected ? handleRemoveVideoFromPlaylist : undefined}
                       />
                       {isPlaylistSelected && (
@@ -1226,6 +1230,7 @@ export function MyListView(): JSX.Element {
                           onNiconico={handleNiconico}
                           onPlayAudioOnly={handlePlayAudioOnly}
                           isDownloaded={downloadedIds.has(it.videoId)}
+                        isWatched={watchedIds.has(it.videoId)}
                           onRemove={isPlaylistSelected ? handleRemoveVideoFromPlaylist : undefined}
                         />
                       </div>

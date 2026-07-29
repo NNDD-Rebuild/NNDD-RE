@@ -213,7 +213,8 @@ export class BackupManager {
         title: h.title,
         thumbnailUrl: h.thumbnailUrl,
         watchedAt: h.watchedAt.toISOString(),
-        isLocal: h.isLocal
+        isLocal: h.isLocal,
+        watchSeconds: h.watchSeconds
       }));
     }
 
@@ -323,7 +324,8 @@ export class BackupManager {
             title: h.title,
             thumbnailUrl: h.thumbnailUrl,
             watchedAt: new Date(h.watchedAt),
-            isLocal: h.isLocal
+            isLocal: h.isLocal,
+            watchSeconds: h.watchSeconds ?? 0
           });
         }
       });

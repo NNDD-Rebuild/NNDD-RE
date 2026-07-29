@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RankingItem, RankingTermValue, RankingGenreInfo } from '@shared/types';
 import { RANKING_GENRES, RANKING_TERMS } from '@shared/constants';
 import { VideoCard } from '../common/VideoCard';
 import { useAppStore } from '@renderer/store/useAppStore';
 import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
+import { useWatchedIds } from '@renderer/hooks/useWatchedIds';
 
 const ALL_TAG = '';
 
@@ -21,6 +22,8 @@ export function RankingView(): JSX.Element {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
+  const videoIds = useMemo(() => items.map((i) => i.videoId), [items]);
+  const watchedIds = useWatchedIds(videoIds);
   const globalMode = useAppStore((s) => s.contentViewMode);
   const showToast = useAppStore((s) => s.showToast);
   const isLoggedIn = useAppStore((s) => s.isLoggedIn);
@@ -209,6 +212,7 @@ export function RankingView(): JSX.Element {
                   onPlayAudioOnly={handlePlayAudioOnly}
                   onUserPage={handleUserPage}
                   isDownloaded={downloadedIds.has(r.videoId)}
+                  isWatched={watchedIds.has(r.videoId)}
                 />
               ))}
             </div>
@@ -241,6 +245,7 @@ export function RankingView(): JSX.Element {
                   onPlayAudioOnly={handlePlayAudioOnly}
                   onUserPage={handleUserPage}
                   isDownloaded={downloadedIds.has(r.videoId)}
+                  isWatched={watchedIds.has(r.videoId)}
                 />
               ))}
             </div>

@@ -254,6 +254,7 @@ export function registerIpcHandlers(
         title: string;
         thumbnailUrl?: string;
         isLocal?: boolean;
+        watchSeconds?: number;
       }
     ) => {
       library.historyDao.add({
@@ -261,11 +262,23 @@ export function registerIpcHandlers(
         title: item.title ?? item.videoId,
         thumbnailUrl: item.thumbnailUrl ?? '',
         watchedAt: new Date(),
-        isLocal: Boolean(item.isLocal)
+        isLocal: Boolean(item.isLocal),
+        watchSeconds: item.watchSeconds ?? 0
       });
       return true;
     }
   );
+
+  // --- ニコニコ動画本家 視聴履歴 ---
+  ipcMain.handle(IpcChannel.NICO_HISTORY_LIST, () => {
+    return library.nicoWatchHistoryDao.list(1000);
+  });
+
+  ipcMain.handle(IpcChannel.WATCHED_CHECK_BATCH, (_e, videoIds: string[]) => {
+    const fromApp = library.historyDao.existsBatch(videoIds);
+    const fromNico = library.nicoWatchHistoryDao.existsBatch(videoIds);
+    return videoIds.filter((id) => fromApp.has(id) || fromNico.has(id));
+  });
 
   // --- プレイリスト (完全ローカル) ---
   ipcMain.handle(IpcChannel.PLAYLIST_LIST, () => {

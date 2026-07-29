@@ -225,7 +225,6 @@ export default function PlayerApp(): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null);
   const webviewWrapperRef = useRef<HTMLDivElement>(null);
   const hideTimerRef = useRef<number | null>(null);
-  const historyRecordedRef = useRef(false);
   /** レジューム位置保存の間引きタイマー */
   const lastResumeSaveAtRef = useRef(0);
   /** レジューム位置クリア (終了間際判定) を1回だけ発行するためのフラグ */
@@ -243,6 +242,16 @@ export default function PlayerApp(): JSX.Element {
     /** Discord Rich Presence送信用。nndd-re-local://はDiscordから解決できないため、ImageCache適用前の生URLを別途保持 */
     discordThumbnailUrl?: string;
     isLocal: boolean;
+  } | null>(null);
+  /** 実視聴時間計測用セッション (open〜close間の経過時間からpause時間を除いて算出) */
+  const watchSessionRef = useRef<{
+    videoId: string;
+    title: string;
+    thumbnailUrl: string;
+    isLocal: boolean;
+    openedAtMs: number;
+    pausedMs: number;
+    pauseStartedAtMs: number | null;
   } | null>(null);
   const [defaultQuality] = useConfig<'highest' | number>('player.defaultQuality', 'highest');
   const defaultQualityRef = useRef(defaultQuality);
@@ -520,7 +529,6 @@ export default function PlayerApp(): JSX.Element {
     if (w.channel !== null && !w.isDownloadable) {
       throw new Error(`チャンネル限定動画です。「${w.channel.name}」への加入が必要です。`);
     }
-    historyRecordedRef.current = false;
     resumeFinishedRef.current = false;
     playInfoRef.current = {
       videoId,
@@ -606,7 +614,6 @@ export default function PlayerApp(): JSX.Element {
     consecutiveSkipRef.current = 0;
     setSrc(url);
     setIsHls(false);
-    historyRecordedRef.current = false;
     resumeFinishedRef.current = false;
     pendingSeekRef.current = 0;
     const m = url.match(/\/((?:sm|nm|so|ax|sd|ca|cd|cw|zb|ze|yo)\d+)\/?$/);
@@ -646,7 +653,6 @@ export default function PlayerApp(): JSX.Element {
     pendingSeekRef.current = resumeSec && resumeSec > 0 ? resumeSec : 0;
     setSrc(buildLocalUrl(localPath));
     setIsHls(false);
-    historyRecordedRef.current = false;
     resumeFinishedRef.current = false;
     // ローカルの場合 videoId はファイル名から推測 (例: [sm12345]タイトル.mp4)
     const m = localPath.match(/\[((?:sm|nm|so|ax|sd|ca|cd|cw|zb|ze|yo)\d+)\]/);
@@ -964,22 +970,88 @@ export default function PlayerApp(): JSX.Element {
     }
   }, []);
 
-  // 再生開始から HISTORY_RECORD_THRESHOLD_SEC 秒経過したら履歴に記録 (1回のみ)
+  const currentVideoId = watch?.videoId ?? playInfoRef.current?.videoId;
+
+  /** 進行中セッションを確定し、HISTORY_RECORD_THRESHOLD_SEC 秒以上視聴していれば履歴に記録 */
+  const flushWatchSession = useCallback((): void => {
+    const s = watchSessionRef.current;
+    watchSessionRef.current = null;
+    if (!s) return;
+    let pausedMs = s.pausedMs;
+    if (s.pauseStartedAtMs != null) {
+      pausedMs += Date.now() - s.pauseStartedAtMs;
+    }
+    const watchSeconds = (Date.now() - s.openedAtMs - pausedMs) / 1000;
+    if (watchSeconds < HISTORY_RECORD_THRESHOLD_SEC) return;
+    window.nndd
+      .invoke(window.nndd.channels.HISTORY_ADD, {
+        videoId: s.videoId,
+        title: s.title,
+        thumbnailUrl: s.thumbnailUrl,
+        isLocal: s.isLocal,
+        watchSeconds
+      })
+      .catch((e) => console.warn('history add failed', e));
+  }, []);
+
+  // 動画切替のたびに実視聴時間セッションを開始/確定 (open〜closeの経過時間 - pause時間)
+  useEffect(() => {
+    if (!currentVideoId) return;
+    const info = playInfoRef.current;
+    const now = Date.now();
+    watchSessionRef.current = {
+      videoId: currentVideoId,
+      title: info?.title ?? currentVideoId,
+      thumbnailUrl: info?.thumbnailUrl ?? '',
+      isLocal: info?.isLocal ?? false,
+      openedAtMs: now,
+      pausedMs: 0,
+      // ストリームURL取得・コメント取得等のロード待ちは「再生していない」時間として除外するため
+      // 初期状態はpause中扱いにし、実際のplayイベントで計測を開始する
+      pauseStartedAtMs: now
+    };
+    return () => flushWatchSession();
+  }, [currentVideoId, flushWatchSession]);
+
+  // videoId確定〜WatchPageInfo取得完了までのタイムラグで暫定タイトル (videoIdそのまま) が
+  // セッションに固定されてしまうのを防ぐため、watch確定時にタイトル/サムネを同期する
+  useEffect(() => {
+    const s = watchSessionRef.current;
+    const info = playInfoRef.current;
+    if (s && info && s.videoId === info.videoId) {
+      s.title = info.title;
+      s.thumbnailUrl = info.thumbnailUrl;
+      s.isLocal = info.isLocal;
+    }
+  }, [watch]);
+
+  // pause中は視聴時間としてカウントしない
   useEffect(() => {
     if (!video) return;
-    const onTime = (): void => {
-      if (historyRecordedRef.current) return;
-      if (video.currentTime < HISTORY_RECORD_THRESHOLD_SEC) return;
-      const info = playInfoRef.current;
-      if (!info) return;
-      historyRecordedRef.current = true;
-      window.nndd
-        .invoke(window.nndd.channels.HISTORY_ADD, info)
-        .catch((e) => console.warn('history add failed', e));
+    const onPause = (): void => {
+      const s = watchSessionRef.current;
+      if (s && s.pauseStartedAtMs == null) s.pauseStartedAtMs = Date.now();
     };
-    video.addEventListener('timeupdate', onTime);
-    return () => video.removeEventListener('timeupdate', onTime);
+    const onPlay = (): void => {
+      const s = watchSessionRef.current;
+      if (s && s.pauseStartedAtMs != null) {
+        s.pausedMs += Date.now() - s.pauseStartedAtMs;
+        s.pauseStartedAtMs = null;
+      }
+    };
+    video.addEventListener('pause', onPause);
+    video.addEventListener('play', onPlay);
+    return () => {
+      video.removeEventListener('pause', onPause);
+      video.removeEventListener('play', onPlay);
+    };
   }, [video]);
+
+  // ウィンドウを閉じる際の保険 (unmount cleanupが間に合わない場合に備える)
+  useEffect(() => {
+    window.addEventListener('beforeunload', flushWatchSession);
+    return () => window.removeEventListener('beforeunload', flushWatchSession);
+  }, [flushWatchSession]);
 
   // Discord Rich Presence: 再生開始時にPresence送信 (src切替のたびに最新化)
   useEffect(() => {
@@ -1238,7 +1310,6 @@ export default function PlayerApp(): JSX.Element {
     };
   }, [isFullscreen, showControlsTemporarily]);
 
-  const currentVideoId = watch?.videoId ?? playInfoRef.current?.videoId;
   const canSkipNext = useMemo(() => {
     if (searchPlaylist.length > 0 && currentVideoId) {
       const idx = searchPlaylist.indexOf(currentVideoId);

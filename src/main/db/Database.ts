@@ -82,6 +82,15 @@ export class NnddDatabase {
         // 既にカラムあり — 無視
       }
     }
+    // v7 → v8: history に watchSeconds カラム追加 (実測視聴時間)
+    if (from === '4' || from === '5' || from === '6' || from === '7') {
+      try {
+        this.db.exec(`ALTER TABLE history ADD COLUMN watchSeconds REAL DEFAULT 0;`);
+        console.log('[DB] added history.watchSeconds column');
+      } catch {
+        // 既にカラムあり — 無視
+      }
+    }
   }
 
   /** プリペアドステートメントの取得 */

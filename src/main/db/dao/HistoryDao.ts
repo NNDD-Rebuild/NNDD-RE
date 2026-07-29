@@ -9,6 +9,7 @@ interface HistoryRow {
   thumbnailUrl: string;
   watchedAt: number;
   isLocal: number;
+  watchSeconds: number | null;
 }
 
 /**
@@ -25,7 +26,8 @@ export class HistoryDao {
       title: r.title,
       thumbnailUrl: r.thumbnailUrl,
       watchedAt: new Date(r.watchedAt * 1000),
-      isLocal: r.isLocal === 1
+      isLocal: r.isLocal === 1,
+      watchSeconds: r.watchSeconds ?? 0
     }));
   }
 
@@ -37,7 +39,8 @@ export class HistoryDao {
       title: r.title,
       thumbnailUrl: r.thumbnailUrl,
       watchedAt: new Date(r.watchedAt * 1000),
-      isLocal: r.isLocal === 1
+      isLocal: r.isLocal === 1,
+      watchSeconds: r.watchSeconds ?? 0
     }));
   }
 
@@ -49,11 +52,22 @@ export class HistoryDao {
         item.title,
         item.thumbnailUrl,
         item.watchedAt.getTime() / 1000,
-        item.isLocal ? 1 : 0
+        item.isLocal ? 1 : 0,
+        item.watchSeconds ?? 0
       );
   }
 
   clear(): void {
     this.db.prepare(Q.DELETE_HISTORY).run();
+  }
+
+  /** 再生済みバッジ表示用バッチ判定 */
+  existsBatch(videoIds: string[]): Set<string> {
+    const result = new Set<string>();
+    const stmt = this.db.prepare(Q.SELECT_HISTORY_EXISTS);
+    for (const id of videoIds) {
+      if (stmt.get(id)) result.add(id);
+    }
+    return result;
   }
 }

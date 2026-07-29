@@ -10,7 +10,8 @@ import {
   SearchDao,
   NgListDao,
   PlaylistDao,
-  ResumeDao
+  ResumeDao,
+  NicoWatchHistoryDao
 } from './dao';
 import { NnddPaths } from '@shared/constants';
 
@@ -31,6 +32,7 @@ export class LibraryManager {
   readonly ngListDao: NgListDao;
   readonly playlistDao: PlaylistDao;
   readonly resumeDao: ResumeDao;
+  readonly nicoWatchHistoryDao: NicoWatchHistoryDao;
 
   readonly rootDir: string;
   readonly libraryDir: string;
@@ -67,6 +69,7 @@ export class LibraryManager {
     this.ngListDao = new NgListDao(this.db);
     this.playlistDao = new PlaylistDao(this.db);
     this.resumeDao = new ResumeDao(this.db);
+    this.nicoWatchHistoryDao = new NicoWatchHistoryDao(this.db);
   }
 
   /**

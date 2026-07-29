@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   SearchItem,
   SearchResultItem,
@@ -10,6 +10,7 @@ import { VideoCard } from '../common/VideoCard';
 import { ContinuousPlayButton } from '../common/ContinuousPlayButton';
 import { useAppStore } from '@renderer/store/useAppStore';
 import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
+import { useWatchedIds } from '@renderer/hooks/useWatchedIds';
 
 /**
  * 検索タブ。
@@ -60,6 +61,8 @@ export function SearchView(): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [savedSearches, setSavedSearches] = useState<SearchItem[]>([]);
   const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
+  const videoIds = useMemo(() => results.map((r) => r.videoId), [results]);
+  const watchedIds = useWatchedIds(videoIds);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [saveName, setSaveName] = useState('');
   const globalMode = useAppStore((s) => s.contentViewMode);
@@ -443,6 +446,7 @@ export function SearchView(): JSX.Element {
                       onPlayAudioOnly={handlePlayAudioOnly}
                       onUserPage={handleUserPage}
                       isDownloaded={downloadedIds.has(r.videoId)}
+                      isWatched={watchedIds.has(r.videoId)}
                     />
                   ))}
                 </div>
@@ -472,6 +476,7 @@ export function SearchView(): JSX.Element {
                       onPlayAudioOnly={handlePlayAudioOnly}
                       onUserPage={handleUserPage}
                       isDownloaded={downloadedIds.has(r.videoId)}
+                      isWatched={watchedIds.has(r.videoId)}
                     />
                   ))}
                 </div>

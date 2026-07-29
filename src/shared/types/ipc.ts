@@ -96,6 +96,11 @@ export const IpcChannel = {
   HISTORY_ADD: 'nndd:history:add',
   HISTORY_CLEAR: 'nndd:history:clear',
 
+  // ニコニコ動画本家 視聴履歴
+  NICO_HISTORY_LIST: 'nndd:nicoHistory:list',
+  /** アプリ内history + ニコ動本家履歴の両方をORで判定するバッチ照合 (再生済みバッジ用) */
+  WATCHED_CHECK_BATCH: 'nndd:nicoHistory:watchedCheckBatch',
+
   // プレイリスト (完全ローカル、サーバー同期なし)
   PLAYLIST_LIST: 'nndd:playlist:list',
   PLAYLIST_CREATE: 'nndd:playlist:create',

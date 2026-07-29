@@ -6,3 +6,4 @@ export { SearchDao } from './SearchDao';
 export { NgListDao } from './NgListDao';
 export { PlaylistDao } from './PlaylistDao';
 export { ResumeDao } from './ResumeDao';
+export { NicoWatchHistoryDao } from './NicoWatchHistoryDao';

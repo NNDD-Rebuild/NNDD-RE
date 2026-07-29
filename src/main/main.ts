@@ -8,6 +8,7 @@ import { getConfigStore } from './config/ConfigStore';
 import { registerIpcHandlers } from './ipc/registerIpc';
 import { createLogger, setLogLevel } from './util/Logger';
 import { NicoContext } from './nicovideo/NicoContext';
+import { NicoHistoryClient } from './nicovideo';
 import {
   registerScheme,
   registerProtocolHandler,
@@ -255,6 +256,9 @@ app.whenReady().then(async () => {
 
   // 起動時自動アップロード: バックグラウンド実行、起動処理(ウィンドウ表示等)をブロックしない
   void backupManager.autoUploadActiveProfile();
+
+  // 起動時ニコ動視聴履歴差分取得: バックグラウンド実行、起動処理をブロックしない
+  void NicoHistoryClient.syncOnStartup(library.nicoWatchHistoryDao);
 
   // 起動時アップデート確認: バックグラウンド実行、起動処理をブロックしない
   const updateMode = config.get('update').mode;

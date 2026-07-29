@@ -41,6 +41,8 @@ interface Props {
   layout?: 'grid' | 'list';
   /** ライブラリにDL済みかどうか */
   isDownloaded?: boolean;
+  /** 再生済み (アプリ内履歴またはニコ動本家履歴のいずれかに存在) かどうか */
+  isWatched?: boolean;
   /** 指定時のみ削除ボタンを表示 (プレイリストからの削除など汎用) */
   onRemove?: (videoId: string) => void;
 }
@@ -55,6 +57,7 @@ export function VideoCard({
   onPlayAudioOnly,
   layout = 'grid',
   isDownloaded = false,
+  isWatched = false,
   onRemove
 }: Props): JSX.Element {
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number } | null>(null);
@@ -95,7 +98,7 @@ export function VideoCard({
         onContextMenu={handleContextMenu}
         onDoubleClick={() => onPlay?.(data.videoId)}
       >
-        <Thumb data={data} small />
+        <Thumb data={data} small isWatched={isWatched} />
         <div className="flex-1 min-w-0">
           <Title data={data} onUserPage={onUserPage} />
           <Stats data={data} />
@@ -120,7 +123,7 @@ export function VideoCard({
       onContextMenu={handleContextMenu}
       onDoubleClick={() => onPlay?.(data.videoId)}
     >
-      <Thumb data={data} />
+      <Thumb data={data} isWatched={isWatched} />
       <div className="p-2 flex-1 flex flex-col">
         <Title data={data} onUserPage={onUserPage} />
         <Stats data={data} />
@@ -145,10 +148,12 @@ const PREVIEW_HOVER_DELAY_MS = 500;
 
 function Thumb({
   data,
-  small
+  small,
+  isWatched
 }: {
   data: VideoCardData;
   small?: boolean;
+  isWatched?: boolean;
 }): JSX.Element {
   const [showPreview, setShowPreview] = useState(false);
   const hoverTimerRef = useRef<number | null>(null);
@@ -208,6 +213,14 @@ function Thumb({
           title="チャンネル動画 (未加入だと再生できない場合があります)"
         >
           CH
+        </span>
+      )}
+      {isWatched && (
+        <span
+          className="absolute left-1 bottom-1 bg-black/60 text-white text-xs w-5 h-5 flex items-center justify-center rounded-full"
+          title="視聴済み"
+        >
+          👁
         </span>
       )}
     </div>

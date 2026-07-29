@@ -5,6 +5,7 @@ import { VideoCard } from '../common/VideoCard';
 import type { VideoCardData } from '../common/VideoCard';
 import { useAppStore } from '@renderer/store/useAppStore';
 import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
+import { useWatchedIds } from '@renderer/hooks/useWatchedIds';
 
 interface FeedResult {
   items: SearchResultItem[];
@@ -326,6 +327,8 @@ export function FollowView(): JSX.Element {
   const displayItems = isUserMode ? userItems : allItems;
   const displayLoading = isUserMode ? userLoading : allLoading;
   const displayError = isUserMode ? userError : allError;
+  const displayVideoIds = useMemo(() => displayItems.map((r) => r.videoId), [displayItems]);
+  const watchedIds = useWatchedIds(displayVideoIds);
   const displayHasNext = isUserMode ? userHasNext : allHasNext;
   // 表示用ページ番号 (0始まり)
   const displayPageIdx = isUserMode ? userApiPage - 1 : allPageIdx;
@@ -594,6 +597,7 @@ export function FollowView(): JSX.Element {
                         onUserPage={handleUserPage}
                         onPlayAudioOnly={handlePlayAudioOnly}
                         isDownloaded={downloadedIds.has(r.videoId)}
+                        isWatched={watchedIds.has(r.videoId)}
                       />
                     ))}
                   </div>
@@ -610,6 +614,7 @@ export function FollowView(): JSX.Element {
                         onUserPage={handleUserPage}
                         onPlayAudioOnly={handlePlayAudioOnly}
                         isDownloaded={downloadedIds.has(r.videoId)}
+                        isWatched={watchedIds.has(r.videoId)}
                       />
                     ))}
                   </div>

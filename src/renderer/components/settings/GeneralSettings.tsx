@@ -64,6 +64,9 @@ export function GeneralSettings({ onDeveloperModeChange }: GeneralSettingsProps)
   // 開発者オプション
   const [developerEnabled, setDeveloperEnabled] = useState(false);
 
+  // 視聴履歴
+  const [showWatchedBadge, setShowWatchedBadge] = useConfig<boolean>('history.showWatchedBadge', true);
+
   // Discord Rich Presence
   const [discordEnabled, setDiscordEnabled] = useConfig<boolean>('discordRpc.enabled', false);
   const [discordShowTitle, setDiscordShowTitle] = useConfig<boolean>('discordRpc.showTitle', true);
@@ -354,6 +357,21 @@ export function GeneralSettings({ onDeveloperModeChange }: GeneralSettingsProps)
             ))}
           </div>
         )}
+      </Section>
+
+      <Section title="視聴履歴">
+        <label className="flex items-center gap-2 cursor-pointer select-none text-sm">
+          <input
+            type="checkbox"
+            checked={showWatchedBadge}
+            onChange={(e) => setShowWatchedBadge(e.target.checked)}
+          />
+          ランキング・フォロー中・マイリストに再生済みバッジを表示する
+        </label>
+        <p className="text-xs text-nndd-subtext mt-2">
+          このアプリ内での視聴記録、およびニコニコ動画本家の視聴履歴 (起動時に自動取得) の
+          いずれかに含まれる動画にバッジを表示します。
+        </p>
       </Section>
 
       <Section title="内蔵HTTPサーバー">

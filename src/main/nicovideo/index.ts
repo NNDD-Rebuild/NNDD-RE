@@ -34,3 +34,4 @@ export { RankingClient } from './ranking/RankingClient';
 export { ConnectionDiag } from './ConnectionDiag';
 export type { DiagResult } from './ConnectionDiag';
 export { FollowFeedClient } from './follow/FollowFeedClient';
+export { NicoHistoryClient } from './history/NicoHistoryClient';

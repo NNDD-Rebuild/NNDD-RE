@@ -117,6 +117,7 @@ export interface BackupPayload {
     thumbnailUrl: string;
     watchedAt: string;
     isLocal: boolean;
+    watchSeconds?: number;
   }>;
 }
 
