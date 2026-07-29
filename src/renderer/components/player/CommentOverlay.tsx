@@ -42,14 +42,14 @@ export const CommentOverlay = forwardRef<CommentOverlayHandle, Props>(
     { videoRef, comments, ngList, config, passThrough = true },
     ref
   ) {
-    const canvasRef = useRef<HTMLCanvasElement>(null);
+    const containerRef = useRef<HTMLDivElement>(null);
     const rendererRef = useRef<CommentRenderer | null>(null);
 
     useEffect(() => {
-      const canvas = canvasRef.current;
+      const container = containerRef.current;
       const video = videoRef.current;
-      if (!canvas || !video) return;
-      const renderer = new CommentRenderer(canvas);
+      if (!container || !video) return;
+      const renderer = new CommentRenderer(container);
       renderer.setConfig({
         ...DEFAULT_RENDER_CONFIG,
         ...config,
@@ -78,7 +78,7 @@ export const CommentOverlay = forwardRef<CommentOverlayHandle, Props>(
       };
 
       const resize = (): void => {
-        const rect = canvas.getBoundingClientRect();
+        const rect = container.getBoundingClientRect();
         if (!started) {
           tryStart(rect.width, rect.height);
         } else {
@@ -95,7 +95,7 @@ export const CommentOverlay = forwardRef<CommentOverlayHandle, Props>(
       resize();
 
       const ro = new ResizeObserver(resize);
-      ro.observe(canvas);
+      ro.observe(container);
 
       const onSeek = (): void => renderer.onSeek();
       video.addEventListener('seeking', onSeek);
@@ -135,8 +135,8 @@ export const CommentOverlay = forwardRef<CommentOverlayHandle, Props>(
     );
 
     return (
-      <canvas
-        ref={canvasRef}
+      <div
+        ref={containerRef}
         className="absolute inset-0 w-full h-full"
         style={{ pointerEvents: passThrough ? 'none' : 'auto' }}
       />
