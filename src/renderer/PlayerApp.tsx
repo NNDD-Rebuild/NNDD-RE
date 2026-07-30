@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { NNDDREComment, WatchPageInfo, DomandStreamCandidate } from '@shared/types';
 import { IpcChannel } from '@shared/types';
-import { buildLocalUrl, COMMENT_FONT_FAMILY } from '@shared/constants';
+import { buildLocalUrl, isLocalMediaUrl, COMMENT_FONT_FAMILY } from '@shared/constants';
 import { VideoPlayer } from './components/player/VideoPlayer';
 import { VideoController } from './components/player/VideoController';
 import { VideoInfoView } from './components/player/VideoInfoView';
@@ -429,7 +429,7 @@ export default function PlayerApp(): JSX.Element {
 
   const handleVideoError = async (code: number): Promise<void> => {
     // code 4 = MEDIA_ERR_SRC_NOT_SUPPORTED: キャッシュファイルが破損 or 非対応コーデック
-    if (code === 4 && srcRef.current.startsWith('nndd-re-local://')) {
+    if (code === 4 && isLocalMediaUrl(srcRef.current)) {
       const vid = playInfoRef.current?.videoId;
       if (!vid) return;
       setSrc('');
@@ -648,10 +648,14 @@ export default function PlayerApp(): JSX.Element {
         .then((vids) => { folderVideosRef.current = vids; setFolderVideos(vids); })
         .catch(() => { folderVideosRef.current = []; setFolderVideos([]); });
     }
-    // IPC不要: URL はレンダラー側で直接構築
     consecutiveSkipRef.current = 0;
     pendingSeekRef.current = resumeSec && resumeSec > 0 ? resumeSec : 0;
-    setSrc(buildLocalUrl(localPath));
+    // 動画はループバック HTTP 経由で配信する (custom protocol はシークで壊れる)。
+    // ポートとトークンは main プロセスにしかないため IPC で URL を組み立てる。
+    const mediaUrl = await window.nndd
+      .invoke<string>(window.nndd.channels.VIDEO_BUILD_LOCAL_URL, localPath)
+      .catch(() => buildLocalUrl(localPath));
+    setSrc(mediaUrl);
     setIsHls(false);
     resumeFinishedRef.current = false;
     // ローカルの場合 videoId はファイル名から推測 (例: [sm12345]タイトル.mp4)

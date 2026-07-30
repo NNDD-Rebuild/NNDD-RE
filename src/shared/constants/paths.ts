@@ -58,3 +58,18 @@ export const NNDD_LOCAL_SCHEME = NNDD_RE_LOCAL_SCHEME;
 export function buildLocalUrl(absolutePath: string): string {
   return `${NNDD_RE_LOCAL_SCHEME}://video?path=${encodeURIComponent(absolutePath)}`;
 }
+
+/**
+ * ループバック HTTP でローカルファイルを配信するエンドポイントのパス。
+ * 動画は `nndd-re-local://` ではなくこちらを使う (シーク時に Electron の
+ * protocol.handle が壊れるため。詳細は StreamServer.handleLocalMedia のコメント)。
+ */
+export const LOCAL_MEDIA_PATH = '/local/media';
+
+/** src がローカルファイル由来か (カスタムプロトコル / ループバック HTTP のどちらでも true) */
+export function isLocalMediaUrl(url: string): boolean {
+  return (
+    url.startsWith(`${NNDD_RE_LOCAL_SCHEME}://`) ||
+    url.includes(`${LOCAL_MEDIA_PATH}?`)
+  );
+}

@@ -45,7 +45,7 @@ import {
 } from '../player/PlayerManager';
 import { buildLocalVideoUrl, autoConfigureAllowedRoots } from '../player/LocalVideoProtocol';
 import { updateSessionHideHistory } from '../player/HlsSessionInterceptor';
-import { buildHlsProxyBase } from '../player/StreamServer';
+import { buildHlsProxyBase, buildLocalMediaUrl } from '../player/StreamServer';
 import { encodeProxyUrl } from '../player/HlsProxy';
 import { WatchSession } from '../nicovideo/video/WatchSession';
 import type { WatchPageInfo } from '@shared/types';
@@ -789,6 +789,14 @@ export function registerIpcHandlers(
             });
             return true;
           }
+          // DL済み扱いなのに実ファイルが無い = ライブラリとディスクの不整合
+          log.warn('VIDEO_OPEN_PLAYER: DB上のuriにファイルなし → ストリーミングへ', {
+            videoId: params.videoId,
+            uri: video.uri,
+          });
+        } else {
+          // 未DLの動画では通常発生するため verbose
+          log.verbose('VIDEO_OPEN_PLAYER: DBにレコードなし → ストリーミングへ', params.videoId);
         }
       }
       // BrowserWindow生成と並列でWatchInfo取得を開始（レンダラー準備完了前に先行）
@@ -803,9 +811,16 @@ export function registerIpcHandlers(
     }
   );
 
-  // ローカル動画ファイル用 URL を生成 (custom protocol)
+  // ローカル動画ファイル用 URL を生成。
+  // シークが壊れる protocol.handle を避け、ループバック HTTP 配信を優先する。
+  // サーバー未起動などで失敗した場合のみカスタムプロトコルへフォールバック。
   ipcMain.handle(IpcChannel.VIDEO_BUILD_LOCAL_URL, (_e, absolutePath: string) => {
-    return buildLocalVideoUrl(absolutePath);
+    try {
+      return buildLocalMediaUrl(absolutePath);
+    } catch (e) {
+      log.warn('buildLocalMediaUrl 失敗 → custom protocol へフォールバック:', e);
+      return buildLocalVideoUrl(absolutePath);
+    }
   });
 
   // ストリーミング再生。
