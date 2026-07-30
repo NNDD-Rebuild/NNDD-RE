@@ -97,9 +97,22 @@ export class MediabunnyMuxer {
       const videoSink = new EncodedPacketSink(videoTrack);
       const audioSink = new EncodedPacketSink(audioTrack);
 
-      // AACのエンコーダ遅延(priming samples)等により先頭パケットのtimestampが負になることがある。
-      // IsobmffMuxerは負のtimestampを許容しないため、トラックごとに先頭パケットの負オフセット分を
-      // 全パケットからシフトして0開始に正規化する。
+      // mediabunnyのISOBMFF出力は、トラック先頭オフセット(startTimestampOffset)が
+      // 正の場合にのみ edit list (edts/elst) を書き出す。B-frameありのH.264を
+      // stream copyすると、先頭キーフレームのPTSは0でもreorderにより実効DTSが
+      // 負になることがあるが、その場合オフセットは0のままeditListが省略され、
+      // 負DTSだけがmoovに残る。これをChromium(150〜)の<video>要素は
+      // 不正ファイルとして拒否する(MEDIA_ERR_SRC_NOT_SUPPORTED)。ffmpeg/ffprobeは
+      // 寛容にパースできるため気づきにくい。
+      // 対策として全パケットに固定の正マージンを加算し、startTimestampOffsetを
+      // 必ず正にしてedit listを強制的に生成させる。reorder遅延は通常数フレーム分
+      // (このプロジェクトの実測では有 B-frame 動画で最大2フレーム程度)なので、
+      // 十分な安全マージンとして0.2秒を採用。video/audioは同じ絶対時間だけ
+      // シフトすることで相対的な音声同期を維持する。
+      const REORDER_MARGIN_SEC = 0.2;
+
+      // AACのエンコーダ遅延(priming samples)等で先頭パケットのtimestampが
+      // マージンを超えて負になる場合に備え、追加のシフトも行う。
       let videoPacketCount = 0;
       let videoIsFirst = true;
       let videoTimestampOffset = 0;
@@ -108,13 +121,12 @@ export class MediabunnyMuxer {
           await output.cancel();
           throw new Error('mediabunny mux aborted');
         }
-        if (videoIsFirst && packet.timestamp < 0) {
-          videoTimestampOffset = packet.timestamp;
-          log.warn('video first packet has negative timestamp, shifting by', -videoTimestampOffset);
+        const shifted = packet.timestamp + REORDER_MARGIN_SEC;
+        if (videoIsFirst && shifted < 0) {
+          videoTimestampOffset = shifted;
+          log.warn('video first packet still negative after margin, shifting by', -videoTimestampOffset);
         }
-        const adjusted = videoTimestampOffset !== 0
-          ? packet.clone({ timestamp: packet.timestamp - videoTimestampOffset })
-          : packet;
+        const adjusted = packet.clone({ timestamp: shifted - videoTimestampOffset });
         await videoSource.add(
           adjusted,
           videoIsFirst && videoDecoderConfig ? { decoderConfig: videoDecoderConfig } : undefined
@@ -136,13 +148,12 @@ export class MediabunnyMuxer {
           await output.cancel();
           throw new Error('mediabunny mux aborted');
         }
-        if (audioIsFirst && packet.timestamp < 0) {
-          audioTimestampOffset = packet.timestamp;
-          log.warn('audio first packet has negative timestamp, shifting by', -audioTimestampOffset);
+        const shifted = packet.timestamp + REORDER_MARGIN_SEC;
+        if (audioIsFirst && shifted < 0) {
+          audioTimestampOffset = shifted;
+          log.warn('audio first packet still negative after margin, shifting by', -audioTimestampOffset);
         }
-        const adjusted = audioTimestampOffset !== 0
-          ? packet.clone({ timestamp: packet.timestamp - audioTimestampOffset })
-          : packet;
+        const adjusted = packet.clone({ timestamp: shifted - audioTimestampOffset });
         await audioSource.add(
           adjusted,
           audioIsFirst && audioDecoderConfig ? { decoderConfig: audioDecoderConfig } : undefined
