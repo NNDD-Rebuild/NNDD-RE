@@ -1,5 +1,6 @@
 ---
 title: NNDD-RE
+nav_order: 1
 ---
 
 # NNDD-RE
@@ -11,6 +12,7 @@ MineAP氏作の NNDD（Adobe AIR/ActionScript）を **Electron + TypeScript + Re
 ## クイックリンク
 
 - [使い方ガイド](/NNDD-RE/usage-guide/) — 初回ログイン〜ダウンロード〜再生〜自動ダウンロード
+- [設定](/NNDD-RE/settings/) — 全設定タブ・項目のリファレンス
 - [キーボードショートカット](/NNDD-RE/keyboard-shortcuts/)
 - [内蔵HTTPサーバー連携](/NNDD-RE/http-server-integration/)
 - [トラブルシューティング](/NNDD-RE/troubleshooting/)

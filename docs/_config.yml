@@ -1,5 +1,16 @@
 title: NNDD-RE
 description: MineAP氏作 NNDD の後継、Electron + TypeScript + React 製ニコニコ動画ダウンローダー/プレイヤー
-theme: jekyll-theme-cayman
+remote_theme: just-the-docs/just-the-docs
+plugins:
+  - jekyll-remote-theme
 permalink: pretty
 markdown: kramdown
+
+search_enabled: true
+heading_anchors: true
+color_scheme: orange
+
+aux_links:
+  "GitHub":
+    - "https://github.com/NNDD-Rebuild/NNDD-RE"
+aux_links_new_tab: true
