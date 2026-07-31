@@ -26,8 +26,8 @@ nav_order: 2
 - DLリストタブで動画ID（sm12345等）・マイリストURL・シリーズURLのいずれかを入力 → 「DLリストに追加」（マイリスト/シリーズURLは自動検出され、まとめて登録されます）
 - または検索/ランキング/マイリストから「DL」ボタン
 - 音声のみダウンロード・コメントのみダウンロードのオプションもあります
-- 通常DLは yt-dlp が動画・音声を取得しFFmpeg（またはmux実装設定でmediabunny）で結合、ライブラリへ登録（同時DL数・帯域制限等の細かい挙動は[設定](/NNDD-RE/settings/)の「DLリスト・ライブラリ」を参照）
-- yt-dlp/FFmpegが未導入の場合は設定 → 外部ツール画面からダウンロードしてください（詳細は [トラブルシューティング](/NNDD-RE/troubleshooting/) 参照）
+- 通常DLは既定設定（ネイティブHLS優先＋mediabunny mux）なら **yt-dlp・FFmpegどちらも不要**で完結します。ライブラリへ自動登録されます（同時DL数・帯域制限等の細かい挙動は[設定](/NNDD-RE/settings/)の「DLリスト・ライブラリ」を参照）
+- 一部の動画でネイティブ実装が対応できない場合は自動的に yt-dlp へフォールバックします。フォールバック用に yt-dlp / FFmpeg を導入しておくと成功率が上がります（設定 → 外部ツール画面。詳細は [トラブルシューティング](/NNDD-RE/troubleshooting/) 参照）
 
 ## 3. 動画を再生する
 
@@ -42,8 +42,23 @@ nav_order: 2
 2. 設定 → スケジュール → 新規スケジュール
 3. 曜日と時刻を指定すると、その時刻に自動でマイリストを更新し新着動画をダウンロードします
 
+## 各タブの詳しい使い方
+
+- [ランキング](/NNDD-RE/ranking/)
+- [検索](/NNDD-RE/search/)
+- [フォロー中](/NNDD-RE/follow/)
+- [マイリスト](/NNDD-RE/mylist/)
+- [DLリスト](/NNDD-RE/download/)
+- [ライブラリ](/NNDD-RE/library/)
+- [履歴](/NNDD-RE/history/)
+- [統計](/NNDD-RE/stats/)
+- [プレイヤー](/NNDD-RE/player/)
+
 ## 関連ページ
 
 - 設定項目の全リスト → [設定](/NNDD-RE/settings/)
 - キー操作一覧 → [キーボードショートカット](/NNDD-RE/keyboard-shortcuts/)
-- 他アプリとの連携 → [内蔵HTTPサーバー連携](/NNDD-RE/http-server-integration/)
+- 他アプリとの連携・LAN共有 → [内蔵HTTPサーバー・LAN共有](/NNDD-RE/http-server-integration/)
+- 複数端末での設定共有 → [GitHub同期・バックアップ](/NNDD-RE/github-sync/)
+- Discord表示・通知連携 → [Discord連携・Webhook通知](/NNDD-RE/discord-webhook/)
+- うまくいかないとき → [トラブルシューティング](/NNDD-RE/troubleshooting/)
