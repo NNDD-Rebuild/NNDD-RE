@@ -73,12 +73,19 @@ const log = createLogger('IPC');
  * 元: AS3 では各 Manager がアプリケーションオブジェクト経由でアクセスしていたが、
  * Electron では preload経由でメインプロセスに問い合わせる構造。
  */
+/** `nndd-re-cmd://` プロトコルハンドラ等、IPC以外の経路から呼び出すための最小API */
+export interface CmdApi {
+  openPlayer: (params: OpenPlayerParams) => Promise<void>;
+  enqueueDownload: (opts: EnqueueOptions) => ReturnType<DownloadManager['enqueue']>;
+  navigateMylist: (mylistId: string) => void;
+}
+
 export function registerIpcHandlers(
   library: LibraryManager,
   trayManager: TrayManager | null | undefined,
   mainWindowGetter: (() => BrowserWindow | null) | undefined,
   backupManager: BackupManager
-): void {
+): CmdApi {
   // --- ダウンロードマネージャ (シングルトン) ---
   const dlManager = new DownloadManager(library);
   const autoDl = new MyListAutoDownloader(library, dlManager);
@@ -747,68 +754,72 @@ export function registerIpcHandlers(
     return CommentClient.fetchComments(watch);
   });
 
+  async function openPlayer(params: OpenPlayerParams): Promise<void> {
+    // streamUrl 指定 → LANライブラリのHTTPストリームをそのまま再生 (videoId不明のためレジューム対象外)
+    if (params.streamUrl) {
+      PlayerManager.get().open(params);
+      return;
+    }
+
+    const resumePlaybackEnabled = getConfigStore().get('player').resumePlayback;
+    const resume = resumePlaybackEnabled && params.videoId ? library.resumeDao.get(params.videoId) : null;
+    const resumeSec = resume && resume.positionSec > 3 ? resume.positionSec : undefined;
+
+    // videoId のみ指定 → ライブラリに DL 済みファイルがあればローカル再生を優先
+    if (params.videoId && !params.localPath) {
+      const video = library.videoDao.getByKey(params.videoId);
+      if (video) {
+        const fsmod = await import('node:fs');
+        if (fsmod.existsSync(video.uri)) {
+          log.verbose('VIDEO_OPEN_PLAYER: found in library, using local file', video.uri);
+          PlayerManager.get().open({
+            // 付帯ファイル (コメントXML等) は元ファイルの隣にあるため、
+            // トランスコード後のキャッシュパスではなく元パスから解決する。
+            localFiles: PlayerManager.get().resolveLocalFiles(video.uri),
+            localPath: await ensurePlayableLocalPath(video.uri),
+            videoId: params.videoId,
+            searchPlaylist: params.searchPlaylist,
+            autoNext: params.autoNext,
+            audioOnly: params.audioOnly,
+            resumeSec,
+          });
+          return;
+        }
+        // DL済み扱いなのに実ファイルが無い = ライブラリとディスクの不整合
+        log.warn('VIDEO_OPEN_PLAYER: DB上のuriにファイルなし → ストリーミングへ', {
+          videoId: params.videoId,
+          uri: video.uri,
+        });
+      } else {
+        // 未DLの動画では通常発生するため verbose
+        log.verbose('VIDEO_OPEN_PLAYER: DBにレコードなし → ストリーミングへ', params.videoId);
+      }
+    }
+    // BrowserWindow生成と並列でWatchInfo取得を開始（レンダラー準備完了前に先行）
+    if (params.videoId) {
+      watchInfoPrefetchCache.set(
+        params.videoId,
+        WatchInfoHandler.fetchWatchInfo(params.videoId)
+      );
+    }
+    const resolvedLocalFiles = params.localPath && !params.localFiles
+      ? PlayerManager.get().resolveLocalFiles(params.localPath)
+      : params.localFiles;
+    const resolvedLocalPath = params.localPath
+      ? await ensurePlayableLocalPath(params.localPath)
+      : params.localPath;
+    PlayerManager.get().open({
+      ...params,
+      localFiles: resolvedLocalFiles,
+      localPath: resolvedLocalPath,
+      resumeSec
+    });
+  }
+
   ipcMain.handle(
     IpcChannel.VIDEO_OPEN_PLAYER,
     async (_e, params: OpenPlayerParams) => {
-      // streamUrl 指定 → LANライブラリのHTTPストリームをそのまま再生 (videoId不明のためレジューム対象外)
-      if (params.streamUrl) {
-        PlayerManager.get().open(params);
-        return true;
-      }
-
-      const resumePlaybackEnabled = getConfigStore().get('player').resumePlayback;
-      const resume = resumePlaybackEnabled && params.videoId ? library.resumeDao.get(params.videoId) : null;
-      const resumeSec = resume && resume.positionSec > 3 ? resume.positionSec : undefined;
-
-      // videoId のみ指定 → ライブラリに DL 済みファイルがあればローカル再生を優先
-      if (params.videoId && !params.localPath) {
-        const video = library.videoDao.getByKey(params.videoId);
-        if (video) {
-          const fsmod = await import('node:fs');
-          if (fsmod.existsSync(video.uri)) {
-            log.verbose('VIDEO_OPEN_PLAYER: found in library, using local file', video.uri);
-            PlayerManager.get().open({
-              // 付帯ファイル (コメントXML等) は元ファイルの隣にあるため、
-              // トランスコード後のキャッシュパスではなく元パスから解決する。
-              localFiles: PlayerManager.get().resolveLocalFiles(video.uri),
-              localPath: await ensurePlayableLocalPath(video.uri),
-              videoId: params.videoId,
-              searchPlaylist: params.searchPlaylist,
-              autoNext: params.autoNext,
-              audioOnly: params.audioOnly,
-              resumeSec,
-            });
-            return true;
-          }
-          // DL済み扱いなのに実ファイルが無い = ライブラリとディスクの不整合
-          log.warn('VIDEO_OPEN_PLAYER: DB上のuriにファイルなし → ストリーミングへ', {
-            videoId: params.videoId,
-            uri: video.uri,
-          });
-        } else {
-          // 未DLの動画では通常発生するため verbose
-          log.verbose('VIDEO_OPEN_PLAYER: DBにレコードなし → ストリーミングへ', params.videoId);
-        }
-      }
-      // BrowserWindow生成と並列でWatchInfo取得を開始（レンダラー準備完了前に先行）
-      if (params.videoId) {
-        watchInfoPrefetchCache.set(
-          params.videoId,
-          WatchInfoHandler.fetchWatchInfo(params.videoId)
-        );
-      }
-      const resolvedLocalFiles = params.localPath && !params.localFiles
-        ? PlayerManager.get().resolveLocalFiles(params.localPath)
-        : params.localFiles;
-      const resolvedLocalPath = params.localPath
-        ? await ensurePlayableLocalPath(params.localPath)
-        : params.localPath;
-      PlayerManager.get().open({
-        ...params,
-        localFiles: resolvedLocalFiles,
-        localPath: resolvedLocalPath,
-        resumeSec
-      });
+      await openPlayer(params);
       return true;
     }
   );
@@ -1541,10 +1552,11 @@ export function registerIpcHandlers(
   });
 
   // プレイヤーウィンドウ → メインウィンドウへのナビゲーション
-  ipcMain.handle(IpcChannel.NAV_MYLIST, (_e, mylistId: string) => {
+  function navigateMylist(mylistId: string): void {
     const mainWin = mainWindowGetter?.();
     if (mainWin && !mainWin.isDestroyed()) {
       // メインウィンドウをフォアグラウンドに出してナビゲーション
+      if (mainWin.isMinimized()) mainWin.restore();
       mainWin.show();
       mainWin.focus();
       mainWin.webContents.send(IpcChannel.NAV_MYLIST, mylistId);
@@ -1556,6 +1568,9 @@ export function registerIpcHandlers(
         }
       }
     }
+  }
+  ipcMain.handle(IpcChannel.NAV_MYLIST, (_e, mylistId: string) => {
+    navigateMylist(mylistId);
   });
 
   ipcMain.handle(IpcChannel.IMAGE_FETCH, async (_e, url: string) => {
@@ -1879,6 +1894,12 @@ export function registerIpcHandlers(
   setInterval(checkSession, 30 * 60 * 1000);
 
   log.info('IPC handlers registered');
+
+  return {
+    openPlayer,
+    enqueueDownload: (opts) => dlManager.enqueue(opts),
+    navigateMylist
+  };
 }
 
 /**

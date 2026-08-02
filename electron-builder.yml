@@ -13,6 +13,10 @@ files:
 asar: true
 asarUnpack:
   - resources/**
+protocols:
+  name: NNDD-RE Command Protocol
+  schemes:
+    - nndd-re-cmd
 win:
   executableName: NNDD-RE
   icon: build/icon.ico

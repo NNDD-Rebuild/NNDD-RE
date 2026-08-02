@@ -73,3 +73,6 @@ export function isLocalMediaUrl(url: string): boolean {
     url.includes(`${LOCAL_MEDIA_PATH}?`)
   );
 }
+
+/** 外部 (ブラウザ拡張・コマンドラインツール等) からのアプリ起動用カスタムプロトコルスキーム */
+export const NNDD_RE_CMD_SCHEME = 'nndd-re-cmd';

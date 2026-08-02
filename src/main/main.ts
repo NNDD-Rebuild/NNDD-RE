@@ -24,6 +24,9 @@ import { NnddHttpServer } from './server/NnddHttpServer';
 import { TrayManager } from './tray/TrayManager';
 import { BackupManager } from './githubSync/BackupManager';
 import { getUpdateManager } from './update/UpdateManager';
+import { NNDD_RE_CMD_SCHEME } from '../shared/constants/paths';
+import { extractCmdUrlFromArgv, handleCmdUrl } from './protocol/CmdProtocol';
+import type { CmdApi } from './ipc/registerIpc';
 
 const log = createLogger('Main');
 
@@ -32,6 +35,7 @@ let library: LibraryManager | null = null;
 let httpServer: NnddHttpServer | null = null;
 let trayManager: TrayManager | null = null;
 let backupManager: BackupManager | null = null;
+let cmdApi: CmdApi | null = null;
 
 // Windows: setZoomFactor後にGPUデコード動画が黒くなるバグ対策 (Electron 33 / Chromium 130)
 // setZoomFactorはniconico埋め込みプレイヤー (player.streamingMode: 'niconico') でのみ呼ばれるため、
@@ -49,16 +53,32 @@ if (process.env['NODE_ENV'] !== 'production') {
 // app.whenReady() より前にスキーム登録が必要
 registerScheme();
 
+// 外部 (ブラウザ拡張等) からの起動用プロトコル (nndd-re-cmd://) を登録。
+// 開発時 (electron-vite経由でelectronバイナリを直接起動) はexecPathがelectron.exe自体を
+// 指すため、実行対象スクリプトを追加引数で明示する必要がある (Electron公式の推奨形)。
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient(NNDD_RE_CMD_SCHEME, process.execPath, [path.resolve(process.argv[1])]);
+  }
+} else {
+  app.setAsDefaultProtocolClient(NNDD_RE_CMD_SCHEME);
+}
+
 // 多重起動防止: 2つ目のインスタンスは既存ウィンドウを復元して終了
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, argv) => {
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       if (!mainWindow.isVisible()) mainWindow.show();
       mainWindow.focus();
+    }
+    // Windows/Linux: nndd-re-cmd:// URL起動時、2つ目のインスタンスのargvに渡ってくる
+    const cmdUrl = extractCmdUrlFromArgv(argv);
+    if (cmdUrl && cmdApi) {
+      handleCmdUrl(cmdUrl, cmdApi);
     }
   });
 }
@@ -241,7 +261,13 @@ app.whenReady().then(async () => {
   trayManager.initialize();
 
   // IPC 登録 (トレイ参照・メインウィンドウ参照・バックアップマネージャーを渡して連携)
-  registerIpcHandlers(library, trayManager, () => mainWindow, backupManager);
+  cmdApi = registerIpcHandlers(library, trayManager, () => mainWindow, backupManager);
+
+  // 初回起動時、nndd-re-cmd:// URL経由の起動なら処理 (Windows/Linuxはargv、未起動時のみここで拾う)
+  const initialCmdUrl = extractCmdUrlFromArgv(process.argv);
+  if (initialCmdUrl) {
+    handleCmdUrl(initialCmdUrl, cmdApi);
+  }
 
   // 内蔵HTTPサーバー起動 (設定が有効な場合)
   const httpCfg = config.get('httpServer');
