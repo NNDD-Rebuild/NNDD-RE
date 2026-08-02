@@ -1581,41 +1581,45 @@ export function registerIpcHandlers(
     return true;
   });
 
-  // ユーザーアイコンURL取得 (nvapi /v1/users/{userId})
-  ipcMain.handle(IpcChannel.USER_ICON_FETCH, async (_e, userId: string | number) => {
-    try {
-      const ctx = NicoContext.get();
-      const url = `https://nvapi.nicovideo.jp/v1/users/${encodeURIComponent(String(userId))}`;
-      interface UserRes {
-        meta?: { status?: number };
-        data?: { user?: { icons?: { small?: string; large?: string } } };
-      }
-      const res = await ctx.http.getJson<UserRes>(url, { timeoutMs: 8000 });
-      return res.data?.user?.icons?.small ?? null;
-    } catch {
-      return null;
-    }
-  });
+  // ユーザー情報取得 (nvapi /v1/users/{userId})。
+  // 退会・削除済みユーザーは何度呼んでも404が返り続けるため、結果 (失敗時はnull) をプロセス内メモリにキャッシュし再フェッチを防ぐ。
+  interface CachedUserInfo { nickname: string; iconUrl: string }
+  const userInfoCache = new Map<string, CachedUserInfo | null>();
 
-  ipcMain.handle(IpcChannel.USER_INFO_FETCH, async (_e, userId: string | number) => {
+  async function fetchUserInfoCached(userId: string | number): Promise<CachedUserInfo | null> {
+    const key = String(userId);
+    if (userInfoCache.has(key)) return userInfoCache.get(key) ?? null;
+    let result: CachedUserInfo | null = null;
     try {
       const ctx = NicoContext.get();
-      const url = `https://nvapi.nicovideo.jp/v1/users/${encodeURIComponent(String(userId))}`;
+      const url = `https://nvapi.nicovideo.jp/v1/users/${encodeURIComponent(key)}`;
       interface UserRes {
         meta?: { status?: number };
         data?: { user?: { nickname?: string; icons?: { small?: string; large?: string } } };
       }
       const res = await ctx.http.getJson<UserRes>(url, { timeoutMs: 8000 });
       const user = res.data?.user;
-      if (!user) return null;
-      let iconUrl = user.icons?.small ?? '';
-      if (iconUrl && ImageCache.isEnabled()) {
-        iconUrl = ImageCache.cacheUrlList([iconUrl], ctx.http)[0];
+      if (user) {
+        let iconUrl = user.icons?.small ?? '';
+        if (iconUrl && ImageCache.isEnabled()) {
+          iconUrl = ImageCache.cacheUrlList([iconUrl], ctx.http)[0];
+        }
+        result = { nickname: user.nickname ?? '', iconUrl };
       }
-      return { nickname: user.nickname ?? '', iconUrl };
     } catch {
-      return null;
+      result = null;
     }
+    userInfoCache.set(key, result);
+    return result;
+  }
+
+  ipcMain.handle(IpcChannel.USER_ICON_FETCH, async (_e, userId: string | number) => {
+    const info = await fetchUserInfoCached(userId);
+    return info?.iconUrl ?? null;
+  });
+
+  ipcMain.handle(IpcChannel.USER_INFO_FETCH, async (_e, userId: string | number) => {
+    return fetchUserInfoCached(userId);
   });
 
   ipcMain.handle(IpcChannel.USER_MYLISTS_FETCH, async (_e, userId: string) => {
