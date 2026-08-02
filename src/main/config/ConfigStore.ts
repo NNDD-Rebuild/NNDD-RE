@@ -103,6 +103,13 @@ export interface NnddConfig {
    */
   hideSensitiveContents: boolean;
 
+  /**
+   * 検索タブで使う検索APIの種類。
+   *   - 'snapshot' (デフォルト): スナップショット検索API v2。日次更新のため新着動画が反映されるまで最大1日程度のラグがある。
+   *   - 'nvapi': nvapi.nicovideo.jp/v2/search/video。ほぼリアルタイムだが検索結果にタグ情報を含まない。
+   */
+  searchApi: 'snapshot' | 'nvapi';
+
   /** プレイヤー設定 */
   player: {
     volume: number;
@@ -348,6 +355,7 @@ const DEFAULTS: NnddConfig = {
   sensitiveVideoHistoryPolicy: 'ask',
   cacheRoot: '',
   hideSensitiveContents: true,
+  searchApi: 'snapshot',
   player: {
     volume: 1.0,
     streamingMode: 'native',

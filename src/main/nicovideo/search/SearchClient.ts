@@ -33,6 +33,33 @@ interface SnapshotV2Item {
   userId?: number | string | null;
 }
 
+interface NvapiSearchResponse {
+  meta: { status: number };
+  data: {
+    totalCount: number;
+    items: NvapiSearchItem[];
+  };
+}
+
+interface NvapiSearchItem {
+  id: string;
+  title: string;
+  shortDescription?: string;
+  thumbnail: { url: string; middleUrl?: string };
+  duration: number;
+  registeredAt: string;
+  count: { view: number; comment: number; mylist: number; like: number };
+  isChannelVideo?: boolean;
+  owner?: {
+    ownerType?: 'user' | 'channel' | string;
+    id: string;
+    name: string;
+    iconUrl: string;
+  } | null;
+}
+
+export type SearchApiMode = 'snapshot' | 'nvapi';
+
 export interface SearchOptions {
   word: string;
   type: NNDDRESearchTypeValue;
@@ -42,14 +69,19 @@ export interface SearchOptions {
 }
 
 /**
- * スナップショット検索 API V2 クライアント。
+ * ニコニコ動画検索クライアント。
  *
- * エンドポイント: https://snapshot.search.nicovideo.jp/api/v2/snapshot/video/contents/search
- *
- * 元: Niconicome の Remote/V2/Search/Search.cs / SearchUrlConstructor.cs
+ * 設定 `searchApi` により2つのAPIを切り替える。
+ *   - 'snapshot': スナップショット検索API v2 (日次更新、タグ完全一致検索に対応)
+ *     エンドポイント: https://snapshot.search.nicovideo.jp/api/v2/snapshot/video/contents/search
+ *     元: Niconicome の Remote/V2/Search/Search.cs / SearchUrlConstructor.cs
+ *   - 'nvapi': https://nvapi.nicovideo.jp/v2/search/video (ほぼリアルタイム、タグ情報を含まない)
  */
 export class SearchClient {
-  static async search(opts: SearchOptions): Promise<{
+  static async search(
+    opts: SearchOptions,
+    apiMode: SearchApiMode = 'snapshot'
+  ): Promise<{
     items: SearchResultItem[];
     totalCount: number;
   }> {
@@ -58,6 +90,7 @@ export class SearchClient {
       const item = await this.fetchByVideoId(trimmed.toLowerCase());
       if (item) return { items: [item], totalCount: 1 };
     }
+    if (apiMode === 'nvapi') return this.searchNvapi(opts);
     const url = this.buildUrl(opts);
     log.debug('search:', url);
     const res = await NicoContext.get().http.getJson<SnapshotV2Response>(url);
@@ -65,6 +98,20 @@ export class SearchClient {
     return {
       items: this.applyCachedThumbs(items),
       totalCount: res.meta?.totalCount ?? 0
+    };
+  }
+
+  private static async searchNvapi(opts: SearchOptions): Promise<{
+    items: SearchResultItem[];
+    totalCount: number;
+  }> {
+    const url = this.buildNvapiUrl(opts);
+    log.debug('searchNvapi:', url);
+    const res = await NicoContext.get().http.getJson<NvapiSearchResponse>(url);
+    const items = (res.data?.items ?? []).map(this.toItemFromNvapi);
+    return {
+      items: this.applyCachedThumbs(items),
+      totalCount: res.data?.totalCount ?? 0
     };
   }
 
@@ -156,6 +203,74 @@ export class SearchClient {
       default:
         return ['startTime', 'desc'];
     }
+  }
+
+  private static buildNvapiUrl(opts: SearchOptions): string {
+    const params = new URLSearchParams();
+    if (opts.type === NNDDRESearchType.TAG) {
+      params.set('tag', opts.word);
+    } else {
+      params.set('keyword', opts.word);
+    }
+    const [sortKey, sortOrder] = this.toNvapiSortParam(opts.sortType);
+    params.set('sortKey', sortKey);
+    params.set('sortOrder', sortOrder);
+    params.set('page', String(Math.floor((opts.offset ?? 0) / (opts.limit ?? 32)) + 1));
+    params.set('pageSize', String(Math.min(opts.limit ?? 32, 100)));
+    return `${NicoApi.SEARCH_API_NVAPI}?${params.toString()}`;
+  }
+
+  private static toNvapiSortParam(
+    sort: NNDDRESearchSortTypeValue
+  ): [string, 'asc' | 'desc'] {
+    switch (sort) {
+      case 'registeredAt_desc':
+        return ['registeredAt', 'desc'];
+      case 'registeredAt_asc':
+        return ['registeredAt', 'asc'];
+      case 'viewCount_desc':
+        return ['viewCount', 'desc'];
+      case 'viewCount_asc':
+        return ['viewCount', 'asc'];
+      case 'commentCount_desc':
+        return ['commentCount', 'desc'];
+      case 'commentCount_asc':
+        return ['commentCount', 'asc'];
+      case 'mylistCount_desc':
+        return ['mylistCount', 'desc'];
+      case 'mylistCount_asc':
+        return ['mylistCount', 'asc'];
+      case 'likeCount_desc':
+        return ['likeCount', 'desc'];
+      case 'length_asc':
+        return ['duration', 'asc'];
+      case 'length_desc':
+        return ['duration', 'desc'];
+      default:
+        return ['registeredAt', 'desc'];
+    }
+  }
+
+  private static toItemFromNvapi(d: NvapiSearchItem): SearchResultItem {
+    const isChannelVideo = !!d.isChannelVideo || d.owner?.ownerType === 'channel';
+    return {
+      videoId: d.id,
+      title: d.title,
+      description: d.shortDescription ?? '',
+      thumbnailUrl: d.thumbnail?.middleUrl ?? d.thumbnail?.url ?? '',
+      length: d.duration,
+      viewCount: d.count?.view ?? 0,
+      commentCount: d.count?.comment ?? 0,
+      mylistCount: d.count?.mylist ?? 0,
+      likeCount: d.count?.like ?? 0,
+      registeredAt: new Date(d.registeredAt),
+      // nvapiの検索結果にはタグ情報が含まれない (タグ表示・タグクリック検索は非対応)
+      tags: [],
+      author: d.owner
+        ? { id: d.owner.id, nickname: d.owner.name, iconUrl: d.owner.iconUrl }
+        : undefined,
+      isChannelVideo
+    };
   }
 
   private static toItem(d: SnapshotV2Item): SearchResultItem {

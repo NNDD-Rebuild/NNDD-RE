@@ -913,7 +913,8 @@ export function registerIpcHandlers(
 
   // --- 検索 ---
   ipcMain.handle(IpcChannel.SEARCH_EXECUTE, async (_e, opts: SearchOptions) => {
-    return SearchClient.search(opts);
+    const searchApi = getConfigStore().get('searchApi');
+    return SearchClient.search(opts, searchApi);
   });
 
   ipcMain.handle(IpcChannel.SEARCH_SAVED_LIST, () => {

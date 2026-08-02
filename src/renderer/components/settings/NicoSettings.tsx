@@ -23,6 +23,7 @@ export function NicoSettings(): JSX.Element {
     'hideSensitiveContents',
     true
   );
+  const [searchApi, setSearchApi] = useConfig<'snapshot' | 'nvapi'>('searchApi', 'snapshot');
 
   const setContentViewMode = (mode: 'grid' | 'list'): void => {
     setContentViewModeConfig(mode);
@@ -78,6 +79,32 @@ export function NicoSettings(): JSX.Element {
           <span className="text-xs text-nndd-subtext ml-2">
             (OFFでランキングにR18等の閲覧注意動画も表示)
           </span>
+        </Row>
+        <Row label="検索API">
+          <div className="flex gap-4 text-sm">
+            {(
+              [
+                { value: 'snapshot', label: 'スナップショット', desc: '日次更新。新着動画の反映に最大1日程度かかる' },
+                { value: 'nvapi', label: 'nvapi (即時反映)', desc: '投稿直後の動画も検索できる。検索結果にタグ情報は出ない' }
+              ] as { value: 'snapshot' | 'nvapi'; label: string; desc: string }[]
+            ).map(({ value, label, desc }) => (
+              <label key={value} className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="searchApi"
+                  value={value}
+                  checked={searchApi === value}
+                  onChange={() => setSearchApi(value)}
+                  className="mt-0.5"
+                />
+                <span>
+                  <span className="font-medium">{label}</span>
+                  <br />
+                  <span className="text-xs text-nndd-subtext">{desc}</span>
+                </span>
+              </label>
+            ))}
+          </div>
         </Row>
       </Section>
 

@@ -33,9 +33,11 @@ export const NicoApi = {
   /** ウォッチレイター */
   WATCH_LATER_API: 'https://nvapi.nicovideo.jp/v1/users/me/watch-later',
 
-  /** 検索API (V2 スナップショット形式) */
+  /** 検索API (V2 スナップショット形式、日次更新) */
   SEARCH_API:
     'https://snapshot.search.nicovideo.jp/api/v2/snapshot/video/contents/search',
+  /** 検索API (nvapi、ほぼリアルタイム。タグ情報は含まない) */
+  SEARCH_API_NVAPI: 'https://nvapi.nicovideo.jp/v2/search/video',
 
   /** ユーザー投稿動画 */
   USER_VIDEOS_API: 'https://nvapi.nicovideo.jp/v3/users/',
