@@ -65,5 +65,11 @@
     "tailwindcss": "^3.4.13",
     "typescript": "^5.6.2",
     "vite": "^7.3.6"
+  },
+  "allowScripts": {
+    "better-sqlite3@12.11.1": true,
+    "electron-winstaller@5.4.0": true,
+    "esbuild@0.28.1": true,
+    "esbuild@0.25.12": true
   }
 }
