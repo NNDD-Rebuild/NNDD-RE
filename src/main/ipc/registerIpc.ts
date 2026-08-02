@@ -53,6 +53,7 @@ import { CommentWindowManager } from '../player/CommentWindowManager';
 import { BinaryInstaller } from '../util/BinaryInstaller';
 import type { NNDDREComment } from '@shared/types';
 import { YtDlpStreamer } from '../nicovideo/video/YtDlpStreamer';
+import { LocalTranscodeCache } from '../nicovideo/video/LocalTranscodeCache';
 import { LibraryScanner } from '../library/LibraryScanner';
 import { TrayManager } from '../tray/TrayManager';
 import { DownloadStatusType } from '@shared/types';
@@ -780,7 +781,10 @@ export function registerIpcHandlers(
           if (fsmod.existsSync(video.uri)) {
             log.verbose('VIDEO_OPEN_PLAYER: found in library, using local file', video.uri);
             PlayerManager.get().open({
-              localPath: video.uri,
+              // 付帯ファイル (コメントXML等) は元ファイルの隣にあるため、
+              // トランスコード後のキャッシュパスではなく元パスから解決する。
+              localFiles: PlayerManager.get().resolveLocalFiles(video.uri),
+              localPath: await ensurePlayableLocalPath(video.uri),
               videoId: params.videoId,
               searchPlaylist: params.searchPlaylist,
               autoNext: params.autoNext,
@@ -806,7 +810,18 @@ export function registerIpcHandlers(
           WatchInfoHandler.fetchWatchInfo(params.videoId)
         );
       }
-      PlayerManager.get().open({ ...params, resumeSec });
+      const resolvedLocalFiles = params.localPath && !params.localFiles
+        ? PlayerManager.get().resolveLocalFiles(params.localPath)
+        : params.localFiles;
+      const resolvedLocalPath = params.localPath
+        ? await ensurePlayableLocalPath(params.localPath)
+        : params.localPath;
+      PlayerManager.get().open({
+        ...params,
+        localFiles: resolvedLocalFiles,
+        localPath: resolvedLocalPath,
+        resumeSec
+      });
       return true;
     }
   );
@@ -1892,6 +1907,20 @@ export function registerIpcHandlers(
   setInterval(checkSession, 30 * 60 * 1000);
 
   log.info('IPC handlers registered');
+}
+
+/**
+ * .flv/.swf 拡張子だが実体がMP4 (本家NNDD時代の遺物) の場合は、正しい拡張子で
+ * リンクしたキャッシュパスを返す。実体不明/非対応コーデック等で再生できない場合は
+ * 元パスのまま返す (再生自体は従来通り試みる)。
+ */
+async function ensurePlayableLocalPath(localPath: string): Promise<string> {
+  const playable = await LocalTranscodeCache.ensurePlayable(localPath);
+  if (!playable) {
+    log.warn('ensurePlayableLocalPath: transcode failed, fallback to original', localPath);
+    return localPath;
+  }
+  return playable;
 }
 
 /**

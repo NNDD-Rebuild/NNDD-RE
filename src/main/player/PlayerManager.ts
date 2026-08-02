@@ -133,8 +133,14 @@ export class PlayerManager {
     this.windowHideHistory.set(win, hideHistory);
 
     // 概要欄等のリンクを新規BrowserWindowで開こうとするとハンドラ未設定でクラッシュしうるため、
-    // 既定の新規ウィンドウ生成を拒否し外部ブラウザで開く
+    // 既定の新規ウィンドウ生成を拒否し外部ブラウザで開く。
+    // ただし Document Picture-in-Picture (ミニプレイヤー) は disposition: 'picture-in-picture' で
+    // 来るため、これは許可しないと about:blank が外部ブラウザで開いてしまう。
     win.webContents.setWindowOpenHandler((details) => {
+      // Electronの型定義が Document Picture-in-Picture の disposition 値に未対応のためキャスト
+      if ((details.disposition as string) === 'picture-in-picture') {
+        return { action: 'allow' };
+      }
       void shell.openExternal(details.url);
       return { action: 'deny' };
     });
@@ -209,7 +215,7 @@ export class PlayerManager {
    *     `title - [id].jpg` (サムネ)
    *   旧形式 `[id]title.mp4` も後方互換で対応。
    */
-  private resolveLocalFiles(videoPath: string): OpenPlayerParams['localFiles'] {
+  resolveLocalFiles(videoPath: string): OpenPlayerParams['localFiles'] {
     const dir = path.dirname(videoPath);
     const base = path.basename(videoPath).replace(/\.[^.]+$/, '');
     const pick = (suffix: string): string | undefined => {

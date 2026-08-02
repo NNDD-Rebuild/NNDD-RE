@@ -6,6 +6,13 @@ declare global {
   interface Window {
     electron: ElectronAPI;
     nndd: NnddPreloadApi;
+    documentPictureInPicture?: DocumentPictureInPicture;
+  }
+
+  // Document Picture-in-Picture API (Chromium 116+, TS DOM libに未収録)
+  interface DocumentPictureInPicture extends EventTarget {
+    readonly window: Window | null;
+    requestWindow: (options?: { width?: number; height?: number }) => Promise<Window>;
   }
 
   // Electron webview タグの JSX 型宣言

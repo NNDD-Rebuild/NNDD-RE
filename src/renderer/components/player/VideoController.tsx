@@ -4,6 +4,10 @@ import { useConfig } from '@renderer/hooks/useConfig';
 
 interface Props {
   video: HTMLVideoElement | null;
+  /** 現在Document Picture-in-Picture中かどうか (VideoPlayer の onPipChange で更新した値を渡す) */
+  docPipActive?: boolean;
+  /** Document Picture-in-Picture の開始/終了 (VideoPlayerHandle.togglePip を呼ぶ) */
+  onToggleDocPip?: () => void;
   showComments: boolean;
   onToggleComments: () => void;
   onToggleFullscreen?: () => void;
@@ -31,6 +35,8 @@ interface Props {
  */
 export function VideoController({
   video,
+  docPipActive,
+  onToggleDocPip,
   showComments,
   onToggleComments,
   onToggleFullscreen,
@@ -57,7 +63,9 @@ export function VideoController({
   const [muted, setMuted] = useState(false);
   const [rate, setRate] = useState(1.0);
   const [inPip, setInPip] = useState(false);
-  const pipSupported = typeof document !== 'undefined' && document.pictureInPictureEnabled;
+  const docPipSupported = typeof window !== 'undefined' && 'documentPictureInPicture' in window;
+  const pipSupported =
+    docPipSupported || (typeof document !== 'undefined' && document.pictureInPictureEnabled);
   const [volumeNormalize] = useConfig<boolean>('player.volumeNormalize', false);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
@@ -115,9 +123,14 @@ export function VideoController({
   // MediaElementAudioSourceNode は同一 video 要素に対して一度しか作成できないため、
   // 初回接続時に作成し、以降は ON/OFF で source→destination / source→compressor→destination の
   // 経路を切り替えるだけにする (作り直すと動画によっては無音になる)。
+  // ローカル再生 (ループバックHTTP配信) は video 側に crossOrigin が無いと Web Audio に
+  // タップした時点で CORS tainted 扱いになり無音化するため、機能OFF時は
+  // そもそも Web Audio に一切タップしない (ネイティブ出力のまま)。
   useEffect(() => {
     if (!video) return;
-    if (connectedVideoRef.current !== video) {
+    const alreadyConnected = connectedVideoRef.current === video;
+    if (!volumeNormalize && !alreadyConnected) return;
+    if (!alreadyConnected) {
       try {
         const ctx = audioCtxRef.current ?? new AudioContext();
         audioCtxRef.current = ctx;
@@ -178,7 +191,8 @@ export function VideoController({
     video.playbackRate = r;
   };
 
-  const togglePip = async (): Promise<void> => {
+  // 標準 video Picture-in-Picture (コメント非対応環境向けフォールバック)
+  const toggleStandardPip = async (): Promise<void> => {
     if (!video) return;
     try {
       if (document.pictureInPictureElement) {
@@ -190,6 +204,16 @@ export function VideoController({
       console.warn('Picture-in-Picture failed:', e);
     }
   };
+
+  const togglePip = (): void => {
+    if (docPipSupported && onToggleDocPip) {
+      onToggleDocPip();
+      return;
+    }
+    toggleStandardPip().catch(console.error);
+  };
+
+  const displayInPip = docPipSupported && onToggleDocPip ? !!docPipActive : inPip;
 
   return (
     <div
@@ -335,8 +359,11 @@ export function VideoController({
       )}
 
       {!audioOnly && pipSupported && (
-        <Btn onClick={() => { togglePip().catch(console.error); }} title="ミニプレイヤー (Picture-in-Picture)">
-          {inPip ? '🗗' : '🗖'}
+        <Btn
+          onClick={togglePip}
+          title={docPipSupported && onToggleDocPip ? 'ミニプレイヤー (コメント表示対応)' : 'ミニプレイヤー (Picture-in-Picture)'}
+        >
+          {displayInPip ? '🗗' : '🗖'}
         </Btn>
       )}
 

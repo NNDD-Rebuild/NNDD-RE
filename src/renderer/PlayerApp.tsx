@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { NNDDREComment, WatchPageInfo, DomandStreamCandidate } from '@shared/types';
 import { IpcChannel } from '@shared/types';
 import { buildLocalUrl, isLocalMediaUrl, COMMENT_FONT_FAMILY } from '@shared/constants';
-import { VideoPlayer } from './components/player/VideoPlayer';
+import { VideoPlayer, type VideoPlayerHandle } from './components/player/VideoPlayer';
 import { VideoController } from './components/player/VideoController';
 import { VideoInfoView } from './components/player/VideoInfoView';
 import { HistoryBlockedDialog } from './components/player/HistoryBlockedDialog';
@@ -80,6 +80,8 @@ export default function PlayerApp(): JSX.Element {
     videoElementRef.current = el;
     setVideo(el);
   };
+  const videoPlayerRef = useRef<VideoPlayerHandle>(null);
+  const [docPipActive, setDocPipActive] = useState(false);
   const [isLocal, setIsLocal] = useState(false);
   const [localCommentXmlPath, setLocalCommentXmlPath] = useState<string | undefined>(undefined);
   const [localIchibaHtmlPath, setLocalIchibaHtmlPath] = useState<string | undefined>(undefined);
@@ -1456,7 +1458,9 @@ export default function PlayerApp(): JSX.Element {
                   isHls={isHls}
                   comments={renderedComments}
                   commentConfig={commentConfig}
+                  ref={videoPlayerRef}
                   videoRefCallback={setVideoWithRef}
+                  onPipChange={setDocPipActive}
                   pendingSeekRef={pendingSeekRef}
                   loading={loading && !src}
                   videoId={watch?.videoId ?? playInfoRef.current?.videoId}
@@ -1511,6 +1515,8 @@ export default function PlayerApp(): JSX.Element {
               )}
               <VideoController
                 video={video}
+                docPipActive={docPipActive}
+                onToggleDocPip={() => { videoPlayerRef.current?.togglePip().catch(console.error); }}
                 showComments={showComments}
                 onToggleComments={() => setShowComments((v) => !v)}
                 onToggleFullscreen={toggleFullscreen}

@@ -30,7 +30,7 @@ export class LibraryScanner {
   static async scan(
     library: LibraryManager,
     onProgress?: (current: string, count: number) => void
-  ): Promise<{ added: number; updated: number; total: number }> {
+  ): Promise<{ added: number; updated: number; removed: number; total: number }> {
     const root = library.videoDir;
     let added = 0;
     let updated = 0;
@@ -38,7 +38,7 @@ export class LibraryScanner {
 
     if (!fs.existsSync(root)) {
       log.warn('library directory not found:', root);
-      return { added, updated, total };
+      return { added, updated, removed: 0, total };
     }
 
     const walk = async (dir: string): Promise<void> => {
@@ -66,9 +66,19 @@ export class LibraryScanner {
     };
 
     await walk(root);
+
+    // ディスク上から消えた動画をDBからも削除する。
+    let removed = 0;
+    for (const video of library.videoDao.list()) {
+      if (!fs.existsSync(video.uri)) {
+        library.videoDao.delete(video.id);
+        removed++;
+      }
+    }
+
     library.videoDao.cleanupOrphanFiles();
-    log.info(`scan complete: added=${added} updated=${updated} total=${total}`);
-    return { added, updated, total };
+    log.info(`scan complete: added=${added} updated=${updated} removed=${removed} total=${total}`);
+    return { added, updated, removed, total };
   }
 
   /**
@@ -80,6 +90,14 @@ export class LibraryScanner {
   ): Promise<'added' | 'updated' | 'skipped'> {
     const fileName = path.basename(filePath);
     const baseName = fileName.replace(/\.[^.]+$/, '');
+
+    // [Nicowari] 素材はニコ割広告用のFlashで、動画本体と同じvideoIdを名乗るため
+    // 除外しないと本体ファイルのDBレコードを上書きしてしまう。
+    if (baseName.includes('[Nicowari]')) {
+      log.debug('skip (Nicowari素材):', filePath);
+      return 'skipped';
+    }
+
     const videoId = this.extractVideoId(baseName);
     const title = this.extractTitle(baseName, videoId);
 

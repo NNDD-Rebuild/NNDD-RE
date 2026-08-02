@@ -24,7 +24,7 @@ export const NicoApi = {
   DMC_SESSION_BASE: 'https://api.dmc.nico/api/sessions/',
 
   /** スレッド (コメント) API (V3) */
-  COMMENT_THREADS_V3: 'https://nvcomment.nicovideo.jp/v1/threads',
+  COMMENT_THREADS_V3: 'https://public.nvcomment.nicovideo.jp/v1/threads',
 
   /** マイリストAPI (V2) */
   MYLIST_API_BASE: 'https://nvapi.nicovideo.jp/v1/users/me/mylists',

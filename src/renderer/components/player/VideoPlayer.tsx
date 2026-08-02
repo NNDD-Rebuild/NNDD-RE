@@ -1,4 +1,11 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  useState
+} from 'react';
 import Hls from 'hls.js';
 import mpegts from 'mpegts.js';
 import type { NNDDREComment } from '@shared/types';
@@ -24,6 +31,15 @@ interface Props {
   onEnded?: () => void;
   /** 音声のみ再生モード (映像非表示) */
   audioOnly?: boolean;
+  /** ミニプレイヤー (Document Picture-in-Picture) のON/OFF通知 */
+  onPipChange?: (inPip: boolean) => void;
+}
+
+export interface VideoPlayerHandle {
+  /** Document Picture-in-Picture 対応環境かどうか */
+  pipSupported: boolean;
+  /** video + コメントオーバーレイをまとめてミニプレイヤー化/解除する */
+  togglePip: () => Promise<void>;
 }
 
 /**
@@ -34,21 +50,26 @@ interface Props {
  *  - mp4/flv のローカル/HTTPは <video> 直接
  *  - 上に CommentOverlay を被せる
  */
-export function VideoPlayer({
-  src,
-  isHls,
-  comments,
-  commentConfig,
-  loading,
-  videoRefCallback,
-  pendingSeekRef,
-  videoId,
-  className,
-  onVideoError,
-  onEnded,
-  audioOnly
-}: Props): JSX.Element {
+export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
+  {
+    src,
+    isHls,
+    comments,
+    commentConfig,
+    loading,
+    videoRefCallback,
+    pendingSeekRef,
+    videoId,
+    className,
+    onVideoError,
+    onEnded,
+    audioOnly,
+    onPipChange
+  },
+  ref
+) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const mpegtsRef = useRef<mpegts.Player | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -56,6 +77,90 @@ export function VideoPlayer({
   const playCountedRef = useRef(false);
   const onEndedRef = useRef(onEnded);
   onEndedRef.current = onEnded;
+  const onPipChangeRef = useRef(onPipChange);
+  onPipChangeRef.current = onPipChange;
+
+  // Document Picture-in-Picture: containerRef (video + コメントcanvas) をまるごと
+  // 別ウィンドウへ移動する。ノードを移動するだけなので再生状態・WebGLコンテキストは維持される。
+  const pipWindowRef = useRef<Window | null>(null);
+  const pipPlaceholderRef = useRef<Comment | null>(null);
+
+  const restoreFromPip = (closeWindow: boolean): void => {
+    const container = containerRef.current;
+    const placeholder = pipPlaceholderRef.current;
+    if (container && placeholder?.parentNode) {
+      placeholder.parentNode.replaceChild(container, placeholder);
+    }
+    pipPlaceholderRef.current = null;
+    const pipWindow = pipWindowRef.current;
+    pipWindowRef.current = null;
+    if (closeWindow) pipWindow?.close();
+    onPipChangeRef.current?.(false);
+  };
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      pipSupported: typeof window !== 'undefined' && 'documentPictureInPicture' in window,
+      togglePip: async () => {
+        const container = containerRef.current;
+        const dpip = window.documentPictureInPicture;
+        if (!container || !dpip) return;
+        if (pipWindowRef.current) {
+          restoreFromPip(true);
+          return;
+        }
+        const rect = container.getBoundingClientRect();
+        const pipWindow = await dpip.requestWindow({
+          width: Math.max(240, Math.round(rect.width) || 480),
+          height: Math.max(135, Math.round(rect.height) || 270)
+        });
+
+        // Tailwind等のスタイルをコピーしないと、コメントオーバーレイの絶対配置が崩れる
+        [...document.styleSheets].forEach((styleSheet) => {
+          try {
+            const cssRules = [...styleSheet.cssRules].map((rule) => rule.cssText).join('');
+            const style = pipWindow.document.createElement('style');
+            style.textContent = cssRules;
+            pipWindow.document.head.appendChild(style);
+          } catch {
+            if (styleSheet.href) {
+              const link = pipWindow.document.createElement('link');
+              link.rel = 'stylesheet';
+              link.type = styleSheet.type;
+              link.media = styleSheet.media.mediaText;
+              link.href = styleSheet.href;
+              pipWindow.document.head.appendChild(link);
+            }
+          }
+        });
+        pipWindow.document.body.style.margin = '0';
+        pipWindow.document.body.style.overflow = 'hidden';
+        pipWindow.document.body.style.background = '#000';
+
+        const placeholder = document.createComment('nndd-pip-placeholder');
+        container.parentNode?.insertBefore(placeholder, container);
+        pipPlaceholderRef.current = placeholder;
+        pipWindow.document.body.append(container);
+        pipWindowRef.current = pipWindow;
+        onPipChangeRef.current?.(true);
+
+        pipWindow.addEventListener('pagehide', () => restoreFromPip(false), { once: true });
+      }
+    }),
+    []
+  );
+
+  // アンマウント時、PiP中なら物理DOM位置を先に元へ戻してからReact側の削除を通す。
+  // useLayoutEffect のクリーンアップはReactが自身のDOM除去処理を行う前に同期実行されるため、
+  // これを怠ると「PiPウィンドウにある要素を、実際の親ではない場所からremoveChildしようとして
+  // 例外になる」事故を防げる。
+  useLayoutEffect(() => {
+    return () => {
+      if (pipWindowRef.current) restoreFromPip(true);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (videoRefCallback) videoRefCallback(videoRef.current);
@@ -171,7 +276,13 @@ export function VideoPlayer({
       player.attachMediaElement(video);
       player.load();
       Promise.resolve(player.play()).catch(() => {});
+      // mpegts.js の ERROR は非対応コーデックのフレーム毎など短時間に連発しうる。
+      // player.on() に once 相当がないため手動ガードし、onVideoError の連続発火
+      // (→ handleVideoError の再取得ループ) を防ぐ。
+      let errorReported = false;
       player.on(mpegts.Events.ERROR, (type: string, _detail: object) => {
+        if (errorReported) return;
+        errorReported = true;
         const msg = `FLV error: ${type}`;
         setError(msg);
         onVideoError?.(4, msg);
@@ -203,7 +314,7 @@ export function VideoPlayer({
   }, [src, isHls]);
 
   return (
-    <div className={`relative bg-black ${className ?? ''}`}>
+    <div ref={containerRef} className={`relative bg-black ${className ?? ''}`}>
       <video
         ref={videoRef}
         className="w-full h-full bg-black"
@@ -224,4 +335,4 @@ export function VideoPlayer({
       )}
     </div>
   );
-}
+});
