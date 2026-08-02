@@ -172,6 +172,30 @@ export class LibraryScanner {
     return m ? m[1] : null;
   }
 
+  /**
+   * 指定ディレクトリ内で、ファイル名に videoId を含む全ファイルを検索する。
+   * 動画本体・コメントXML・サムネ等のサフィックスを個別に列挙する代わりに、
+   * 動画IDから逆引きすることでサフィックス漏れやファイル名のズレを吸収する。
+   * ニコ割素材 ([Nicowari]) は本体と同じ videoId を名乗るため除外する。
+   */
+  static findRelatedFiles(dir: string, videoId: string): string[] {
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return [];
+    }
+    return entries
+      .filter((e) => e.isFile())
+      .map((e) => e.name)
+      .filter((name) => {
+        if (name.includes('[Nicowari]')) return false;
+        const base = name.replace(/\.[^.]+$/, '');
+        return this.extractVideoId(base) === videoId;
+      })
+      .map((name) => path.join(dir, name));
+  }
+
   static extractTitle(baseName: string, videoId: string | null): string {
     if (!videoId) return baseName;
     // 新形式: "タイトル - [sm123]" → "タイトル"

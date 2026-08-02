@@ -182,28 +182,15 @@ export function registerIpcHandlers(
   ipcMain.handle(IpcChannel.LIBRARY_DELETE, async (_e, id: number) => {
     const fsmod = await import('node:fs');
     const pmod = await import('node:path');
-    const { VideoFileSuffix } = await import('@shared/constants');
     const video = library.videoDao.getById(id);
     if (video) {
       const dir = pmod.dirname(video.uri);
       const base = pmod.basename(video.uri).replace(/\.[^.]+$/, '');
-      const targets = [
-        video.uri,
-        pmod.join(dir, `${base}${VideoFileSuffix.COMMENT_XML}`),
-        pmod.join(dir, `${base}${VideoFileSuffix.OWNER_COMMENT_XML}`),
-        pmod.join(dir, `${base}${VideoFileSuffix.THUMB_INFO_XML}`),
-        pmod.join(dir, `${base}${VideoFileSuffix.THUMB_IMAGE}`),
-        pmod.join(dir, `${base}${VideoFileSuffix.NOW_COMMENT_JSON}`),
-
-        // [IchibaInfo].html は NNDD 互換用として削除しない
-        // 旧形式互換
-        pmod.join(dir, `${base}${VideoFileSuffix.INFO_TXT_LEGACY}`),
-        pmod.join(dir, `${base}${VideoFileSuffix.OWNER_COMMENT_XML_LEGACY}`),
-        pmod.join(dir, `${base}[コメント].xml`),
-        pmod.join(dir, `${base}[投コメ].xml`),
-        pmod.join(dir, `${base}[サムネイル情報].xml`),
-        pmod.join(dir, `${base}[サムネイル].jpg`)
-      ];
+      const videoId = LibraryScanner.extractVideoId(base);
+      // [IchibaInfo].html は NNDD 互換用として削除しない
+      const targets = (
+        videoId ? LibraryScanner.findRelatedFiles(dir, videoId) : [video.uri]
+      ).filter((p) => !p.endsWith('[IchibaInfo].html'));
       for (const p of targets) {
         try {
           if (fsmod.existsSync(p)) fsmod.unlinkSync(p);
@@ -1749,38 +1736,23 @@ export function registerIpcHandlers(
     async (_e, { videoIds, targetFolder }: { videoIds: number[]; targetFolder: string }) => {
       const fsmod = await import('node:fs');
       const pmod = await import('node:path');
-      const { VideoFileSuffix } = await import('@shared/constants');
-      const suffixes = [
-        '',
-        VideoFileSuffix.COMMENT_XML,
-        VideoFileSuffix.OWNER_COMMENT_XML,
-        VideoFileSuffix.THUMB_INFO_XML,
-        VideoFileSuffix.THUMB_IMAGE,
-        VideoFileSuffix.INFO_TXT_LEGACY,
-        VideoFileSuffix.OWNER_COMMENT_XML_LEGACY,
-        '[コメント].xml',
-        '[投コメ].xml',
-        '[サムネイル情報].xml',
-        '[サムネイル].jpg',
-      ];
       for (const id of videoIds) {
         const video = library.videoDao.getById(id);
         if (!video) continue;
         const dir = pmod.dirname(video.uri);
         const base = pmod.basename(video.uri).replace(/\.[^.]+$/, '');
-        const ext = video.uri.match(/\.[^.]+$/)?.[0] ?? '.mp4';
+        const videoId = LibraryScanner.extractVideoId(base);
+        const targets = videoId
+          ? LibraryScanner.findRelatedFiles(dir, videoId)
+          : [video.uri];
 
-        for (const suf of suffixes) {
-          const src = suf === '' ? video.uri : pmod.join(dir, `${base}${suf}`);
-          if (!fsmod.existsSync(src)) continue;
-          const destName = suf === '' ? pmod.basename(video.uri) : `${base}${suf}`;
-          const dest = pmod.join(targetFolder, destName);
+        for (const src of targets) {
+          const dest = pmod.join(targetFolder, pmod.basename(src));
           try { fsmod.renameSync(src, dest); } catch (e) { log.warn('move error:', src, '->', dest, e); }
         }
         // DBのuriを更新
         const newUri = pmod.join(targetFolder, pmod.basename(video.uri));
         library.videoDao.updateUri(id, newUri);
-        void ext; // suppress unused warning
       }
       return true;
     }
