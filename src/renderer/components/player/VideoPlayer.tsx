@@ -322,6 +322,12 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
         playsInline
         autoPlay
         controls={false}
+        onClick={() => {
+          const v = videoRef.current;
+          if (!v) return;
+          if (v.paused) v.play();
+          else v.pause();
+        }}
       />
       <CommentOverlay
         videoRef={videoRef}
