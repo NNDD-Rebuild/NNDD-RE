@@ -77,6 +77,15 @@ export const DEFAULT_RENDER_CONFIG: CommentRenderConfig = {
 };
 
 export class CommentRenderer {
+  /**
+   * アスペクト比維持のための基準仮想高さ (ライブラリ標準相当)。
+   * コメントアート (CA) はこのグローバルスケールに乗じてテキスト幅に応じた
+   * 追加補正がかかる仕組みのため、フォントサイズを画面比率と切り離して
+   * 絶対固定にすると CA が画面からはみ出す。そのため常にウィンドウサイズに
+   * 比例させ、アスペクト比の歪み (縦横不均一なスケール) だけを解消する。
+   */
+  private static readonly NORMAL_VIRTUAL_HEIGHT = 1080;
+
   private container: HTMLElement;
   private canvas: HTMLCanvasElement;
   private video: HTMLVideoElement | null = null;
@@ -259,6 +268,14 @@ export class CommentRenderer {
       ? 0
       : this.config.outlineIntensity === 'normal' ? 0.3 : 0.15;
 
+    // ライブラリ内部は setScale(rendererSize.width / canvasWidth, rendererSize.height / canvasHeight)
+    // で横方向・縦方向を個別にスケールする。canvasWidth/canvasHeight のアスペクト比が
+    // 実際の canvas と食い違うと scaleX ≠ scaleY になり文字が縦横不均一に歪むため、
+    // 実アスペクト比を保った仮想サイズを渡す (NORMAL_VIRTUAL_HEIGHT 基準)。
+    const aspect = this.canvas.width / this.canvas.height;
+    const virtualHeight = CommentRenderer.NORMAL_VIRTUAL_HEIGHT;
+    const virtualWidth = virtualHeight * aspect;
+
     this.nc = new NiconiComments(this.canvas, formatted, {
       format: 'formatted',
       // flash モード: Flash 時代の全コマンド (full/ender/AA 等) に対応
@@ -269,9 +286,11 @@ export class CommentRenderer {
       lazy: true,
       // CA 保護: 同時刻コメントアートを専用レイヤーに分離
       keepCA: this.config.keepCA,
-      // 文字縁取り設定
       config: {
-        contextStrokeOpacity: strokeOpacity
+        // 文字縁取り設定
+        contextStrokeOpacity: strokeOpacity,
+        canvasWidth: virtualWidth,
+        canvasHeight: virtualHeight
       }
     });
 
