@@ -3,6 +3,7 @@ import type { SearchResultItem, UserMylistSummary, UserSeriesSummary } from '@sh
 import { IpcChannel } from '@shared/types';
 import { VideoCard } from '../common/VideoCard';
 import type { VideoCardData } from '../common/VideoCard';
+import { VirtualizedItemList } from '../common/VirtualizedItemList';
 import { useAppStore } from '@renderer/store/useAppStore';
 import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
 import { useWatchedIds } from '@renderer/hooks/useWatchedIds';
@@ -585,40 +586,25 @@ export function FollowView(): JSX.Element {
                 <div className="text-nndd-subtext text-sm">動画が見つかりませんでした。</div>
               )}
               {displayItems.length > 0 && (
-                displayMode === 'grid' ? (
-                  <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
-                    {displayItems.map((r) => (
-                      <VideoCard
-                        key={r.videoId}
-                        data={toCardData(r)}
-                        onPlay={handlePlay}
-                        onDownload={handleDownload}
-                        onNiconico={handleNiconico}
-                        onUserPage={handleUserPage}
-                        onPlayAudioOnly={handlePlayAudioOnly}
-                        isDownloaded={downloadedIds.has(r.videoId)}
-                        isWatched={watchedIds.has(r.videoId)}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-1">
-                    {displayItems.map((r) => (
-                      <VideoCard
-                        key={r.videoId}
-                        data={toCardData(r)}
-                        layout="list"
-                        onPlay={handlePlay}
-                        onDownload={handleDownload}
-                        onNiconico={handleNiconico}
-                        onUserPage={handleUserPage}
-                        onPlayAudioOnly={handlePlayAudioOnly}
-                        isDownloaded={downloadedIds.has(r.videoId)}
-                        isWatched={watchedIds.has(r.videoId)}
-                      />
-                    ))}
-                  </div>
-                )
+                <VirtualizedItemList
+                  items={displayItems}
+                  layout={displayMode}
+                  scrollElementRef={scrollRef}
+                  getKey={(r) => r.videoId}
+                  renderItem={(r) => (
+                    <VideoCard
+                      data={toCardData(r)}
+                      layout={displayMode === 'list' ? 'list' : undefined}
+                      onPlay={handlePlay}
+                      onDownload={handleDownload}
+                      onNiconico={handleNiconico}
+                      onUserPage={handleUserPage}
+                      onPlayAudioOnly={handlePlayAudioOnly}
+                      isDownloaded={downloadedIds.has(r.videoId)}
+                      isWatched={watchedIds.has(r.videoId)}
+                    />
+                  )}
+                />
               )}
             </>
           )}

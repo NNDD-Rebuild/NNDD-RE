@@ -4,6 +4,7 @@ import { IpcChannel, RssType } from '@shared/types';
 import { parseMylistSource } from '@shared/utils/parseMylistUrl';
 import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
 import { VideoCard, type VideoCardData } from '../common/VideoCard';
+import { VirtualizedItemList } from '../common/VirtualizedItemList';
 import { ContinuousPlayButton } from '../common/ContinuousPlayButton';
 import { useAppStore } from '../../store/useAppStore';
 import { useWatchedIds } from '@renderer/hooks/useWatchedIds';
@@ -1147,97 +1148,95 @@ export function MyListView(): JSX.Element {
                       ? '動画がありません。動画の右クリックメニューから「プレイリストに追加」してください。'
                       : '動画なし'}
                 </div>
-              ) : displayMode === 'grid' ? (
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
-                  {filteredItems.map((it) => {
-                    const idx = items.findIndex((x) => x.videoId === it.videoId);
-                    return (
-                    <div
-                      key={it.videoId}
-                      onClick={(e) => handleItemClick(it.videoId, e)}
-                      className={[
-                        'relative rounded cursor-pointer',
-                        selectedIds.has(it.videoId) ? 'ring-2 ring-nndd-accent' : ''
-                      ].join(' ')}
-                    >
-                      <VideoCard
-                        data={it}
-                        onPlay={handlePlay}
-                        onDownload={handleDownload}
-                        onNiconico={handleNiconico}
-                        onPlayAudioOnly={handlePlayAudioOnly}
-                        isDownloaded={downloadedIds.has(it.videoId)}
-                        isWatched={watchedIds.has(it.videoId)}
-                        onRemove={isPlaylistSelected ? handleRemoveVideoFromPlaylist : undefined}
-                      />
-                      {isPlaylistSelected && (
-                        <div className="absolute left-1 top-1 flex flex-col gap-0.5 z-10">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); moveItem(idx, -1); }}
-                            disabled={idx <= 0}
-                            className="w-5 h-5 text-xs bg-black/60 text-white rounded disabled:opacity-30"
-                            title="上へ"
-                          >▲</button>
-                          <button
-                            onClick={(e) => { e.stopPropagation(); moveItem(idx, 1); }}
-                            disabled={idx === items.length - 1}
-                            className="w-5 h-5 text-xs bg-black/60 text-white rounded disabled:opacity-30"
-                            title="下へ"
-                          >▼</button>
-                        </div>
-                      )}
-                    </div>
-                    );
-                  })}
-                </div>
               ) : (
-                <div className="flex flex-col gap-1">
-                  {filteredItems.map((it) => {
+                <VirtualizedItemList
+                  items={filteredItems}
+                  layout={displayMode}
+                  scrollElementRef={scrollRef}
+                  getKey={(it) => it.videoId}
+                  renderItem={(it) => {
                     const idx = items.findIndex((x) => x.videoId === it.videoId);
-                    return (
-                    <div
-                      key={it.videoId}
-                      className={[
-                        'flex items-center gap-1 rounded',
-                        selectedIds.has(it.videoId) ? 'ring-2 ring-nndd-accent' : ''
-                      ].join(' ')}
-                    >
-                      {isPlaylistSelected && (
-                        <div className="flex flex-col gap-0.5 shrink-0">
-                          <button
-                            onClick={() => moveItem(idx, -1)}
-                            disabled={idx <= 0}
-                            className="w-5 h-4 text-xs bg-nndd-border rounded disabled:opacity-30"
-                            title="上へ"
-                          >▲</button>
-                          <button
-                            onClick={() => moveItem(idx, 1)}
-                            disabled={idx === items.length - 1}
-                            className="w-5 h-4 text-xs bg-nndd-border rounded disabled:opacity-30"
-                            title="下へ"
-                          >▼</button>
+                    if (displayMode === 'grid') {
+                      return (
+                        <div
+                          onClick={(e) => handleItemClick(it.videoId, e)}
+                          className={[
+                            'relative rounded cursor-pointer',
+                            selectedIds.has(it.videoId) ? 'ring-2 ring-nndd-accent' : ''
+                          ].join(' ')}
+                        >
+                          <VideoCard
+                            data={it}
+                            onPlay={handlePlay}
+                            onDownload={handleDownload}
+                            onNiconico={handleNiconico}
+                            onPlayAudioOnly={handlePlayAudioOnly}
+                            isDownloaded={downloadedIds.has(it.videoId)}
+                            isWatched={watchedIds.has(it.videoId)}
+                            onRemove={isPlaylistSelected ? handleRemoveVideoFromPlaylist : undefined}
+                          />
+                          {isPlaylistSelected && (
+                            <div className="absolute left-1 top-1 flex flex-col gap-0.5 z-10">
+                              <button
+                                onClick={(e) => { e.stopPropagation(); moveItem(idx, -1); }}
+                                disabled={idx <= 0}
+                                className="w-5 h-5 text-xs bg-black/60 text-white rounded disabled:opacity-30"
+                                title="上へ"
+                              >▲</button>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); moveItem(idx, 1); }}
+                                disabled={idx === items.length - 1}
+                                className="w-5 h-5 text-xs bg-black/60 text-white rounded disabled:opacity-30"
+                                title="下へ"
+                              >▼</button>
+                            </div>
+                          )}
                         </div>
-                      )}
+                      );
+                    }
+                    return (
                       <div
-                        className="flex-1 min-w-0 cursor-pointer"
-                        onClick={(e) => handleItemClick(it.videoId, e)}
+                        className={[
+                          'flex items-center gap-1 rounded',
+                          selectedIds.has(it.videoId) ? 'ring-2 ring-nndd-accent' : ''
+                        ].join(' ')}
                       >
-                        <VideoCard
-                          data={it}
-                          layout="list"
-                          onPlay={handlePlay}
-                          onDownload={handleDownload}
-                          onNiconico={handleNiconico}
-                          onPlayAudioOnly={handlePlayAudioOnly}
-                          isDownloaded={downloadedIds.has(it.videoId)}
-                        isWatched={watchedIds.has(it.videoId)}
-                          onRemove={isPlaylistSelected ? handleRemoveVideoFromPlaylist : undefined}
-                        />
+                        {isPlaylistSelected && (
+                          <div className="flex flex-col gap-0.5 shrink-0">
+                            <button
+                              onClick={() => moveItem(idx, -1)}
+                              disabled={idx <= 0}
+                              className="w-5 h-4 text-xs bg-nndd-border rounded disabled:opacity-30"
+                              title="上へ"
+                            >▲</button>
+                            <button
+                              onClick={() => moveItem(idx, 1)}
+                              disabled={idx === items.length - 1}
+                              className="w-5 h-4 text-xs bg-nndd-border rounded disabled:opacity-30"
+                              title="下へ"
+                            >▼</button>
+                          </div>
+                        )}
+                        <div
+                          className="flex-1 min-w-0 cursor-pointer"
+                          onClick={(e) => handleItemClick(it.videoId, e)}
+                        >
+                          <VideoCard
+                            data={it}
+                            layout="list"
+                            onPlay={handlePlay}
+                            onDownload={handleDownload}
+                            onNiconico={handleNiconico}
+                            onPlayAudioOnly={handlePlayAudioOnly}
+                            isDownloaded={downloadedIds.has(it.videoId)}
+                            isWatched={watchedIds.has(it.videoId)}
+                            onRemove={isPlaylistSelected ? handleRemoveVideoFromPlaylist : undefined}
+                          />
+                        </div>
                       </div>
-                    </div>
                     );
-                  })}
-                </div>
+                  }}
+                />
               )}
             </div>
           </>

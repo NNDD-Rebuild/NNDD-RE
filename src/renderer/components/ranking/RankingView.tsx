@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RankingItem, RankingTermValue, RankingGenreInfo } from '@shared/types';
 import { RANKING_GENRES, RANKING_TERMS } from '@shared/constants';
 import { VideoCard } from '../common/VideoCard';
+import { VirtualizedItemList } from '../common/VirtualizedItemList';
 import { useAppStore } from '@renderer/store/useAppStore';
 import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
 import { useWatchedIds } from '@renderer/hooks/useWatchedIds';
@@ -184,72 +185,41 @@ export function RankingView(): JSX.Element {
           <div className="text-nndd-subtext text-sm">ランキングが取得できませんでした。</div>
         )}
         {items.length > 0 && (
-          displayMode === 'grid' ? (
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
-              {items.map((r) => (
-                <VideoCard
-                  key={r.videoId}
-                  data={{
-                    videoId: r.videoId,
-                    title: r.title,
-                    thumbnailUrl: r.thumbnailUrl,
-                    length: r.length,
-                    viewCount: r.viewCount,
-                    commentCount: r.commentCount,
-                    mylistCount: r.mylistCount,
-                    likeCount: r.likeCount,
-                    registeredAt: r.registeredAt,
-                    rank: r.rank,
-                    description: r.description,
-                    isChannelVideo: r.isChannelVideo,
-                    authorId: r.authorId,
-                    authorNickname: r.authorNickname,
-                    authorIconUrl: r.authorIconUrl,
-                  }}
-                  onPlay={handlePlay}
-                  onDownload={handleDownload}
-                  onNiconico={handleNiconico}
-                  onPlayAudioOnly={handlePlayAudioOnly}
-                  onUserPage={handleUserPage}
-                  isDownloaded={downloadedIds.has(r.videoId)}
-                  isWatched={watchedIds.has(r.videoId)}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="flex flex-col gap-1">
-              {items.map((r) => (
-                <VideoCard
-                  key={r.videoId}
-                  layout="list"
-                  data={{
-                    videoId: r.videoId,
-                    title: r.title,
-                    thumbnailUrl: r.thumbnailUrl,
-                    length: r.length,
-                    viewCount: r.viewCount,
-                    commentCount: r.commentCount,
-                    mylistCount: r.mylistCount,
-                    likeCount: r.likeCount,
-                    registeredAt: r.registeredAt,
-                    rank: r.rank,
-                    description: r.description,
-                    isChannelVideo: r.isChannelVideo,
-                    authorId: r.authorId,
-                    authorNickname: r.authorNickname,
-                    authorIconUrl: r.authorIconUrl,
-                  }}
-                  onPlay={handlePlay}
-                  onDownload={handleDownload}
-                  onNiconico={handleNiconico}
-                  onPlayAudioOnly={handlePlayAudioOnly}
-                  onUserPage={handleUserPage}
-                  isDownloaded={downloadedIds.has(r.videoId)}
-                  isWatched={watchedIds.has(r.videoId)}
-                />
-              ))}
-            </div>
-          )
+          <VirtualizedItemList
+            items={items}
+            layout={displayMode}
+            scrollElementRef={scrollRef}
+            getKey={(r) => r.videoId}
+            renderItem={(r) => (
+              <VideoCard
+                layout={displayMode === 'list' ? 'list' : undefined}
+                data={{
+                  videoId: r.videoId,
+                  title: r.title,
+                  thumbnailUrl: r.thumbnailUrl,
+                  length: r.length,
+                  viewCount: r.viewCount,
+                  commentCount: r.commentCount,
+                  mylistCount: r.mylistCount,
+                  likeCount: r.likeCount,
+                  registeredAt: r.registeredAt,
+                  rank: r.rank,
+                  description: r.description,
+                  isChannelVideo: r.isChannelVideo,
+                  authorId: r.authorId,
+                  authorNickname: r.authorNickname,
+                  authorIconUrl: r.authorIconUrl,
+                }}
+                onPlay={handlePlay}
+                onDownload={handleDownload}
+                onNiconico={handleNiconico}
+                onPlayAudioOnly={handlePlayAudioOnly}
+                onUserPage={handleUserPage}
+                isDownloaded={downloadedIds.has(r.videoId)}
+                isWatched={watchedIds.has(r.videoId)}
+              />
+            )}
+          />
         )}
       </div>
     </div>

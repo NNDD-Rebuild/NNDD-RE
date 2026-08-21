@@ -7,6 +7,7 @@ import type {
 } from '@shared/types';
 import { NNDDRESearchType, NNDDRESearchSortType } from '@shared/types';
 import { VideoCard } from '../common/VideoCard';
+import { VirtualizedItemList } from '../common/VirtualizedItemList';
 import { ContinuousPlayButton } from '../common/ContinuousPlayButton';
 import { useAppStore } from '@renderer/store/useAppStore';
 import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
@@ -421,66 +422,38 @@ export function SearchView(): JSX.Element {
             </div>
           )}
           {results.length > 0 && (
-            displayMode === 'grid' ? (
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-3">
-                  {results.map((r) => (
-                    <VideoCard
-                      key={r.videoId}
-                      data={{
-                        videoId: r.videoId,
-                        title: r.title,
-                        thumbnailUrl: r.thumbnailUrl,
-                        length: r.length,
-                        viewCount: r.viewCount,
-                        commentCount: r.commentCount,
-                        mylistCount: r.mylistCount,
-                        likeCount: r.likeCount,
-                        registeredAt: r.registeredAt,
-                        isChannelVideo: r.isChannelVideo,
-                        authorId: r.author?.id,
-                        authorNickname: r.author?.nickname,
-                        authorIconUrl: r.author?.iconUrl,
-                      }}
-                      onPlay={handlePlay}
-                      onDownload={handleDownload}
-                      onPlayAudioOnly={handlePlayAudioOnly}
-                      onUserPage={handleUserPage}
-                      isDownloaded={downloadedIds.has(r.videoId)}
-                      isWatched={watchedIds.has(r.videoId)}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <div className="flex flex-col gap-1">
-                  {results.map((r) => (
-                    <VideoCard
-                      key={r.videoId}
-                      layout="list"
-                      data={{
-                        videoId: r.videoId,
-                        title: r.title,
-                        thumbnailUrl: r.thumbnailUrl,
-                        length: r.length,
-                        viewCount: r.viewCount,
-                        commentCount: r.commentCount,
-                        mylistCount: r.mylistCount,
-                        likeCount: r.likeCount,
-                        registeredAt: r.registeredAt,
-                        isChannelVideo: r.isChannelVideo,
-                        authorId: r.author?.id,
-                        authorNickname: r.author?.nickname,
-                        authorIconUrl: r.author?.iconUrl,
-                      }}
-                      onPlay={handlePlay}
-                      onDownload={handleDownload}
-                      onPlayAudioOnly={handlePlayAudioOnly}
-                      onUserPage={handleUserPage}
-                      isDownloaded={downloadedIds.has(r.videoId)}
-                      isWatched={watchedIds.has(r.videoId)}
-                    />
-                  ))}
-                </div>
-              )
+            <VirtualizedItemList
+              items={results}
+              layout={displayMode}
+              scrollElementRef={scrollRef}
+              getKey={(r) => r.videoId}
+              renderItem={(r) => (
+                <VideoCard
+                  layout={displayMode === 'list' ? 'list' : undefined}
+                  data={{
+                    videoId: r.videoId,
+                    title: r.title,
+                    thumbnailUrl: r.thumbnailUrl,
+                    length: r.length,
+                    viewCount: r.viewCount,
+                    commentCount: r.commentCount,
+                    mylistCount: r.mylistCount,
+                    likeCount: r.likeCount,
+                    registeredAt: r.registeredAt,
+                    isChannelVideo: r.isChannelVideo,
+                    authorId: r.author?.id,
+                    authorNickname: r.author?.nickname,
+                    authorIconUrl: r.author?.iconUrl,
+                  }}
+                  onPlay={handlePlay}
+                  onDownload={handleDownload}
+                  onPlayAudioOnly={handlePlayAudioOnly}
+                  onUserPage={handleUserPage}
+                  isDownloaded={downloadedIds.has(r.videoId)}
+                  isWatched={watchedIds.has(r.videoId)}
+                />
+              )}
+            />
           )}
         </div>
       </main>
