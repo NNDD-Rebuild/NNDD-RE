@@ -1,4 +1,4 @@
-import { BrowserWindow, safeStorage } from 'electron';
+import { BrowserWindow, safeStorage, session } from 'electron';
 import { NicoApi } from '@shared/constants';
 import type { AutoReloginResult } from '@shared/types';
 import { NicoContext } from '../NicoContext';
@@ -60,9 +60,16 @@ export class AuthManager {
   /**
    * ブラウザログインウィンドウを開いてCookieを取得。
    * ssoProvider 指定時は Apple/Google/LINE/X/Facebook ボタンを自動クリックする。
+   *
+   * LoginWindow は永続化された partition ('persist:nndd-login') を使うため、
+   * 前回ログイン時の Cookie が残ったままだとニコニコ側で既ログイン扱いとなり、
+   * フォーム入力なしに素通りしてしまう (=保存パスワードでの自動ログインに見える)。
+   * ここで毎回クリアし、アプリ内の保存パスワード/通常セッションとは独立した
+   * まっさらな状態からブラウザログインを開始させる。
    */
   static async login(parent?: BrowserWindow, ssoProvider?: SsoProvider): Promise<boolean> {
     const ctx = NicoContext.get();
+    await session.fromPartition('persist:nndd-login').clearStorageData();
     return LoginWindow.openAndCaptureCookie(ctx.cookieStore, { parent, ssoProvider });
   }
 
