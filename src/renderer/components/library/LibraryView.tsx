@@ -743,7 +743,11 @@ export function LibraryView(): JSX.Element {
                         </button>
                       </div>
                       <div className="p-1.5 bg-nndd-panel flex-1 flex flex-col gap-0.5">
-                        <div className="text-xs line-clamp-2 leading-tight" title={v.videoName}>
+                        <div
+                          className="text-xs line-clamp-2 leading-tight cursor-pointer hover:underline"
+                          title={v.videoName}
+                          onClick={(e) => { e.stopPropagation(); handlePlay(v); }}
+                        >
                           {v.videoName}
                         </div>
                         <div className="text-[10px] text-nndd-subtext mt-auto">
@@ -808,7 +812,11 @@ export function LibraryView(): JSX.Element {
                             }}
                           />
                         </td>
-                        <td title={v.videoName}>
+                        <td
+                          title={v.videoName}
+                          className="cursor-pointer hover:underline"
+                          onClick={(e) => { e.stopPropagation(); handlePlay(v); }}
+                        >
                           {v.videoName}
                           {isAudioOnlyVideo(v) && (
                             <span className="ml-1.5 text-[10px] px-1 py-0.5 rounded bg-purple-600 text-white" title="音声のみ">

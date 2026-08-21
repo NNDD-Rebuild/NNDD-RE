@@ -100,7 +100,7 @@ export function VideoCard({
       >
         <Thumb data={data} small isWatched={isWatched} />
         <div className="flex-1 min-w-0">
-          <Title data={data} onUserPage={onUserPage} />
+          <Title data={data} onUserPage={onUserPage} onPlay={onPlay} />
           <Stats data={data} />
         </div>
         <Actions
@@ -125,7 +125,7 @@ export function VideoCard({
     >
       <Thumb data={data} isWatched={isWatched} />
       <div className="p-2 flex-1 flex flex-col">
-        <Title data={data} onUserPage={onUserPage} />
+        <Title data={data} onUserPage={onUserPage} onPlay={onPlay} />
         <Stats data={data} />
         <div className="mt-auto pt-2">
           <Actions
@@ -334,10 +334,12 @@ function ThumbPreview({ videoId }: { videoId: string }): JSX.Element | null {
 
 function Title({
   data,
-  onUserPage
+  onUserPage,
+  onPlay
 }: {
   data: VideoCardData;
   onUserPage?: (id: string) => void;
+  onPlay?: (id: string) => void;
 }): JSX.Element {
   return (
     <div className="flex items-start gap-1.5 mb-1">
@@ -356,8 +358,12 @@ function Title({
         </button>
       )}
       <div
-        className="text-sm font-medium line-clamp-2 min-h-[2.5em]"
+        className="text-sm font-medium line-clamp-2 min-h-[2.5em] cursor-pointer hover:underline"
         title={data.title}
+        onClick={(e) => {
+          e.stopPropagation();
+          onPlay?.(data.videoId);
+        }}
       >
         {data.title}
       </div>
