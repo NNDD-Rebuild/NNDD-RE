@@ -98,6 +98,8 @@ export const IpcChannel = {
 
   // ニコニコ動画本家 視聴履歴
   NICO_HISTORY_LIST: 'nndd:nicoHistory:list',
+  /** 本家APIへ差分取得しに行きDBへ反映してから最新件数を返す (履歴タブの手動更新ボタン用) */
+  NICO_HISTORY_SYNC: 'nndd:nicoHistory:sync',
   /** アプリ内history + ニコ動本家履歴の両方をORで判定するバッチ照合 (再生済みバッジ用) */
   WATCHED_CHECK_BATCH: 'nndd:nicoHistory:watchedCheckBatch',
 

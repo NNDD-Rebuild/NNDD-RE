@@ -24,6 +24,7 @@ import {
   ConnectionDiag,
   fetchMylistLikeItems,
   fetchMylistLikeName,
+  NicoHistoryClient,
   type SearchOptions,
   type SsoProvider
 } from '../nicovideo';
@@ -266,6 +267,11 @@ export function registerIpcHandlers(
 
   // --- ニコニコ動画本家 視聴履歴 ---
   ipcMain.handle(IpcChannel.NICO_HISTORY_LIST, () => {
+    return library.nicoWatchHistoryDao.list(1000);
+  });
+
+  ipcMain.handle(IpcChannel.NICO_HISTORY_SYNC, async () => {
+    await NicoHistoryClient.syncOnStartup(library.nicoWatchHistoryDao);
     return library.nicoWatchHistoryDao.list(1000);
   });
 

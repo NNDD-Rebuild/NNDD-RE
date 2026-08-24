@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { HistoryItem, NicoWatchHistoryItem, ResumePosition } from '@shared/types';
 import { IpcChannel } from '@shared/types';
+import { useAppStore } from '@renderer/store/useAppStore';
 
 type HistorySource = 'app' | 'nico';
 
@@ -11,6 +12,7 @@ type HistorySource = 'app' | 'nico';
  *  - 履歴クリアボタン (アプリ内履歴のみ)
  */
 export function HistoryView(): JSX.Element {
+  const activeTab = useAppStore((s) => s.activeTab);
   const [source, setSource] = useState<HistorySource>('app');
   const [items, setItems] = useState<HistoryItem[]>([]);
   const [resumes, setResumes] = useState<Record<string, ResumePosition>>({});
@@ -39,12 +41,25 @@ export function HistoryView(): JSX.Element {
       .catch(() => setNicoLoaded(true));
   };
 
-  useEffect(reload, []);
+  /** 更新ボタン用: ニコニコ本家APIへ差分取得しに行ってからDBの最新件数を反映する */
+  const syncNico = (): void => {
+    window.nndd
+      .invoke<NicoWatchHistoryItem[]>(window.nndd.channels.NICO_HISTORY_SYNC)
+      .then((list) => {
+        setNicoItems(list);
+        setNicoLoaded(true);
+      })
+      .catch(() => {});
+  };
 
+  // 他タブへ移動している間もアンマウントされない (App.tsx で display:none 保持) ため、
+  // 履歴タブが再びアクティブになるたびに読み直して新規記録を反映する。
   useEffect(() => {
-    if (source === 'nico' && !nicoLoaded) reloadNico();
+    if (activeTab !== 'history') return;
+    if (source === 'app') reload();
+    else if (!nicoLoaded) reloadNico();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [source]);
+  }, [activeTab, source]);
 
   const handleClear = async (): Promise<void> => {
     await window.nndd.invoke(window.nndd.channels.HISTORY_CLEAR);
@@ -92,7 +107,12 @@ export function HistoryView(): JSX.Element {
             履歴を全消去
           </button>
         ) : (
-          <span className="text-xs text-nndd-subtext">起動時に自動取得されます</span>
+          <button
+            onClick={syncNico}
+            className="text-xs px-3 py-1 bg-nndd-border hover:bg-nndd-accent rounded"
+          >
+            更新
+          </button>
         )}
       </div>
       <div className="flex-1 overflow-auto">
