@@ -92,6 +92,10 @@ export function PlayerSettings(): JSX.Element {
     'player.resumePlayback',
     false
   );
+  const [controlsAlwaysVisible, setControlsAlwaysVisible] = useConfig<boolean>(
+    'player.controlsAlwaysVisible',
+    false
+  );
 
   return (
     <div className="p-4 max-w-3xl">
@@ -487,6 +491,16 @@ export function PlayerSettings(): JSX.Element {
           </div>
           <p className="text-xs text-nndd-subtext mt-0.5">
             シークバー・ボタン等のコントロールバー全体のサイズ
+          </p>
+        </Row>
+        <Row label="コントロールバーを常時表示">
+          <input
+            type="checkbox"
+            checked={controlsAlwaysVisible}
+            onChange={(e) => setControlsAlwaysVisible(e.target.checked)}
+          />
+          <p className="text-xs text-nndd-subtext mt-0.5">
+            ウィンドウ表示時、下部コントロールバーを自動で隠さず常に表示する (フルスクリーン時は従来通り自動で隠れます)
           </p>
         </Row>
       </Section>

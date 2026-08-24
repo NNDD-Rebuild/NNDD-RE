@@ -256,6 +256,7 @@ export default function PlayerApp(): JSX.Element {
     pauseStartedAtMs: number | null;
   } | null>(null);
   const [defaultQuality] = useConfig<'highest' | number>('player.defaultQuality', 'highest');
+  const [controlsAlwaysVisible] = useConfig<boolean>('player.controlsAlwaysVisible', false);
   const defaultQualityRef = useRef(defaultQuality);
   defaultQualityRef.current = defaultQuality;
   const [ngStrength] = useConfig<'weak' | 'medium' | 'strong'>('player.ngStrength', 'medium');
@@ -1481,7 +1482,7 @@ export default function PlayerApp(): JSX.Element {
                 isFullscreen
                   ? 'absolute left-0 right-0 bottom-0 z-10'
                   : 'static',
-                showControls
+                showControls || (!isFullscreen && controlsAlwaysVisible)
                   ? 'opacity-100 pointer-events-auto'
                   : 'opacity-0 pointer-events-none'
               ].join(' ')}

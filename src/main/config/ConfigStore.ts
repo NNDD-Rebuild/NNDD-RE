@@ -216,6 +216,12 @@ export interface NnddConfig {
     openVideoLinkInPlayer: boolean;
     /** 前回の再生位置から続きを再生する (OFF時は常に最初から再生) */
     resumePlayback: boolean;
+    /**
+     * ウィンドウ表示 (非フルスクリーン) 時、下部コントロールバーを常時表示する。
+     * OFF (デフォルト) 時は従来通りマウス操作なしで一定時間後に自動的にフェードアウトする。
+     * フルスクリーン時の自動非表示挙動には影響しない。
+     */
+    controlsAlwaysVisible: boolean;
   };
 
   /** UI 設定 */
@@ -388,7 +394,8 @@ const DEFAULTS: NnddConfig = {
     },
     controlUiSize: 'normal',
     openVideoLinkInPlayer: true,
-    resumePlayback: false
+    resumePlayback: false,
+    controlsAlwaysVisible: false
   },
   ui: {
     theme: 'dark',
