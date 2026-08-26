@@ -34,6 +34,8 @@ export class CommentWindowManager {
   private playerWin: BrowserWindow | null = null;
   /** ready-to-show 前に届いた init データをバッファ */
   private pendingInit: CommentWindowInitData | null = null;
+  /** renderer 側 IPC リスナー登録完了 (COMMENT_WINDOW_READY 受信済み) か */
+  private ready = false;
 
   /**
    * コメントウィンドウを開く。既存なら再利用してデータを更新。
@@ -49,6 +51,7 @@ export class CommentWindowManager {
       return;
     }
 
+    this.ready = false;
     this.pendingInit = data;
 
     // 保存済みboundsがあればそれを使う。なければプレイヤーウィンドウの右隣に配置
@@ -103,13 +106,12 @@ export class CommentWindowManager {
       );
     });
 
+    // ready-to-show は「初回描画完了」のタイミングで発火するが、React 側の
+    // useEffect (IPC リスナー登録) 完了より先に発火することがある (特に Linux)。
+    // そのため初期化データの送信は renderer からの COMMENT_WINDOW_READY 通知を待つ。
     win.on('ready-to-show', () => {
       if (shouldMaximize) win.maximize();
       win.show();
-      if (this.pendingInit) {
-        win.webContents.send(IpcChannel.COMMENT_WINDOW_INIT, this.pendingInit);
-        this.pendingInit = null;
-      }
     });
 
     win.on('close', () => {
@@ -142,8 +144,25 @@ export class CommentWindowManager {
     this.win = win;
   }
 
-  /** コメント配列を更新する */
+  /** renderer 側の IPC リスナー登録完了通知を受けて、保留中の初期化データを送信する */
+  notifyReady(): void {
+    this.ready = true;
+    if (this.win && !this.win.isDestroyed() && this.pendingInit) {
+      this.win.webContents.send(IpcChannel.COMMENT_WINDOW_INIT, this.pendingInit);
+      this.pendingInit = null;
+    }
+  }
+
+  /**
+   * コメント配列を更新する。
+   * renderer 側の準備 (COMMENT_WINDOW_READY) が済むまでは送信してもリスナー未登録で
+   * ロストするため、保留中の初期化データがあればそちらを更新するに留める。
+   */
   pushComments(comments: NNDDREComment[]): void {
+    if (!this.ready) {
+      if (this.pendingInit) this.pendingInit.comments = comments;
+      return;
+    }
     if (this.win && !this.win.isDestroyed()) {
       this.win.webContents.send(IpcChannel.COMMENT_WINDOW_PUSH, comments);
     }
@@ -151,6 +170,7 @@ export class CommentWindowManager {
 
   /** 再生位置を更新する */
   pushTime(timeSec: number): void {
+    if (!this.ready) return;
     if (this.win && !this.win.isDestroyed()) {
       this.win.webContents.send(IpcChannel.COMMENT_WINDOW_TIME, timeSec);
     }

@@ -98,6 +98,13 @@ export default function CommentApp(): JSX.Element {
     return off;
   }, []);
 
+  // IPC リスナー登録完了を main に通知 (初期化データ送信のトリガー)。
+  // ready-to-show は renderer 初回描画完了時に発火するが、React の
+  // useEffect 実行より先行することがあるため、能動的な握手で取りこぼしを防ぐ。
+  useEffect(() => {
+    window.nndd.send(IpcChannel.COMMENT_WINDOW_READY);
+  }, []);
+
   // 再生位置プッシュ
   useEffect(() => {
     const off = window.nndd.on(

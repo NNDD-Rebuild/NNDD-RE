@@ -218,6 +218,8 @@ export const IpcChannel = {
   COMMENT_WINDOW_SEEK: 'nndd:comment:window:seek',
   /** Main→Comment: 初期化データ */
   COMMENT_WINDOW_INIT: 'nndd:comment:window:init',
+  /** Comment→Main: レンダラー側の IPC リスナー登録完了通知 (初期化データ送信のトリガー) */
+  COMMENT_WINDOW_READY: 'nndd:comment:window:ready',
   /** Main→Player: コメントウィンドウからのシーク通知 */
   PLAYER_SEEK: 'nndd:player:seek',
 

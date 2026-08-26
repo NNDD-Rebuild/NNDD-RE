@@ -1463,6 +1463,10 @@ export function registerIpcHandlers(
     }
   );
 
+  ipcMain.on(IpcChannel.COMMENT_WINDOW_READY, () => {
+    commentWinMgr.notifyReady();
+  });
+
   ipcMain.on(
     IpcChannel.COMMENT_WINDOW_PUSH,
     (_e, comments: NNDDREComment[]) => {
