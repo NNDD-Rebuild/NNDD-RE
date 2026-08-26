@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { DownloadQueueItem, MyListItem } from '@shared/types';
-import { DownloadStatusType, IpcChannel } from '@shared/types';
+import { DownloadStatusType, IpcChannel, RssType } from '@shared/types';
 
 /**
  * DLリストタブ。
@@ -14,6 +14,17 @@ export function DownloadView(): JSX.Element {
   const [videoId, setVideoId] = useState('');
   const [mylistAdding, setMylistAdding] = useState(false);
   const [mylistError, setMylistError] = useState<string | null>(null);
+  const [makeSubfolder, setMakeSubfolder] = useState(false);
+
+  // 入力欄の値からマイリスト/シリーズ/投稿者URLかを判定 (サブフォルダ作成チェックボックスの表示制御用)
+  const bulkAddKind = useMemo((): 'mylist' | 'series' | 'user' | null => {
+    const v = videoId.trim();
+    if (!v) return null;
+    if (/nicovideo\.jp(?:\/user\/\d+)?\/mylist\/\d+/.test(v)) return 'mylist';
+    if (/nicovideo\.jp(?:\/user\/\d+)?\/series\/\d+/.test(v)) return 'series';
+    if (/nicovideo\.jp\/user\/\d+\/?(?:[?#].*)?$/.test(v)) return 'user';
+    return null;
+  }, [videoId]);
 
   const reload = (): void => {
     window.nndd
@@ -44,8 +55,14 @@ export function DownloadView(): JSX.Element {
           window.nndd.channels.MYLIST_RENEW,
           id
         );
+        const subDir = makeSubfolder
+          ? (await window.nndd.invoke<{ name: string } | null>(
+              window.nndd.channels.MYLIST_FETCH_INFO,
+              id
+            ))?.name
+          : undefined;
         for (const it of mlItems) {
-          await window.nndd.invoke(window.nndd.channels.DOWNLOAD_ENQUEUE, { videoId: it.videoId });
+          await window.nndd.invoke(window.nndd.channels.DOWNLOAD_ENQUEUE, { videoId: it.videoId, subDir });
         }
         setVideoId('');
         reload();
@@ -67,8 +84,39 @@ export function DownloadView(): JSX.Element {
           IpcChannel.SERIES_FETCH,
           seriesMatch[1]
         );
+        const subDir = makeSubfolder ? seriesData.name : undefined;
         for (const it of seriesData.items) {
-          await window.nndd.invoke(window.nndd.channels.DOWNLOAD_ENQUEUE, { videoId: it.videoId });
+          await window.nndd.invoke(window.nndd.channels.DOWNLOAD_ENQUEUE, { videoId: it.videoId, subDir });
+        }
+        setVideoId('');
+        reload();
+      } catch (e) {
+        setMylistError(e instanceof Error ? e.message : String(e));
+      } finally {
+        setMylistAdding(false);
+      }
+      return;
+    }
+
+    // 投稿者ページURL検出: nicovideo.jp/user/数字 単体 (mylist/seriesが続かない場合)
+    const userMatch = id.match(/nicovideo\.jp\/user\/(\d+)\/?(?:[?#].*)?$/);
+    if (userMatch) {
+      setMylistAdding(true);
+      setMylistError(null);
+      try {
+        const userArgs = { url: userMatch[1], type: RssType.USER_UPLOAD_VIDEO };
+        const userItems = await window.nndd.invoke<MyListItem[]>(
+          window.nndd.channels.MYLIST_RENEW,
+          userArgs
+        );
+        const subDir = makeSubfolder
+          ? (await window.nndd.invoke<{ name: string } | null>(
+              window.nndd.channels.MYLIST_FETCH_INFO,
+              userArgs
+            ))?.name
+          : undefined;
+        for (const it of userItems) {
+          await window.nndd.invoke(window.nndd.channels.DOWNLOAD_ENQUEUE, { videoId: it.videoId, subDir });
         }
         setVideoId('');
         reload();
@@ -92,6 +140,26 @@ export function DownloadView(): JSX.Element {
       .invoke(window.nndd.channels.DOWNLOAD_CANCEL, id)
       .then(reload);
   };
+  const handlePause = (id: string): void => {
+    window.nndd
+      .invoke(window.nndd.channels.DOWNLOAD_PAUSE, id)
+      .then(reload);
+  };
+  const handleResume = (id: string): void => {
+    window.nndd
+      .invoke(window.nndd.channels.DOWNLOAD_RESUME, id)
+      .then(reload);
+  };
+  const handlePauseAll = (): void => {
+    window.nndd
+      .invoke(window.nndd.channels.DOWNLOAD_PAUSE_ALL)
+      .then(reload);
+  };
+  const handleResumeAll = (): void => {
+    window.nndd
+      .invoke(window.nndd.channels.DOWNLOAD_RESUME_ALL)
+      .then(reload);
+  };
   const handleRemove = (id: string): void => {
     window.nndd
       .invoke(window.nndd.channels.DOWNLOAD_REMOVE, id)
@@ -113,6 +181,7 @@ export function DownloadView(): JSX.Element {
       .invoke(window.nndd.channels.DOWNLOAD_CANCEL_ALL)
       .then(reload);
   };
+  const hasPausedItems = items.some((it) => it.status === DownloadStatusType.PAUSED);
 
   return (
     <div className="h-full flex flex-col">
@@ -126,6 +195,16 @@ export function DownloadView(): JSX.Element {
             if (e.key === 'Enter') handleAdd();
           }}
         />
+        {bulkAddKind && (
+          <label className="flex items-center gap-1 text-xs text-nndd-subtext whitespace-nowrap cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={makeSubfolder}
+              onChange={(e) => setMakeSubfolder(e.target.checked)}
+            />
+            サブフォルダを作成
+          </label>
+        )}
         <button
           onClick={handleAdd}
           disabled={mylistAdding}
@@ -143,6 +222,13 @@ export function DownloadView(): JSX.Element {
           className="text-xs px-3 py-1 bg-nndd-border text-nndd-text rounded hover:bg-nndd-accent hover:text-white"
         >
           完了済みをクリア
+        </button>
+        <button
+          onClick={hasPausedItems ? handleResumeAll : handlePauseAll}
+          disabled={items.length === 0}
+          className="text-xs px-3 py-1 bg-nndd-border text-nndd-text rounded hover:bg-nndd-accent hover:text-white disabled:opacity-50"
+        >
+          {hasPausedItems ? '全て再開' : '全て一時停止'}
         </button>
         <button
           onClick={handleCancelAll}
@@ -201,6 +287,22 @@ export function DownloadView(): JSX.Element {
                   </td>
                   <td className="text-xs text-nndd-subtext">{it.message}</td>
                   <td>
+                    {(isRunning(it.status) || it.status === DownloadStatusType.WAIT) && (
+                      <button
+                        onClick={() => handlePause(it.id)}
+                        className="text-xs px-2 py-1 bg-nndd-border hover:bg-nndd-accent hover:text-white rounded mr-1"
+                      >
+                        一時停止
+                      </button>
+                    )}
+                    {it.status === DownloadStatusType.PAUSED && (
+                      <button
+                        onClick={() => handleResume(it.id)}
+                        className="text-xs px-2 py-1 bg-nndd-border hover:bg-nndd-accent hover:text-white rounded mr-1"
+                      >
+                        再開
+                      </button>
+                    )}
                     {isRunning(it.status) && (
                       <button
                         onClick={() => handleCancel(it.id)}
@@ -240,6 +342,7 @@ export function DownloadView(): JSX.Element {
 function statusLabel(s: string): string {
   switch (s) {
     case DownloadStatusType.WAIT:       return '待機中';
+    case DownloadStatusType.PAUSED:     return '一時停止中';
     case DownloadStatusType.LOGIN:      return 'ログイン中';
     case DownloadStatusType.WATCH:      return '視聴ページ取得';
     case DownloadStatusType.COMMENT:    return 'コメント取得';

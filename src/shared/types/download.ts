@@ -5,6 +5,8 @@
 export const DownloadStatusType = {
   /** 待機中 */
   WAIT: 'wait',
+  /** 一時停止中 */
+  PAUSED: 'paused',
   /** ログイン中 */
   LOGIN: 'login',
   /** 視聴ページ取得中 */
@@ -72,6 +74,21 @@ export interface DownloadQueueItem {
 }
 
 /**
+ * スケジュールの対象種別
+ */
+export const ScheduleTargetType = {
+  /** マイリスト */
+  MYLIST: 'mylist',
+  /** シリーズ */
+  SERIES: 'series',
+  /** フォロー中投稿者の新着 */
+  FOLLOW_USER: 'followUser'
+} as const;
+
+export type ScheduleTargetTypeValue =
+  typeof ScheduleTargetType[keyof typeof ScheduleTargetType];
+
+/**
  * スケジュール
  * 元: src/org/mineap/nndd/model/Schedule.as
  */
@@ -79,8 +96,12 @@ export interface Schedule {
   id: string;
   /** スケジュール名 */
   name: string;
-  /** 対象マイリストURL */
+  /** 対象種別 (未指定時は 'mylist' 扱い) */
+  targetType: ScheduleTargetTypeValue;
+  /** 対象マイリストURL (targetType='mylist' の場合に使用) */
   targetMyListUrl: string;
+  /** 対象ID (targetType='series' はシリーズID、'followUser' はユーザーID) */
+  targetId: string;
   /** 起動曜日 (0=日 .. 6=土) */
   daysOfWeek: number[];
   /** 起動時刻 "HH:MM" */
