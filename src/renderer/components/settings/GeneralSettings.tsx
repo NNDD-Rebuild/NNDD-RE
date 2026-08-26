@@ -86,6 +86,11 @@ export function GeneralSettings({ onDeveloperModeChange }: GeneralSettingsProps)
     true
   );
   const [webhookUrlInput, setWebhookUrlInput] = useState('');
+
+  // チャンネル新着監視
+  const [channelWatchEnabled, setChannelWatchEnabled] = useConfig<boolean>('channelWatch.enabled', false);
+  const [channelWatchIntervalMin, setChannelWatchIntervalMin] = useConfig<number>('channelWatch.intervalMin', 30);
+
   useEffect(() => {
     setWebhookUrlInput(webhookUrl ?? '');
   }, [webhookUrl]);
@@ -748,6 +753,32 @@ export function GeneralSettings({ onDeveloperModeChange }: GeneralSettingsProps)
         </div>
         <p className="text-xs text-nndd-subtext mt-2">
           URLのドメインからDiscord / Slackを自動判別して送信します。両方に対応。
+        </p>
+      </Section>
+
+      <Section title="チャンネル新着監視">
+        <label className="flex items-center gap-2 cursor-pointer select-none text-sm">
+          <input
+            type="checkbox"
+            checked={channelWatchEnabled}
+            onChange={(e) => setChannelWatchEnabled(e.target.checked)}
+          />
+          登録チャンネルの新着動画を監視して通知する
+        </label>
+        <div className="flex items-center gap-2 mt-3">
+          <span className="text-xs text-nndd-subtext w-24 shrink-0">チェック間隔</span>
+          <input
+            type="number"
+            min={5}
+            value={channelWatchIntervalMin}
+            onChange={(e) => setChannelWatchIntervalMin(Number(e.target.value) || 30)}
+            className="w-20 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
+          />
+          <span className="text-xs text-nndd-subtext">分</span>
+        </div>
+        <p className="text-xs text-nndd-subtext mt-2">
+          マイリストタブに登録済みのチャンネル (種別: チャンネル) が対象。新着動画をトレイ通知・Webhook通知します
+          (DLキューへの自動追加はしません)。設定変更は次回起動時に反映されます。
         </p>
       </Section>
 

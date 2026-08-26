@@ -325,6 +325,13 @@ export interface NnddConfig {
   /** Webhook通知 (Discord/Slack自動判定) */
   webhookNotify: WebhookNotifyConfig;
 
+  /** 登録チャンネルの新着動画監視 (定期ポーリングしOS通知) */
+  channelWatch: {
+    enabled: boolean;
+    /** ポーリング間隔 (分) */
+    intervalMin: number;
+  };
+
   /** アプリ自動更新 */
   update: {
     /**
@@ -456,6 +463,10 @@ const DEFAULTS: NnddConfig = {
     webhookUrl: '',
     notifyOnDownloadComplete: true,
     notifyOnDownloadFail: true
+  },
+  channelWatch: {
+    enabled: false,
+    intervalMin: 30
   },
   update: {
     mode: 'ask',
