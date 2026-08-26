@@ -20,6 +20,8 @@ interface Props {
   currentQualityId?: string;
   onQualityChange?: (id: string) => void;
   audioOnly?: boolean;
+  /** ローカル再生中か (true の場合のみシークバーホバー時のサムネイルプレビューを有効化) */
+  isLocal?: boolean;
 }
 
 /**
@@ -48,7 +50,8 @@ export function VideoController({
   availableQualities,
   currentQualityId,
   onQualityChange,
-  audioOnly
+  audioOnly,
+  isLocal
 }: Props): JSX.Element {
   const [uiSize] = useConfig<'small' | 'normal' | 'large'>('player.controlUiSize', 'small');
   const zoomFactor = uiSize === 'large' ? 1.5 : uiSize === 'normal' ? 1.3 : 1;
@@ -59,6 +62,11 @@ export function VideoController({
   const [bufferedEnd, setBufferedEnd] = useState(0);
   const seekingRef = useRef(false);
   const seekBarRef = useRef<HTMLDivElement>(null);
+  const previewVideoRef = useRef<HTMLVideoElement>(null);
+  const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const previewSeekTimerRef = useRef<number | null>(null);
+  const [previewReady, setPreviewReady] = useState(false);
+  const [hoverPct, setHoverPct] = useState<number | null>(null);
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
   const [rate, setRate] = useState(1.0);
@@ -77,7 +85,20 @@ export function VideoController({
     const onTime = (): void => {
       if (!seekingRef.current) setCurrentTime(video.currentTime);
     };
-    const onDur = (): void => setDuration(video.duration);
+    const onDur = (): void => {
+      setDuration(video.duration);
+      // シークバーホバー時のサムネイルプレビュー: ローカル再生時のみ有効
+      // (ストリーミング再生の src は複製再生できないため対象外)
+      const pv = previewVideoRef.current;
+      if (pv && isLocal && video.currentSrc) {
+        if (pv.src !== video.currentSrc) {
+          pv.src = video.currentSrc;
+        }
+        setPreviewReady(true);
+      } else {
+        setPreviewReady(false);
+      }
+    };
     const onPlay = (): void => setPlaying(true);
     const onPause = (): void => setPlaying(false);
     const onVol = (): void => {
@@ -117,7 +138,7 @@ export function VideoController({
       video.removeEventListener('enterpictureinpicture', onEnterPip);
       video.removeEventListener('leavepictureinpicture', onLeavePip);
     };
-  }, [video]);
+  }, [video, isLocal]);
 
   // 音量ノーマライズ: DynamicsCompressorNode を挟むかどうかをルーティングで切替。
   // MediaElementAudioSourceNode は同一 video 要素に対して一度しか作成できないため、
@@ -163,6 +184,57 @@ export function VideoController({
       source.connect(ctx.destination);
     }
   }, [video, volumeNormalize]);
+
+  // プレビュー用の非表示video: シーク完了/フレームロードごとにcanvasへ描画
+  useEffect(() => {
+    const pv = previewVideoRef.current;
+    const cv = previewCanvasRef.current;
+    if (!pv || !cv) return;
+    const draw = (): void => {
+      const ctx = cv.getContext('2d');
+      if (!ctx || !pv.videoWidth) return;
+      ctx.drawImage(pv, 0, 0, cv.width, cv.height);
+    };
+    const onSeeked = (): void => draw();
+    const onLoadedData = (): void => draw();
+    pv.addEventListener('seeked', onSeeked);
+    pv.addEventListener('loadeddata', onLoadedData);
+    return () => {
+      pv.removeEventListener('seeked', onSeeked);
+      pv.removeEventListener('loadeddata', onLoadedData);
+    };
+    // canvas はシークバー (duration > 0 の時のみレンダリング) の中にあるため、
+    // duration 確定 (0→実値) のタイミングで cv が初めて存在するようになる。
+    // 依存配列を [] のままだとマウント直後 (cv=null) の1回で空振りし、
+    // 以後リスナーが一切登録されない (実際に発生していたバグ)。
+  }, [duration]);
+
+  // 直近でシークをリクエストした時刻 (同じ位置への再シークを省いて無駄な描画待ちを減らす)
+  const lastPreviewSeekRef = useRef<number | null>(null);
+
+  // シークバー上のホバー位置に応じてプレビュー時刻を更新 (連続シークを避けるため軽くデバウンス)
+  const updatePreviewHover = (e: React.PointerEvent): void => {
+    if (!previewReady || !duration) return;
+    const pct = getPointerPct(e, seekBarRef.current!);
+    setHoverPct(pct);
+    const pv = previewVideoRef.current;
+    if (!pv) return;
+    const t = pct * duration;
+    // 0.5秒未満の移動は同じフレーム扱いとしてシークをスキップ (体感の滑らかさを優先)
+    if (lastPreviewSeekRef.current !== null && Math.abs(lastPreviewSeekRef.current - t) < 0.5) {
+      return;
+    }
+    if (previewSeekTimerRef.current) window.clearTimeout(previewSeekTimerRef.current);
+    previewSeekTimerRef.current = window.setTimeout(() => {
+      lastPreviewSeekRef.current = t;
+      if (pv.readyState < 1) {
+        // メタデータ未ロード: ロード完了を待ってからシーク
+        pv.addEventListener('loadedmetadata', () => { pv.currentTime = t; }, { once: true });
+      } else {
+        pv.currentTime = t;
+      }
+    }, 40);
+  };
 
   const togglePlay = (): void => {
     if (!video) return;
@@ -220,6 +292,14 @@ export function VideoController({
       className="flex items-center gap-2 px-2 py-1 bg-nndd-panel border-t border-nndd-border text-xs select-none"
       style={{ zoom: zoomFactor }}
     >
+      {/* プレビュー描画用の非表示video (常時マウント、画面には出さずcanvasへ描画するだけ) */}
+      <video
+        ref={previewVideoRef}
+        muted
+        preload="metadata"
+        style={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none', top: 0, left: 0 }}
+      />
+
       <Btn onClick={togglePlay} title="再生/一時停止">
         {playing ? '❚❚' : '▶'}
       </Btn>
@@ -233,8 +313,10 @@ export function VideoController({
             (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
             const pct = getPointerPct(e, seekBarRef.current!);
             setCurrentTime(pct * duration);
+            updatePreviewHover(e);
           }}
           onPointerMove={(e) => {
+            updatePreviewHover(e);
             if (!seekingRef.current) return;
             const pct = getPointerPct(e, seekBarRef.current!);
             setCurrentTime(pct * duration);
@@ -255,6 +337,7 @@ export function VideoController({
               seekingRef.current = false;
             }
           }}
+          onPointerLeave={() => setHoverPct(null)}
         >
           {/* トラック背景 + バー群 */}
           <div className="w-full h-1.5 bg-nndd-border/50 rounded-full relative overflow-hidden">
@@ -274,6 +357,22 @@ export function VideoController({
             className="absolute w-3 h-3 bg-nndd-text rounded-full shadow pointer-events-none -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity"
             style={{ left: `${Math.min(100, (currentTime / duration) * 100)}%` }}
           />
+          {/* ホバー時サムネイルプレビュー (ローカル再生のみ)。
+              canvas は常時マウントし表示/非表示は opacity で切替える
+              (条件付きレンダリングにすると canvas 出現前に登録した
+              seeked リスナーが ref=null のまま失われ、描画されなくなるため) */}
+          <div
+            className="absolute bottom-6 -translate-x-1/2 bg-black border border-nndd-border rounded overflow-hidden shadow-lg pointer-events-none z-10 transition-opacity"
+            style={{
+              left: `${Math.min(100, Math.max(0, (hoverPct ?? 0) * 100))}%`,
+              opacity: previewReady && hoverPct !== null ? 1 : 0
+            }}
+          >
+            <canvas ref={previewCanvasRef} width={160} height={90} className="block" />
+            <div className="text-center text-[10px] text-white py-0.5 bg-black/70 font-mono">
+              {fmt((hoverPct ?? 0) * duration)}
+            </div>
+          </div>
         </div>
       ) : (
         /* ストリーミング中: durationが不定のため進捗バーで代替 */

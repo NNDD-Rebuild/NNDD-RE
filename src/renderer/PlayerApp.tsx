@@ -1420,6 +1420,7 @@ export default function PlayerApp(): JSX.Element {
         </div>
         <VideoController
           video={video}
+          isLocal={isLocal}
           showComments={false}
           onToggleComments={() => {}}
           hideCommentToggle
@@ -1516,6 +1517,7 @@ export default function PlayerApp(): JSX.Element {
               )}
               <VideoController
                 video={video}
+                isLocal={isLocal}
                 docPipActive={docPipActive}
                 onToggleDocPip={() => { videoPlayerRef.current?.togglePip().catch(console.error); }}
                 showComments={showComments}
