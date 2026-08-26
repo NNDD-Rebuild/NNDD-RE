@@ -29,6 +29,7 @@ export function MyListView(): JSX.Element {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [renewingAll, setRenewingAll] = useState(false);
+  const [autoDlResult, setAutoDlResult] = useState<string | null>(null);
   // ページネーション (マイリストのみ)
   const [currentPage, setCurrentPage] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
@@ -456,12 +457,25 @@ export function MyListView(): JSX.Element {
     reloadMylists();
   };
 
+  // 一括更新: 全マイリストを再取得し、未DLの動画を自動でDLキューに追加する
   const handleRenewAll = async (): Promise<void> => {
     setRenewingAll(true);
+    setAutoDlResult(null);
     try {
-      await window.nndd.invoke(IpcChannel.MYLIST_RENEW_ALL);
+      const results = await window.nndd.invoke<
+        Record<string, { fetched: number; queued: number; error?: string }>
+      >(IpcChannel.MYLIST_AUTO_DOWNLOAD_ALL);
+      const queued = Object.values(results).reduce((a, r) => a + r.queued, 0);
+      const errors = Object.values(results).filter((r) => r.error).length;
+      setAutoDlResult(
+        errors > 0
+          ? `${queued}件をDLキューに追加 (${errors}件のマイリストで取得失敗)`
+          : `${queued}件をDLキューに追加しました`
+      );
       if (selected?.kind === 'mylist') await fetchItems(selected.mylist);
       reloadMylists();
+    } catch (e) {
+      setAutoDlResult(toUserFriendlyErrorMessage(e));
     } finally {
       setRenewingAll(false);
     }
@@ -736,7 +750,7 @@ export function MyListView(): JSX.Element {
               onClick={handleRenewAll}
               disabled={renewingAll}
               className="text-xs px-3 py-1 bg-nndd-border rounded hover:bg-nndd-accent disabled:opacity-50"
-              title="全マイリストを更新"
+              title="全マイリストを更新し、未DL動画を自動でDLキューに追加"
             >
               {renewingAll ? '更新中…' : '一括更新'}
             </button>
@@ -749,6 +763,11 @@ export function MyListView(): JSX.Element {
               {accountFetching ? '取得中…' : 'アカウントから取得'}
             </button>
           </div>
+          {autoDlResult && (
+            <div className="text-xs text-nndd-subtext truncate" title={autoDlResult}>
+              ✓ {autoDlResult}
+            </div>
+          )}
           {accountError && (
             <div className="text-xs text-red-500 dark:text-red-400 truncate" title={accountError}>
               ⚠ {accountError}
