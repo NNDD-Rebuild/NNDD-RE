@@ -41,6 +41,11 @@ export const IpcChannel = {
   DOWNLOAD_ENQUEUE: 'nndd:download:enqueue',
   DOWNLOAD_CANCEL: 'nndd:download:cancel',
   DOWNLOAD_CANCEL_ALL: 'nndd:download:cancelAll',
+  DOWNLOAD_PAUSE: 'nndd:download:pause',
+  DOWNLOAD_RESUME: 'nndd:download:resume',
+  DOWNLOAD_PAUSE_ALL: 'nndd:download:pauseAll',
+  DOWNLOAD_RESUME_ALL: 'nndd:download:resumeAll',
+  MYLIST_AUTO_DOWNLOAD_ALL: 'nndd:mylist:autoDownloadAll',
   DOWNLOAD_LIST: 'nndd:download:list',
   DOWNLOAD_RETRY: 'nndd:download:retry',
   DOWNLOAD_REMOVE: 'nndd:download:remove',
@@ -63,7 +68,6 @@ export const IpcChannel = {
   MYLIST_ADD: 'nndd:mylist:add',
   MYLIST_REMOVE: 'nndd:mylist:remove',
   MYLIST_RENEW: 'nndd:mylist:renew',
-  MYLIST_RENEW_ALL: 'nndd:mylist:renewAll',
   /** ログイン済みアカウントのマイリスト一覧を取得 */
   MYLIST_FETCH_ACCOUNT: 'nndd:mylist:fetchAccount',
   /** {url, type} からマイリスト/チャンネル/ユーザー投稿の表示名を取得 → {name: string} | null */
@@ -358,6 +362,10 @@ export const IpcChannel = {
   BACKUP_DOWNLOAD: 'nndd:backup:download',
   /** (profileId: string) → BackupPayload | null */
   BACKUP_PREVIEW: 'nndd:backup:preview',
+  /** (profileId: string) → GistRevision[] */
+  BACKUP_LIST_REVISIONS: 'nndd:backup:listRevisions',
+  /** (profileId: string, sha: string) → BackupResult */
+  BACKUP_RESTORE_REVISION: 'nndd:backup:restoreRevision',
 
   // Discord Rich Presence
   /** → { connected: boolean } */

@@ -1,7 +1,7 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { app } from 'electron';
 import { GitHubApi } from '@shared/constants';
-import type { BackupPayload, BackupResult, DataScope, GistSummary, SyncProfile } from '@shared/types';
+import type { BackupPayload, BackupResult, DataScope, GistRevision, GistSummary, SyncProfile } from '@shared/types';
 import { BACKUP_SCHEMA_VERSION, DEFAULT_DATA_SCOPE } from '@shared/types';
 import { LibraryManager } from '../db/LibraryManager';
 import { getConfigStore, type NnddConfig } from '../config/ConfigStore';
@@ -184,7 +184,9 @@ export class BackupManager {
       payload.schedule = this.library.scheduleDao.list().map((s) => ({
         id: s.id,
         name: s.name,
+        targetType: s.targetType,
         targetMyListUrl: s.targetMyListUrl,
+        targetId: s.targetId,
         daysOfWeek: s.daysOfWeek,
         time: s.time,
         enabled: s.enabled
@@ -280,7 +282,9 @@ export class BackupManager {
           this.library.scheduleDao.upsert({
             id: s.id,
             name: s.name,
+            targetType: s.targetType || 'mylist',
             targetMyListUrl: s.targetMyListUrl,
+            targetId: s.targetId || '',
             daysOfWeek: s.daysOfWeek,
             time: s.time,
             enabled: s.enabled,
@@ -463,5 +467,45 @@ export class BackupManager {
     const raw = gist.files[GitHubApi.BACKUP_FILE_NAME]?.content;
     if (!raw) return null;
     return JSON.parse(raw) as BackupPayload;
+  }
+
+  /** プロファイルに紐づく Gist の世代 (リビジョン) 一覧を新しい順で返す */
+  async listRevisions(profileId: string): Promise<GistRevision[]> {
+    const token = GitHubAuthManager.getToken();
+    if (!token) throw new Error('GitHubにログインしていません');
+    const profile = this.getProfile(profileId);
+    if (!profile.gistId) throw new Error('このプロファイルはまだGistと紐付いていません');
+    return new GistClient(token).listRevisions(profile.gistId);
+  }
+
+  /**
+   * 指定リビジョン時点の内容をローカルへ復元する (ダウンロードの世代指定版)。
+   * Gist自体 (リモート) は変更しない — あくまでローカルへの反映のみ。
+   */
+  async restoreRevision(profileId: string, sha: string): Promise<BackupResult> {
+    const token = GitHubAuthManager.getToken();
+    if (!token) return { ok: false, error: 'GitHubにログインしていません' };
+    const profile = this.getProfile(profileId);
+    if (!profile.gistId) {
+      return { ok: false, error: 'このプロファイルはまだGistと紐付いていません' };
+    }
+
+    const client = new GistClient(token);
+    try {
+      const gist = await client.get(profile.gistId, sha);
+      const raw = gist.files[GitHubApi.BACKUP_FILE_NAME]?.content;
+      if (!raw) return { ok: false, error: '指定バージョンにバックアップファイルが見つかりません' };
+      const payload = JSON.parse(raw) as BackupPayload;
+      const applied = this.applyPayload(payload, profile.dataScope);
+      this.updateProfile(profileId, {
+        lastSyncedAt: new Date().toISOString(),
+        lastSyncDirection: 'download'
+      });
+      return { ok: true, applied };
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      log.warn('restore revision failed:', message);
+      return { ok: false, error: message };
+    }
   }
 }

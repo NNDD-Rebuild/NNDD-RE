@@ -1,5 +1,5 @@
 import { GitHubApi } from '@shared/constants';
-import type { GistSummary } from '@shared/types';
+import type { GistRevision, GistSummary } from '@shared/types';
 import { createLogger } from '../util/Logger';
 
 const log = createLogger('GistClient');
@@ -64,10 +64,32 @@ export class GistClient {
     };
   }
 
-  async get(gistId: string): Promise<GistDetail> {
-    const res = await this.request(`${GitHubApi.GIST_API_BASE}/${gistId}`);
+  /** @param sha 省略時は最新版。指定時はそのリビジョン時点の内容を取得する */
+  async get(gistId: string, sha?: string): Promise<GistDetail> {
+    const url = sha
+      ? `${GitHubApi.GIST_API_BASE}/${gistId}/${sha}`
+      : `${GitHubApi.GIST_API_BASE}/${gistId}`;
+    const res = await this.request(url);
     const raw = (await res.json()) as RawGist;
     return GistClient.toDetail(raw);
+  }
+
+  /** Gist のリビジョン (世代) 一覧を新しい順で取得 (最大100件) */
+  async listRevisions(gistId: string): Promise<GistRevision[]> {
+    interface RawCommit {
+      version: string;
+      committed_at: string;
+      change_status?: { total?: number; additions?: number; deletions?: number };
+    }
+    const res = await this.request(`${GitHubApi.GIST_API_BASE}/${gistId}/commits?per_page=100`);
+    const raws = (await res.json()) as RawCommit[];
+    return raws
+      .map((r) => ({
+        sha: r.version,
+        committedAt: r.committed_at,
+        totalChanges: r.change_status?.total ?? 0
+      }))
+      .reverse();
   }
 
   async create(content: string, description: string): Promise<GistDetail> {

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { DataScope, GistSummary, SyncProfile } from '@shared/types';
+import { RevisionHistoryModal } from './RevisionHistoryModal';
 
 const SCOPE_LABELS: { key: keyof DataScope; label: string }[] = [
   { key: 'config', label: 'アプリ設定 (プレイヤー・UI・LAN共有等)' },
@@ -34,6 +35,7 @@ export function ProfileEditor({
 }): JSX.Element {
   const [candidates, setCandidates] = useState<GistSummary[] | null>(null);
   const [loadingCandidates, setLoadingCandidates] = useState(false);
+  const [showRevisionHistory, setShowRevisionHistory] = useState(false);
 
   const toggleScope = (key: keyof DataScope): void => {
     onChangeScope({ ...profile.dataScope, [key]: !profile.dataScope[key] });
@@ -157,9 +159,24 @@ export function ProfileEditor({
         >
           {downloading ? 'ダウンロード中…' : 'ダウンロード'}
         </button>
+        <button
+          onClick={() => setShowRevisionHistory(true)}
+          disabled={uploading || downloading || !profile.gistId}
+          className="text-xs px-3 py-1.5 bg-nndd-border hover:bg-nndd-accent rounded disabled:opacity-50"
+          title="過去のバージョンを見て、任意の時点へ復元できます"
+        >
+          世代履歴
+        </button>
       </div>
 
       {resultMessage && <p className="text-xs text-nndd-subtext">{resultMessage}</p>}
+
+      {showRevisionHistory && (
+        <RevisionHistoryModal
+          profileId={profile.id}
+          onClose={() => setShowRevisionHistory(false)}
+        />
+      )}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import type { NgListItem } from './comment';
 import type { RssTypeValue } from './mylist';
 import type { SearchItem } from './search';
+import type { ScheduleTargetTypeValue } from './download';
 
 /**
  * GitHub Gist バックアップ・同期機能
@@ -88,7 +89,9 @@ export interface BackupPayload {
   schedule?: Array<{
     id: string;
     name: string;
+    targetType?: ScheduleTargetTypeValue;
     targetMyListUrl: string;
+    targetId?: string;
     daysOfWeek: number[];
     time: string;
     enabled: boolean;
@@ -127,6 +130,15 @@ export interface GistSummary {
   description: string;
   updatedAt: string;
   htmlUrl: string;
+}
+
+/** Gist のリビジョン (世代) 情報 */
+export interface GistRevision {
+  /** リビジョンSHA */
+  sha: string;
+  committedAt: string;
+  /** 変更行数の合計 (追加+削除)。0 = 初回コミット等で差分なし */
+  totalChanges: number;
 }
 
 /** Device Flow 開始結果 */
