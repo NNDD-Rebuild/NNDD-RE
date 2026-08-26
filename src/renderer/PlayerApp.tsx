@@ -256,7 +256,7 @@ export default function PlayerApp(): JSX.Element {
     pauseStartedAtMs: number | null;
   } | null>(null);
   const [defaultQuality] = useConfig<'highest' | number>('player.defaultQuality', 'highest');
-  const [controlsAlwaysVisible] = useConfig<boolean>('player.controlsAlwaysVisible', false);
+  const [controlsAlwaysVisible] = useConfig<boolean>('player.controlsAlwaysVisible', true);
   const defaultQualityRef = useRef(defaultQuality);
   defaultQualityRef.current = defaultQuality;
   const [ngStrength] = useConfig<'weak' | 'medium' | 'strong'>('player.ngStrength', 'medium');

@@ -94,7 +94,7 @@ export function PlayerSettings(): JSX.Element {
   );
   const [controlsAlwaysVisible, setControlsAlwaysVisible] = useConfig<boolean>(
     'player.controlsAlwaysVisible',
-    false
+    true
   );
 
   return (

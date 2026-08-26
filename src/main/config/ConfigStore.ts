@@ -395,7 +395,7 @@ const DEFAULTS: NnddConfig = {
     controlUiSize: 'normal',
     openVideoLinkInPlayer: true,
     resumePlayback: false,
-    controlsAlwaysVisible: false
+    controlsAlwaysVisible: true
   },
   ui: {
     theme: 'dark',
