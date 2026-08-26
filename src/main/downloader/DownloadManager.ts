@@ -49,6 +49,11 @@ export interface EnqueueOptions {
   videoId: string;
   /** 保存先 (空なら設定のlibraryRoot/downloads) */
   saveDir?: string;
+  /**
+   * saveDir (省略時はデフォルト保存先) 配下に作成するサブフォルダ名。
+   * マイリスト/シリーズ/投稿者名などをそのまま渡してよい (ファイル名に使えない文字は自動除去)。
+   */
+  subDir?: string;
   /** コメントのみ */
   commentOnly?: boolean;
   /** 音声のみ (.m4a、映像トラックなし) */
@@ -71,6 +76,10 @@ export class DownloadManager extends EventEmitter {
   private running = new Map<string, AbortController>();
   private maxConcurrent: number;
   private isProcessing = false;
+  /** 実行中に一時停止要求されたアイテムID (abort後 CANCELED ではなく PAUSED にするため) */
+  private pausingIds = new Set<string>();
+  /** 全体一時停止中: true の間は新規アイテムの実行を開始しない */
+  private globalPaused = false;
 
   constructor(private readonly library: LibraryManager) {
     super();
@@ -82,6 +91,10 @@ export class DownloadManager extends EventEmitter {
   }
 
   enqueue(opts: EnqueueOptions): DownloadQueueItem {
+    const baseDir = opts.saveDir ?? this.library.videoDir;
+    const saveDir = opts.subDir
+      ? path.join(baseDir, LocalFileNaming.sanitize(opts.subDir) || opts.subDir)
+      : baseDir;
     const item: DownloadQueueItem = {
       id: uuidv4(),
       videoId: opts.videoId,
@@ -90,9 +103,7 @@ export class DownloadManager extends EventEmitter {
       progress: 0,
       message: '',
       retryCount: 0,
-      saveDir:
-        opts.saveDir ??
-        this.library.videoDir,
+      saveDir,
       isCommentOnly: opts.commentOnly ?? false,
       isAudioOnly: opts.audioOnly ?? false,
       startTime: null,
@@ -179,10 +190,67 @@ export class DownloadManager extends EventEmitter {
   }
 
   /**
+   * 個別アイテムを一時停止する。
+   * 実行中なら現在の処理を中断して PAUSED に、待機中ならそのまま PAUSED にする。
+   */
+  pause(id: string): boolean {
+    const ac = this.running.get(id);
+    if (ac) {
+      const item = this.queue.find((q) => q.id === id);
+      if (!item) return false;
+      this.pausingIds.add(id);
+      ac.abort();
+      return true;
+    }
+    const item = this.queue.find((q) => q.id === id);
+    if (item && item.status === DownloadStatusType.WAIT) {
+      this.updateStatus(item, DownloadStatusType.PAUSED);
+      return true;
+    }
+    return false;
+  }
+
+  /** 個別アイテムを再開する (PAUSED → WAIT) */
+  resume(id: string): boolean {
+    const item = this.queue.find((q) => q.id === id);
+    if (!item || item.status !== DownloadStatusType.PAUSED) return false;
+    item.status = DownloadStatusType.WAIT;
+    this.emit('change', item);
+    this.tick();
+    return true;
+  }
+
+  /** キュー全体を一時停止する (実行中/待機中いずれも PAUSED にし、新規実行開始を止める) */
+  pauseAll(): void {
+    this.globalPaused = true;
+    for (const [id, ac] of this.running) {
+      this.pausingIds.add(id);
+      ac.abort();
+    }
+    for (const item of this.queue) {
+      if (item.status === DownloadStatusType.WAIT) {
+        this.updateStatus(item, DownloadStatusType.PAUSED);
+      }
+    }
+  }
+
+  /** キュー全体の一時停止を解除する (PAUSED → WAIT にして再開) */
+  resumeAll(): void {
+    this.globalPaused = false;
+    for (const item of this.queue) {
+      if (item.status === DownloadStatusType.PAUSED) {
+        item.status = DownloadStatusType.WAIT;
+        this.emit('change', item);
+      }
+    }
+    this.tick();
+  }
+
+  /**
    * キューを進める。
    */
   private async tick(): Promise<void> {
-    if (this.isProcessing) return;
+    if (this.isProcessing || this.globalPaused) return;
     this.isProcessing = true;
     try {
       while (true) {
@@ -402,7 +470,12 @@ export class DownloadManager extends EventEmitter {
       const msg = e instanceof Error ? e.message : String(e);
       item.errorMessage = msg;
       if (ac.signal.aborted) {
-        this.updateStatus(item, DownloadStatusType.CANCELED);
+        if (this.pausingIds.delete(item.id)) {
+          item.errorMessage = null;
+          this.updateStatus(item, DownloadStatusType.PAUSED);
+        } else {
+          this.updateStatus(item, DownloadStatusType.CANCELED);
+        }
       } else if (
         item.retryCount < (getConfigStore().get('downloadRetryCount') ?? 3)
       ) {

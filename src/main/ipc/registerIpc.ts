@@ -38,7 +38,11 @@ import {
   type EnqueueOptions
 } from '../downloader/DownloadManager';
 import { MyListAutoDownloader } from '../downloader/MyListAutoDownloader';
+import { SeriesAutoDownloader } from '../downloader/SeriesAutoDownloader';
+import { FollowUserAutoDownloader } from '../downloader/FollowUserAutoDownloader';
+import { ChannelWatcher } from '../downloader/ChannelWatcher';
 import { ScheduleManager } from '../downloader/ScheduleManager';
+import { SeriesClient } from '../nicovideo/series/SeriesClient';
 import type { Schedule } from '@shared/types';
 import {
   PlayerManager,
@@ -90,8 +94,12 @@ export function registerIpcHandlers(
   // --- ダウンロードマネージャ (シングルトン) ---
   const dlManager = new DownloadManager(library);
   const autoDl = new MyListAutoDownloader(library, dlManager);
-  const scheduler = new ScheduleManager(library, autoDl);
+  const seriesAutoDl = new SeriesAutoDownloader(library, dlManager);
+  const followUserAutoDl = new FollowUserAutoDownloader(library, dlManager);
+  const scheduler = new ScheduleManager(library, autoDl, seriesAutoDl, followUserAutoDl);
   scheduler.start();
+  const channelWatcher = new ChannelWatcher(library, trayManager);
+  channelWatcher.start();
 
   // VIDEO_OPEN_PLAYER 時点でプリフェッチした WatchInfo を一時保持するキャッシュ
   const watchInfoPrefetchCache = new Map<string, Promise<WatchPageInfo>>();
@@ -145,6 +153,20 @@ export function registerIpcHandlers(
   );
   ipcMain.handle(IpcChannel.DOWNLOAD_CANCEL_ALL, () => {
     dlManager.cancelAll();
+    return true;
+  });
+  ipcMain.handle(IpcChannel.DOWNLOAD_PAUSE, (_e, id: string) =>
+    dlManager.pause(id)
+  );
+  ipcMain.handle(IpcChannel.DOWNLOAD_RESUME, (_e, id: string) =>
+    dlManager.resume(id)
+  );
+  ipcMain.handle(IpcChannel.DOWNLOAD_PAUSE_ALL, () => {
+    dlManager.pauseAll();
+    return true;
+  });
+  ipcMain.handle(IpcChannel.DOWNLOAD_RESUME_ALL, () => {
+    dlManager.resumeAll();
     return true;
   });
   ipcMain.handle(IpcChannel.DOWNLOAD_REMOVE, (_e, id: string) =>
@@ -429,98 +451,7 @@ export function registerIpcHandlers(
   );
 
   ipcMain.handle(IpcChannel.SERIES_FETCH, async (_e, seriesId: string, currentVideoId?: string, requestedPage?: number) => {
-    // seriesId は数字のみ、またはURL
-    const m = (String(seriesId)).match(/series\/(\d+)/) ?? (String(seriesId)).match(/^(\d+)$/);
-    if (!m) throw new Error(`invalid series id: ${seriesId}`);
-    const id = m[1];
-    const ctx = NicoContext.get();
-    interface SeriesVideo {
-      id: string;
-      title: string;
-      thumbnail?: { url?: string | { listingMedium?: string } };
-      duration?: number;
-      count?: { view?: number; comment?: number; mylist?: number; like?: number };
-      registeredAt?: string;
-    }
-    interface SeriesRes {
-      meta?: { status?: number };
-      data?: {
-        detail?: { title?: string; description?: string };
-        totalCount?: number;
-        items?: Array<{ video: SeriesVideo }>;
-      };
-    }
-    const PAGE_SIZE = 100;
-    const toLength = (sec: number): string => {
-      const h = Math.floor(sec / 3600);
-      const mm = Math.floor((sec % 3600) / 60);
-      const ss = sec % 60;
-      return h > 0
-        ? `${h}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`
-        : `${mm}:${String(ss).padStart(2, '0')}`;
-    };
-    const toThumb = (t: SeriesVideo['thumbnail']): string => {
-      if (!t) return '';
-      if (typeof t.url === 'string') return t.url;
-      if (t.url && typeof t.url === 'object') return (t.url as { listingMedium?: string }).listingMedium ?? '';
-      return '';
-    };
-    const mapItems = (items: Array<{ video: SeriesVideo }>) => items.map((i) => ({
-      videoId: i.video.id,
-      title: i.video.title,
-      description: '',
-      thumbnailUrl: toThumb(i.video.thumbnail),
-      length: toLength(i.video.duration ?? 0),
-      pubDate: i.video.registeredAt ?? new Date().toISOString(),
-      viewCount: i.video.count?.view ?? 0,
-      commentCount: i.video.count?.comment ?? 0,
-      mylistCount: i.video.count?.mylist ?? 0,
-      likeCount: i.video.count?.like ?? 0,
-    }));
-    const fetchPage = async (page: number) => {
-      const url = `https://nvapi.nicovideo.jp/v2/series/${encodeURIComponent(id)}?pageSize=${PAGE_SIZE}&page=${page}`;
-      log.debug('fetch series page %d:', page, url);
-      return ctx.http.getJson<SeriesRes>(url);
-    };
-    const mkResult = (items: ReturnType<typeof mapItems>, name: string, page: number, totalPages: number) =>
-      ({ name, items, page, totalPages });
-
-    // ページ指定あり → そのページを直接取得
-    if (requestedPage && requestedPage >= 1) {
-      const res = await fetchPage(requestedPage);
-      if (res.meta?.status && res.meta.status >= 400) {
-        throw new Error(`シリーズ取得失敗: status=${res.meta.status}`);
-      }
-      const name = res.data?.detail?.title ?? `シリーズ ${id}`;
-      const totalCount = res.data?.totalCount ?? 0;
-      const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
-      return mkResult(mapItems(res.data?.items ?? []), name, requestedPage, totalPages);
-    }
-
-    // 初回ロード: ページ1取得 → currentVideoId のページを自動検出
-    const firstRes = await fetchPage(1);
-    if (firstRes.meta?.status && firstRes.meta.status >= 400) {
-      throw new Error(`シリーズ取得失敗: status=${firstRes.meta.status}`);
-    }
-    const name = firstRes.data?.detail?.title ?? `シリーズ ${id}`;
-    const firstItems = mapItems(firstRes.data?.items ?? []);
-    const totalCount = firstRes.data?.totalCount ?? firstItems.length;
-    const totalPages = Math.ceil(totalCount / PAGE_SIZE) || 1;
-
-    if (!currentVideoId || totalPages <= 1 || firstItems.some((i) => i.videoId === currentVideoId)) {
-      return mkResult(firstItems, name, 1, totalPages);
-    }
-
-    // 現在の動画があるページを最終ページから逆順に探索
-    for (let p = totalPages; p >= 2; p--) {
-      const res = await fetchPage(p);
-      const items = mapItems(res.data?.items ?? []);
-      if (items.some((i) => i.videoId === currentVideoId)) {
-        return mkResult(items, name, p, totalPages);
-      }
-    }
-
-    return mkResult(firstItems, name, 1, totalPages);
+    return SeriesClient.fetchPage(seriesId, requestedPage, currentVideoId);
   });
 
   ipcMain.handle(IpcChannel.VIDEO_GET_RELATED, async (_e, videoId: string) => {
@@ -585,20 +516,9 @@ export function registerIpcHandlers(
     return true;
   });
 
-  ipcMain.handle(IpcChannel.MYLIST_RENEW_ALL, async () => {
-    const mylists = library.myListDao.list();
-    const results: Record<string, number> = {};
-    for (const ml of mylists) {
-      try {
-        const { items } = await fetchMylistLikeItems(ml.myListUrl, ml.type, 1, 100);
-        results[ml.myListUrl] = items.length;
-        library.myListDao.upsert({ ...ml, unPlayVideoCount: 0 });
-      } catch (e) {
-        log.warn('mylist renew failed:', ml.myListUrl, e);
-        results[ml.myListUrl] = -1;
-      }
-    }
-    return results;
+  // マイリスト差分DL: 未登録の動画のみ DL キューに自動追加する
+  ipcMain.handle(IpcChannel.MYLIST_AUTO_DOWNLOAD_ALL, async () => {
+    return autoDl.renewAll();
   });
 
   // --- 認証 ---
@@ -739,6 +659,14 @@ export function registerIpcHandlers(
 
   ipcMain.handle(IpcChannel.BACKUP_PREVIEW, async (_e, profileId: string) => {
     return backupManager.preview(profileId);
+  });
+
+  ipcMain.handle(IpcChannel.BACKUP_LIST_REVISIONS, async (_e, profileId: string) => {
+    return backupManager.listRevisions(profileId);
+  });
+
+  ipcMain.handle(IpcChannel.BACKUP_RESTORE_REVISION, async (_e, profileId: string, sha: string) => {
+    return backupManager.restoreRevision(profileId, sha);
   });
 
   // --- 動画 ---
