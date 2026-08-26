@@ -91,6 +91,24 @@ export class NnddDatabase {
         // 既にカラムあり — 無視
       }
     }
+    // v9 → v10: schedule に targetType / targetId カラム追加 (シリーズ/フォロー投稿者自動DL対応)
+    if (
+      from === '4' || from === '5' || from === '6' || from === '7' ||
+      from === '8' || from === '9'
+    ) {
+      try {
+        this.db.exec(`ALTER TABLE schedule ADD COLUMN targetType TEXT DEFAULT 'mylist';`);
+        console.log('[DB] added schedule.targetType column');
+      } catch {
+        // 既にカラムあり — 無視
+      }
+      try {
+        this.db.exec(`ALTER TABLE schedule ADD COLUMN targetId TEXT;`);
+        console.log('[DB] added schedule.targetId column');
+      } catch {
+        // 既にカラムあり — 無視
+      }
+    }
   }
 
   /** プリペアドステートメントの取得 */

@@ -1,16 +1,24 @@
 import { useEffect, useState } from 'react';
 import type { Schedule, MyList } from '@shared/types';
+import { ScheduleTargetType } from '@shared/types';
+
+interface FollowUserOption {
+  id: string;
+  nickname: string;
+  iconUrl: string;
+}
 
 /**
  * 設定 > スケジュール (DLリスト・ライブラリ設定の一部)。
  *
  * 元: src/ScheduleWindow.mxml + ScheduleManager.as
  *
- * 曜日 + 時刻指定で対象マイリストを自動更新+新着DL。
+ * 曜日 + 時刻指定で対象 (マイリスト/シリーズ/フォロー投稿者) を自動更新+新着DL。
  */
 export function ScheduleSettings(): JSX.Element {
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [mylists, setMylists] = useState<MyList[]>([]);
+  const [followUsers, setFollowUsers] = useState<FollowUserOption[]>([]);
   const [editing, setEditing] = useState<Schedule | null>(null);
 
   const reload = (): void => {
@@ -20,6 +28,7 @@ export function ScheduleSettings(): JSX.Element {
         setSchedules(
           rows.map((r) => ({
             ...r,
+            targetType: r.targetType || ScheduleTargetType.MYLIST,
             lastRun: r.lastRun ? new Date(r.lastRun) : null
           }))
         )
@@ -27,6 +36,10 @@ export function ScheduleSettings(): JSX.Element {
     window.nndd
       .invoke<MyList[]>(window.nndd.channels.MYLIST_LIST)
       .then(setMylists);
+    window.nndd
+      .invoke<FollowUserOption[]>(window.nndd.channels.FOLLOW_USERS)
+      .then(setFollowUsers)
+      .catch(() => setFollowUsers([]));
   };
 
   useEffect(reload, []);
@@ -35,7 +48,9 @@ export function ScheduleSettings(): JSX.Element {
     setEditing({
       id: crypto.randomUUID(),
       name: '',
+      targetType: ScheduleTargetType.MYLIST,
       targetMyListUrl: mylists[0]?.myListUrl ?? '',
+      targetId: '',
       daysOfWeek: [1, 2, 3, 4, 5], // 月-金
       time: '03:00',
       enabled: true,
@@ -72,7 +87,6 @@ export function ScheduleSettings(): JSX.Element {
         <h2 className="text-base font-bold">自動ダウンロードスケジュール</h2>
         <button
           onClick={startNew}
-          disabled={mylists.length === 0}
           className="text-xs px-3 py-1 bg-nndd-accent text-white rounded hover:opacity-80 disabled:opacity-50"
         >
           新規スケジュール
@@ -91,7 +105,8 @@ export function ScheduleSettings(): JSX.Element {
           <tr>
             <th className="w-12">有効</th>
             <th>名前</th>
-            <th>対象マイリスト</th>
+            <th className="w-16">種別</th>
+            <th>対象</th>
             <th className="w-32">曜日</th>
             <th className="w-20">時刻</th>
             <th className="w-32">最終実行</th>
@@ -101,7 +116,7 @@ export function ScheduleSettings(): JSX.Element {
         <tbody>
           {schedules.length === 0 && (
             <tr>
-              <td colSpan={7} className="text-nndd-subtext text-center py-3">
+              <td colSpan={8} className="text-nndd-subtext text-center py-3">
                 スケジュールは未設定
               </td>
             </tr>
@@ -110,9 +125,9 @@ export function ScheduleSettings(): JSX.Element {
             <tr key={s.id}>
               <td>{s.enabled ? '✓' : ''}</td>
               <td>{s.name}</td>
-              <td className="truncate" title={s.targetMyListUrl}>
-                {mylists.find((m) => m.myListUrl === s.targetMyListUrl)
-                  ?.myListName ?? s.targetMyListUrl}
+              <td>{targetTypeLabel(s.targetType)}</td>
+              <td className="truncate" title={targetLabel(s, mylists, followUsers)}>
+                {targetLabel(s, mylists, followUsers)}
               </td>
               <td>{daysToStr(s.daysOfWeek)}</td>
               <td>{s.time}</td>
@@ -153,24 +168,82 @@ export function ScheduleSettings(): JSX.Element {
               className="w-full bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
             />
           </Row>
-          <Row label="対象マイリスト">
+          <Row label="対象種別">
             <select
-              value={editing.targetMyListUrl}
+              value={editing.targetType}
               onChange={(e) =>
                 setEditing({
                   ...editing,
-                  targetMyListUrl: e.target.value
+                  targetType: e.target.value as Schedule['targetType']
                 })
               }
               className="w-full bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
             >
-              {mylists.map((ml) => (
-                <option key={ml.myListUrl} value={ml.myListUrl}>
-                  {ml.myListName}
-                </option>
-              ))}
+              <option value={ScheduleTargetType.MYLIST}>マイリスト</option>
+              <option value={ScheduleTargetType.SERIES}>シリーズ</option>
+              <option value={ScheduleTargetType.FOLLOW_USER}>フォロー中の投稿者</option>
             </select>
           </Row>
+
+          {editing.targetType === ScheduleTargetType.SERIES ? (
+            <Row label="シリーズID/URL">
+              <input
+                value={editing.targetId}
+                onChange={(e) =>
+                  setEditing({ ...editing, targetId: e.target.value })
+                }
+                placeholder="例: 12345 または https://www.nicovideo.jp/series/12345"
+                className="w-full bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
+              />
+            </Row>
+          ) : editing.targetType === ScheduleTargetType.FOLLOW_USER ? (
+            <Row label="対象投稿者">
+              {followUsers.length === 0 ? (
+                <input
+                  value={editing.targetId}
+                  onChange={(e) =>
+                    setEditing({ ...editing, targetId: e.target.value })
+                  }
+                  placeholder="ユーザーID"
+                  className="w-full bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
+                />
+              ) : (
+                <select
+                  value={editing.targetId}
+                  onChange={(e) =>
+                    setEditing({ ...editing, targetId: e.target.value })
+                  }
+                  className="w-full bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
+                >
+                  <option value="">選択してください</option>
+                  {followUsers.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.nickname}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </Row>
+          ) : (
+            <Row label="対象マイリスト">
+              <select
+                value={editing.targetMyListUrl}
+                onChange={(e) =>
+                  setEditing({
+                    ...editing,
+                    targetMyListUrl: e.target.value
+                  })
+                }
+                className="w-full bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
+              >
+                {mylists.map((ml) => (
+                  <option key={ml.myListUrl} value={ml.myListUrl}>
+                    {ml.myListName}
+                  </option>
+                ))}
+              </select>
+            </Row>
+          )}
           <Row label="曜日">
             <div className="flex gap-1">
               {['日', '月', '火', '水', '木', '金', '土'].map((label, d) => (
@@ -226,6 +299,41 @@ export function ScheduleSettings(): JSX.Element {
       )}
     </div>
   );
+}
+
+function targetTypeLabel(t: Schedule['targetType']): string {
+  switch (t) {
+    case ScheduleTargetType.SERIES:
+      return 'シリーズ';
+    case ScheduleTargetType.FOLLOW_USER:
+      return '投稿者';
+    case ScheduleTargetType.MYLIST:
+    default:
+      return 'マイリスト';
+  }
+}
+
+function targetLabel(
+  s: Schedule,
+  mylists: MyList[],
+  followUsers: FollowUserOption[]
+): string {
+  switch (s.targetType) {
+    case ScheduleTargetType.SERIES:
+      return s.targetId || '(未設定)';
+    case ScheduleTargetType.FOLLOW_USER:
+      return (
+        followUsers.find((u) => u.id === s.targetId)?.nickname ||
+        s.targetId ||
+        '(未設定)'
+      );
+    case ScheduleTargetType.MYLIST:
+    default:
+      return (
+        mylists.find((m) => m.myListUrl === s.targetMyListUrl)?.myListName ??
+        s.targetMyListUrl
+      );
+  }
 }
 
 function Row({

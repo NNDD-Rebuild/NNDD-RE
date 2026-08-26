@@ -1,6 +1,9 @@
 import type { Schedule } from '@shared/types';
+import { ScheduleTargetType } from '@shared/types';
 import { LibraryManager } from '../db/LibraryManager';
 import { MyListAutoDownloader } from './MyListAutoDownloader';
+import { SeriesAutoDownloader } from './SeriesAutoDownloader';
+import { FollowUserAutoDownloader } from './FollowUserAutoDownloader';
 import { createLogger } from '../util/Logger';
 
 const log = createLogger('Scheduler');
@@ -11,7 +14,8 @@ const log = createLogger('Scheduler');
  * 元: src/org/mineap/nndd/download/ScheduleManager.as
  *
  * - 1分ごとに現在時刻と曜日をチェック
- * - 該当する有効なスケジュールがあればマイリスト更新+自動DLを発火
+ * - 該当する有効なスケジュールがあれば対象種別(マイリスト/シリーズ/フォロー投稿者)に応じた
+ *   更新+自動DLを発火
  * - 同じ分内で2回発火しないように lastRun を記録
  */
 export class ScheduleManager {
@@ -19,7 +23,9 @@ export class ScheduleManager {
 
   constructor(
     private readonly library: LibraryManager,
-    private readonly mylistDownloader: MyListAutoDownloader
+    private readonly mylistDownloader: MyListAutoDownloader,
+    private readonly seriesDownloader: SeriesAutoDownloader,
+    private readonly followUserDownloader: FollowUserAutoDownloader
   ) {}
 
   /** スケジュール監視を開始 */
@@ -69,22 +75,43 @@ export class ScheduleManager {
   }
 
   private async execute(s: Schedule, now: Date): Promise<void> {
-    log.info(`executing schedule: ${s.name} (${s.targetMyListUrl})`);
-
-    // 対象のマイリストを取得
-    const myList = this.library.myListDao
-      .list()
-      .find((ml) => ml.myListUrl === s.targetMyListUrl);
-    if (!myList) {
-      log.warn(`schedule target mylist not found: ${s.targetMyListUrl}`);
-      return;
-    }
+    const targetType = s.targetType || ScheduleTargetType.MYLIST;
+    log.info(`executing schedule: ${s.name} (${targetType})`);
 
     try {
-      const r = await this.mylistDownloader.renew(myList);
-      log.info(
-        `schedule done: ${s.name} fetched=${r.fetched} queued=${r.queued}`
-      );
+      switch (targetType) {
+        case ScheduleTargetType.SERIES: {
+          if (!s.targetId) {
+            log.warn(`schedule target series id missing: ${s.name}`);
+            return;
+          }
+          const r = await this.seriesDownloader.renew(s.targetId);
+          log.info(`schedule done: ${s.name} fetched=${r.fetched} queued=${r.queued}`);
+          return;
+        }
+        case ScheduleTargetType.FOLLOW_USER: {
+          if (!s.targetId) {
+            log.warn(`schedule target user id missing: ${s.name}`);
+            return;
+          }
+          const r = await this.followUserDownloader.renew(s.targetId);
+          log.info(`schedule done: ${s.name} fetched=${r.fetched} queued=${r.queued}`);
+          return;
+        }
+        case ScheduleTargetType.MYLIST:
+        default: {
+          const myList = this.library.myListDao
+            .list()
+            .find((ml) => ml.myListUrl === s.targetMyListUrl);
+          if (!myList) {
+            log.warn(`schedule target mylist not found: ${s.targetMyListUrl}`);
+            return;
+          }
+          const r = await this.mylistDownloader.renew(myList);
+          log.info(`schedule done: ${s.name} fetched=${r.fetched} queued=${r.queued}`);
+          return;
+        }
+      }
     } catch (e) {
       log.warn(`schedule execution failed: ${s.name}`, e);
     } finally {

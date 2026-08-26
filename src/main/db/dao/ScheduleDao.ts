@@ -5,7 +5,9 @@ import { Q } from '../schema';
 interface ScheduleRow {
   id: string;
   name: string;
+  targetType: string | null;
   targetMyListUrl: string;
+  targetId: string | null;
   daysOfWeek: string;
   time: string;
   enabled: number;
@@ -24,7 +26,9 @@ export class ScheduleDao {
     return rows.map((r) => ({
       id: r.id,
       name: r.name,
+      targetType: (r.targetType as Schedule['targetType']) || 'mylist',
       targetMyListUrl: r.targetMyListUrl,
+      targetId: r.targetId ?? '',
       daysOfWeek: r.daysOfWeek.split(',').filter((x) => x).map(Number),
       time: r.time,
       enabled: r.enabled === 1,
@@ -38,7 +42,9 @@ export class ScheduleDao {
       .run(
         s.id,
         s.name,
+        s.targetType || 'mylist',
         s.targetMyListUrl,
+        s.targetId || null,
         s.daysOfWeek.join(','),
         s.time,
         s.enabled ? 1 : 0,
