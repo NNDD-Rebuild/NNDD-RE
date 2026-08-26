@@ -199,23 +199,20 @@ export class WatchInfoHandler {
    * WatchPageInfo 内の画像 URL (サムネイル・オーナーアイコン) を
    * ImageCache 経由でローカルキャッシュし、nndd-re-local:// URL に差し替えて返す。
    * ImageCache が無効な場合は info をそのまま返す。
+   *
+   * 未キャッシュ時はダウンロードをバックグラウンドで進め (fire & forget)、
+   * この呼び出し自体はブロックしない。再生開始 (ストリームURL取得) が
+   * サムネ・アイコンの画像取得完了を待つ必要は無いため。
    */
-  private static async applyImageCache(info: WatchPageInfo): Promise<WatchPageInfo> {
+  private static applyImageCache(info: WatchPageInfo): WatchPageInfo {
     if (!ImageCache.isEnabled()) return info;
     const ctx = NicoContext.get();
     const http = ctx.http;
 
-    const [thumbUrl, thumbLargeUrl, ownerIconUrl] = await Promise.all([
-      info.thumbnail.url
-        ? ImageCache.getOrFetch(info.thumbnail.url, http)
-        : Promise.resolve(''),
-      info.thumbnail.largeUrl
-        ? ImageCache.getOrFetch(info.thumbnail.largeUrl, http)
-        : Promise.resolve(''),
-      info.owner?.iconUrl
-        ? ImageCache.getOrFetch(info.owner.iconUrl, http)
-        : Promise.resolve('')
-    ]);
+    const [thumbUrl, thumbLargeUrl, ownerIconUrl] = ImageCache.cacheUrlList(
+      [info.thumbnail.url, info.thumbnail.largeUrl, info.owner?.iconUrl ?? ''],
+      http
+    );
 
     return {
       ...info,
