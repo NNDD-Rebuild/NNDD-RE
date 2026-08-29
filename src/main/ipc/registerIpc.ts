@@ -1666,14 +1666,23 @@ export function registerIpcHandlers(
   );
 
   // ライブラリ フォルダ操作
-  ipcMain.handle(IpcChannel.LIBRARY_CHECK_BATCH, (_e, videoIds: string[]) => {
+  ipcMain.handle(IpcChannel.LIBRARY_CHECK_BATCH, async (_e, videoIds: string[]) => {
     const root = path.resolve(library.videoDir);
-    return videoIds.filter((id) => {
-      const v = library.videoDao.getByKey(id);
-      if (!v) return false;
-      const rel = path.relative(root, path.resolve(v.uri));
-      return !rel.startsWith('..') && !path.isAbsolute(rel);
-    });
+    const result: string[] = [];
+    const CHUNK_SIZE = 50;
+    for (let i = 0; i < videoIds.length; i += CHUNK_SIZE) {
+      const chunk = videoIds.slice(i, i + CHUNK_SIZE);
+      for (const id of chunk) {
+        const v = library.videoDao.getByKey(id);
+        if (!v) continue;
+        const rel = path.relative(root, path.resolve(v.uri));
+        if (!rel.startsWith('..') && !path.isAbsolute(rel)) result.push(id);
+      }
+      if (i + CHUNK_SIZE < videoIds.length) {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+    }
+    return result;
   });
 
   ipcMain.handle(IpcChannel.LIBRARY_FOLDER_CREATE, async (_e, folderName: string) => {

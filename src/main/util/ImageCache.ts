@@ -1,11 +1,20 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
+import { Worker } from 'node:worker_threads';
 import { app } from 'electron';
 import type { NicoHttp } from '../nicovideo/NicoHttp';
 import { createLogger } from './Logger';
+import workerPath from '../workers/imageCacheWorker?modulePath';
 
 const log = createLogger('ImageCache');
+
+interface WriteResponse {
+  id: number;
+  ok: boolean;
+  error?: string;
+  evicted?: string[];
+}
 
 /**
  * サムネイル・ユーザーアイコンをローカルキャッシュして
@@ -20,6 +29,12 @@ export class ImageCache {
   private static _maxSizeMb = 1000;
   private static _dir: string | null = null;
   private static _cachedKeys = new Set<string>();
+  private static _worker: Worker | null = null;
+  private static _reqId = 0;
+  private static _pending = new Map<number, { resolve: () => void; reject: (e: unknown) => void }>();
+  private static _queue: (() => Promise<void>)[] = [];
+  private static _activeCount = 0;
+  private static readonly _maxConcurrent = 5;
 
   static get cacheDir(): string {
     if (!this._dir) {
@@ -51,6 +66,59 @@ export class ImageCache {
   }
 
   // ----- internal helpers -----
+
+  private static getWorker(): Worker {
+    if (!this._worker) {
+      const w = new Worker(workerPath);
+      w.on('message', (res: WriteResponse) => {
+        if (res.evicted) {
+          for (const name of res.evicted) this._cachedKeys.delete(name);
+        }
+        const p = this._pending.get(res.id);
+        if (!p) return;
+        this._pending.delete(res.id);
+        if (res.ok) p.resolve();
+        else p.reject(new Error(res.error));
+      });
+      w.on('error', (err) => {
+        log.warn('worker error:', String(err));
+        for (const p of this._pending.values()) p.reject(err);
+        this._pending.clear();
+      });
+      w.unref();
+      this._worker = w;
+    }
+    return this._worker;
+  }
+
+  private static writeViaWorker(filePath: string, buf: Buffer): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const id = ++this._reqId;
+      this._pending.set(id, { resolve, reject });
+      const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
+      this.getWorker().postMessage(
+        { id, filePath, buffer: ab, maxBytes: this._maxSizeMb * 1024 * 1024 },
+        [ab]
+      );
+    });
+  }
+
+  /** 同時実行数を制限しつつタスクをキューイングする */
+  private static enqueue(task: () => Promise<void>): void {
+    this._queue.push(task);
+    this.drainQueue();
+  }
+
+  private static drainQueue(): void {
+    while (this._activeCount < this._maxConcurrent && this._queue.length > 0) {
+      const task = this._queue.shift()!;
+      this._activeCount++;
+      task().finally(() => {
+        this._activeCount--;
+        this.drainQueue();
+      });
+    }
+  }
 
   private static fileName(url: string): string {
     const hash = crypto.createHash('sha1').update(url).digest('hex');
@@ -92,10 +160,9 @@ export class ImageCache {
       });
       const name = this.fileName(url);
       const p = path.join(this.cacheDir, name);
-      fs.writeFileSync(p, buf);
+      await this.writeViaWorker(p, buf);
       this._cachedKeys.add(name);
       log.debug('cached:', name, '<-', url);
-      void this.evictIfNeeded();
       return this.toLocalUrl(p);
     } catch (e) {
       log.warn('fetch failed, using original URL:', url, String(e));
@@ -103,36 +170,9 @@ export class ImageCache {
     }
   }
 
-  /** 上限超過時に古いファイルから削除 */
-  private static async evictIfNeeded(): Promise<void> {
-    if (this._maxSizeMb === 0) return;
-    const maxBytes = this._maxSizeMb * 1024 * 1024;
-    const d = this.cacheDir;
-    try {
-      const files = await fs.promises.readdir(d);
-      const entries = await Promise.all(
-        files.map(async f => {
-          const p = path.join(d, f);
-          const stat = await fs.promises.stat(p);
-          return { path: p, name: f, size: stat.size, mtime: stat.mtimeMs };
-        })
-      );
-      entries.sort((a, b) => a.mtime - b.mtime);
-      let total = entries.reduce((s, e) => s + e.size, 0);
-      for (const entry of entries) {
-        if (total <= maxBytes) break;
-        try {
-          await fs.promises.unlink(entry.path);
-          this._cachedKeys.delete(entry.name);
-          total -= entry.size;
-        } catch {}
-      }
-    } catch {}
-  }
-
   /**
    * キャッシュ済みなら即ローカル URL、未キャッシュなら元 URL を返す (同期)。
-   * 未キャッシュ URL はバックグラウンドでダウンロード・保存する。
+   * 未キャッシュ URL はバックグラウンドで同時実行数を制限しつつダウンロード・保存する。
    */
   static cacheUrlList(urls: string[], http: NicoHttp): string[] {
     if (!this._enabled) return urls;
@@ -140,7 +180,7 @@ export class ImageCache {
       if (!u) return u;
       const cached = this.getCached(u);
       if (cached) return cached;
-      void this.getOrFetch(u, http); // fire & forget
+      this.enqueue(() => this.getOrFetch(u, http).then(() => {})); // fire & forget
       return u;
     });
   }
