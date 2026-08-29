@@ -36,6 +36,8 @@ export class CommentWindowManager {
   private pendingInit: CommentWindowInitData | null = null;
   /** renderer 側 IPC リスナー登録完了 (COMMENT_WINDOW_READY 受信済み) か */
   private ready = false;
+  /** COMMENT_WINDOW_READY が来ないまま表示が遅延し続けないためのフォールバックタイマー */
+  private showFallbackTimer: NodeJS.Timeout | null = null;
 
   /**
    * コメントウィンドウを開く。既存なら再利用してデータを更新。
@@ -108,10 +110,14 @@ export class CommentWindowManager {
 
     // ready-to-show は「初回描画完了」のタイミングで発火するが、React 側の
     // useEffect (IPC リスナー登録) 完了より先に発火することがある (特に Linux)。
-    // そのため初期化データの送信は renderer からの COMMENT_WINDOW_READY 通知を待つ。
+    // そのため表示自体も notifyReady() (初期データ送信後) まで遅らせる。
+    // COMMENT_WINDOW_READY が来ない異常系に備え、一定時間後に強制表示するフォールバックを持つ。
     win.on('ready-to-show', () => {
       if (shouldMaximize) win.maximize();
-      win.show();
+      this.showFallbackTimer = setTimeout(() => {
+        this.showFallbackTimer = null;
+        if (!win.isDestroyed()) win.show();
+      }, 1000);
     });
 
     win.on('close', () => {
@@ -131,6 +137,10 @@ export class CommentWindowManager {
     win.on('closed', () => {
       log.verbose('comment window closed');
       getConfigStore().set('player.commentWindowAutoOpen', false);
+      if (this.showFallbackTimer) {
+        clearTimeout(this.showFallbackTimer);
+        this.showFallbackTimer = null;
+      }
       this.win = null;
       this.playerWin = null;
     });
@@ -147,9 +157,16 @@ export class CommentWindowManager {
   /** renderer 側の IPC リスナー登録完了通知を受けて、保留中の初期化データを送信する */
   notifyReady(): void {
     this.ready = true;
+    if (this.showFallbackTimer) {
+      clearTimeout(this.showFallbackTimer);
+      this.showFallbackTimer = null;
+    }
     if (this.win && !this.win.isDestroyed() && this.pendingInit) {
       this.win.webContents.send(IpcChannel.COMMENT_WINDOW_INIT, this.pendingInit);
       this.pendingInit = null;
+    }
+    if (this.win && !this.win.isDestroyed()) {
+      this.win.show();
     }
   }
 
