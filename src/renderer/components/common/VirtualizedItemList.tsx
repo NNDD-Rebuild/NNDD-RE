@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useVirtualizer } from '@tanstack/react-virtual';
+import { measureElement, observeElementRect, useVirtualizer } from '@tanstack/react-virtual';
 
 /**
  * Ranking/Search/Follow/MyList 共通の仮想化リスト。
@@ -62,7 +62,28 @@ export function VirtualizedItemList<T>({
     count: rowCount,
     getScrollElement: () => scrollElementRef.current,
     estimateSize: () => estimatedRowHeight,
-    overscan: 3
+    overscan: 3,
+    // タブが display:none で非表示化されると ResizeObserver が 0x0 を通知することがあり、
+    // これをそのまま反映すると復帰時に実測キャッシュが壊れてスクロール位置がズレる (#タブ復帰時スクロール位置ズレ)。
+    // 0x0 通知は無視し、直前の正しいサイズを保持する。
+    observeElementRect: (instance, cb) => observeElementRect(instance, (rect) => {
+      if (rect.width === 0 || rect.height === 0) return;
+      cb(rect);
+    }),
+    // 上記と同じ理由で、行 (measureElement) 側にも 0x0 が個別に届く。
+    // ここを素通しすると itemSizeCache が 0 で上書きされ、復帰直後に大きな delta が
+    // 発生して scrollAdjustments が暴走し、スクロール位置が全く関係ない場所へ飛ぶ
+    // (#タブ復帰時スクロール位置ズレ)。0 実測値は破棄し、直前の実測値 (なければ概算値) を返す。
+    measureElement: (el, entry, instance) => {
+      const size = measureElement(el, entry, instance);
+      if (size === 0) {
+        const index = instance.indexFromElement(el);
+        const key = instance.options.getItemKey(index);
+        const cached = instance.itemSizeCache.get(key);
+        return cached && cached > 0 ? cached : instance.options.estimateSize(index);
+      }
+      return size;
+    }
   });
 
   // コンテナ幅計測前は描画しない (列数0での誤描画を避ける)
