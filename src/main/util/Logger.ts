@@ -46,6 +46,20 @@ function rotateLogFile(filePath: string, maxFiles: number): void {
   fs.renameSync(filePath, `${filePath}.1`);
 }
 
+/** ローカルタイムゾーンのオフセット付き ISO 風文字列 (例: 2026-08-30T03:13:05.123+09:00) */
+function formatLocalTimestamp(d: Date): string {
+  const pad = (n: number, len = 2) => String(n).padStart(len, '0');
+  const offsetMin = -d.getTimezoneOffset();
+  const sign = offsetMin >= 0 ? '+' : '-';
+  const offsetH = pad(Math.floor(Math.abs(offsetMin) / 60));
+  const offsetM = pad(Math.abs(offsetMin) % 60);
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}` +
+    `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}` +
+    `${sign}${offsetH}:${offsetM}`
+  );
+}
+
 function writeToFile(level: string, tag: string, message: string): void {
   if (!initialized) ensureInit();
   if (!logFilePath) return;
@@ -57,7 +71,7 @@ function writeToFile(level: string, tag: string, message: string): void {
         rotateLogFile(logFilePath, Math.max(1, rotation.maxFiles));
       }
     }
-    const line = `${new Date().toISOString()} [${level}][${tag}] ${message}\n`;
+    const line = `${formatLocalTimestamp(new Date())} [${level}][${tag}] ${message}\n`;
     fs.appendFileSync(logFilePath, line, 'utf-8');
   } catch {
     // ファイル書き込み失敗は無視
