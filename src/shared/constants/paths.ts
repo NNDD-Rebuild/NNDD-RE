@@ -19,8 +19,6 @@ export const NnddPaths = {
   CONFIG_FILE_NAME: 'config.json',
   /** Cookie保存ファイル */
   COOKIE_FILE_NAME: 'cookies.json',
-  /** ログディレクトリ */
-  LOG_DIR_NAME: 'log',
   /** デフォルトのダウンロード保存先ディレクトリ名 */
   DOWNLOADS_DIR_NAME: 'Downloads'
 } as const;

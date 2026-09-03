@@ -40,7 +40,6 @@ export class LibraryManager {
   readonly tempDir: string;
   /** 旧AIR版のファイルベース・プレイリスト実装の名残 (現在未使用、DBベースの playlistDao とは無関係) */
   readonly playlistDir: string;
-  readonly logDir: string;
   /** 動画の保存・スキャン対象ディレクトリ。設定で変更可能。 */
   videoDir: string;
 
@@ -55,7 +54,6 @@ export class LibraryManager {
     this.systemDir = path.join(rootDir, NnddPaths.SYSTEM_DIR_NAME);
     this.tempDir = path.join(rootDir, NnddPaths.TEMP_DIR_NAME);
     this.playlistDir = path.join(rootDir, NnddPaths.PLAYLIST_DIR_NAME);
-    this.logDir = path.join(rootDir, NnddPaths.LOG_DIR_NAME);
     this.videoDir = this.defaultVideoDir;
 
     const dbPath = path.join(this.systemDir, NnddPaths.DB_FILE_NAME);

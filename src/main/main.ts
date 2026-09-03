@@ -219,7 +219,6 @@ app.whenReady().then(async () => {
     library.systemDir,
     library.tempDir,
     library.playlistDir,
-    library.logDir,
     library.videoDir
   ]) {
     if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
