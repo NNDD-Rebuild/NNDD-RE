@@ -81,6 +81,8 @@ export function MyListView(): JSX.Element {
 
   // 一括DL中
   const [bulkDling, setBulkDling] = useState(false);
+  const [bulkMenuOpen, setBulkMenuOpen] = useState(false);
+  const bulkMenuRef = useRef<HTMLDivElement>(null);
   const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
   const videoIds = useMemo(() => items.map((it) => it.videoId), [items]);
   const watchedIds = useWatchedIds(videoIds);
@@ -655,8 +657,17 @@ export function MyListView(): JSX.Element {
     setLastClickedId(videoId);
   };
 
+  useEffect(() => {
+    if (!bulkMenuOpen) return;
+    const handler = (e: MouseEvent): void => {
+      if (bulkMenuRef.current && !bulkMenuRef.current.contains(e.target as Node)) setBulkMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [bulkMenuOpen]);
+
   /** 選択なしで一括DLした際、複数ページにまたがるマイリストなら全ページ分を対象にする */
-  const handleBulkDownload = async (): Promise<void> => {
+  const handleBulkDownload = async (subDir?: string): Promise<void> => {
     if (bulkDling) return;
     setBulkDling(true);
     try {
@@ -692,7 +703,7 @@ export function MyListView(): JSX.Element {
         return;
       }
       for (const it of targets) {
-        await window.nndd.invoke(IpcChannel.DOWNLOAD_ENQUEUE, { videoId: it.videoId });
+        await window.nndd.invoke(IpcChannel.DOWNLOAD_ENQUEUE, { videoId: it.videoId, subDir });
       }
       showToast(
         skipped > 0
@@ -1045,14 +1056,13 @@ export function MyListView(): JSX.Element {
                 {selected.kind === 'mylist' && (
                   <div
                     className="text-xs text-nndd-subtext truncate cursor-pointer hover:underline"
-                    title="クリックでIDをコピー"
+                    title="クリックでURLをコピー"
                     onClick={() => {
-                      const id = extractId(selected.mylist.myListUrl);
-                      navigator.clipboard.writeText(id);
-                      showToast('IDをコピーしました');
+                      navigator.clipboard.writeText(selected.mylist.myListUrl);
+                      showToast('URLをコピーしました');
                     }}
                   >
-                    {extractId(selected.mylist.myListUrl)}
+                    {selected.mylist.myListUrl}
                   </div>
                 )}
               </div>
@@ -1073,14 +1083,37 @@ export function MyListView(): JSX.Element {
                   マイリスト追加
                 </button>
               )}
-              <button
-                onClick={handleBulkDownload}
-                disabled={bulkDling || items.length === 0}
-                className="text-xs px-3 py-1 bg-nndd-accent text-white rounded hover:opacity-80 disabled:opacity-50 shrink-0"
-                title="Shift+クリックで範囲選択 / Ctrl+クリックで複数選択"
-              >
-                {bulkDling ? '追加中…' : bulkLabel}
-              </button>
+              <div ref={bulkMenuRef} className="relative inline-flex shrink-0">
+                <button
+                  onClick={() => handleBulkDownload()}
+                  disabled={bulkDling || items.length === 0}
+                  className="text-xs px-3 py-1 bg-nndd-accent text-white rounded-l hover:opacity-80 disabled:opacity-50"
+                  title="Shift+クリックで範囲選択 / Ctrl+クリックで複数選択"
+                >
+                  {bulkDling ? '追加中…' : bulkLabel}
+                </button>
+                <button
+                  onClick={() => setBulkMenuOpen((v) => !v)}
+                  disabled={bulkDling || items.length === 0}
+                  className="text-xs px-1 py-1 bg-nndd-accent text-white rounded-r border-l border-white/30 hover:opacity-80 disabled:opacity-50"
+                >▼</button>
+                {bulkMenuOpen && (
+                  <div className="absolute top-full right-0 mt-0.5 flex flex-col bg-nndd-panel border border-nndd-border rounded shadow-lg z-50 text-xs whitespace-nowrap">
+                    <button
+                      onClick={() => { setBulkMenuOpen(false); void handleBulkDownload(); }}
+                      className="block w-full px-3 py-1 text-left hover:bg-nndd-border"
+                    >通常DL</button>
+                    <button
+                      onClick={() => {
+                        setBulkMenuOpen(false);
+                        const name = selected?.kind === 'mylist' ? selected.mylist.myListName : selected?.kind === 'playlist' ? selected.playlist.name : undefined;
+                        void handleBulkDownload(name);
+                      }}
+                      className="block w-full px-3 py-1 text-left hover:bg-nndd-border"
+                    >フォルダ作成してDL</button>
+                  </div>
+                )}
+              </div>
               <div className="flex border border-nndd-border rounded overflow-hidden shrink-0">
                 <button
                   onClick={() => setDisplayMode('grid')}
@@ -1292,12 +1325,6 @@ function playlistItemToCard(it: PlaylistItem): VideoCardData {
     commentCount: 0,
     mylistCount: 0,
   };
-}
-
-function extractId(url: string): string {
-  const m = url.match(/(?:mylist\/|series\/)(\d+)/);
-  const raw = m ? m[1] : url;
-  return raw.replace(/\.0$/, '');
 }
 
 const ICON_PRESET_GROUPS: { label: string; icons: string[] }[] = [

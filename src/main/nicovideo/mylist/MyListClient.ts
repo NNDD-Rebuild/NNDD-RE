@@ -187,7 +187,7 @@ export class MyListClient {
     }
     const raw = res.data?.mylists ?? [];
     return raw.map((m) => ({
-      myListUrl: m.id,
+      myListUrl: `https://www.nicovideo.jp/my/mylist/${m.id}`,
       myListName: m.name,
       isDir: false,
       unPlayVideoCount: 0,
