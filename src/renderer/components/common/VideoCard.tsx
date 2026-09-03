@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AddToPlaylistMenuItem } from './AddToPlaylistMenuItem';
 
 /**
@@ -556,7 +557,7 @@ export function ContextMenuPopup({
   const top = Math.min(y, window.innerHeight - 160);
   const left = Math.min(x, window.innerWidth - 200);
 
-  return (
+  return createPortal(
     <div
       data-ctx-menu
       className="fixed bg-nndd-panel border border-nndd-border rounded shadow-lg py-1 text-xs z-[9999]"
@@ -564,7 +565,8 @@ export function ContextMenuPopup({
       onClick={(e) => e.stopPropagation()}
     >
       {children}
-    </div>
+    </div>,
+    document.body
   );
 }
 
