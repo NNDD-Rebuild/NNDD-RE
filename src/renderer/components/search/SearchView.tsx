@@ -144,8 +144,14 @@ export function SearchView(): JSX.Element {
     return false;
   };
 
-  const handleSearch = async (targetPage = 1): Promise<void> => {
-    const trimmed = word.trim();
+  const handleSearch = async (
+    targetPage = 1,
+    overrides?: { word: string; type: NNDDRESearchTypeValue; sortType: NNDDRESearchSortTypeValue }
+  ): Promise<void> => {
+    const w = overrides?.word ?? word;
+    const t = overrides?.type ?? type;
+    const st = overrides?.sortType ?? sortType;
+    const trimmed = w.trim();
     if (!trimmed) return;
     // マイリスト/シリーズURLならナビゲーション
     if (targetPage === 1 && handleNavigate(trimmed)) return;
@@ -156,9 +162,9 @@ export function SearchView(): JSX.Element {
         items: SearchResultItem[];
         totalCount: number;
       }>(window.nndd.channels.SEARCH_EXECUTE, {
-        word: word.trim(),
-        type,
-        sortType,
+        word: trimmed,
+        type: t,
+        sortType: st,
         offset: (targetPage - 1) * LIMIT,
         limit: LIMIT
       });
@@ -262,6 +268,13 @@ export function SearchView(): JSX.Element {
     setSortType(s.sortType);
   };
 
+  const handleLoadSavedAndSearch = (s: SearchItem): void => {
+    setWord(s.word);
+    setType(s.type);
+    setSortType(s.sortType);
+    handleSearch(1, { word: s.word, type: s.type, sortType: s.sortType });
+  };
+
   const handleRemoveSaved = async (id: string): Promise<void> => {
     await window.nndd.invoke(window.nndd.channels.SEARCH_SAVED_REMOVE, id);
     reloadSaved();
@@ -286,6 +299,7 @@ export function SearchView(): JSX.Element {
             >
               <button
                 onClick={() => handleLoadSaved(s)}
+                onDoubleClick={() => handleLoadSavedAndSearch(s)}
                 className="flex-1 text-left truncate"
                 title={s.word}
               >

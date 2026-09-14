@@ -1448,12 +1448,21 @@ export default function PlayerApp(): JSX.Element {
       {isSidebarDragging && (
         <div className="fixed inset-0 z-50 cursor-col-resize" />
       )}
-      <div ref={containerRef} className="flex-1 flex flex-col min-h-0 relative group">
+      <div
+        ref={containerRef}
+        className={[
+          'flex-1 flex flex-col min-h-0 relative group',
+          isFullscreen && !showControls ? 'cursor-none' : ''
+        ].join(' ')}
+      >
         {niconicoMode ? (
           <div ref={webviewWrapperRef} className="flex-1 min-h-0" />
         ) : (
           <>
-            <div className="flex-1 relative min-h-0">
+            <div
+              className="flex-1 relative min-h-0"
+              onDoubleClick={toggleFullscreen}
+            >
               {src ? (
                 <VideoPlayer
                   src={src}

@@ -106,6 +106,14 @@ export function VideoController({
       setMuted(video.muted);
     };
     const onRate = (): void => setRate(video.playbackRate);
+    // 動画切替時 (同一 <video> 要素を使い回し src だけ差し替え) は毎回等倍に戻す。
+    // ブラウザの暗黙リセットは ratechange が発火せず UI (rate state) に反映されないため、
+    // loadedmetadata のタイミングで明示的に 1.0 を適用して実速度・UI 双方を揃える。
+    const onLoadedMetaRate = (): void => {
+      if (video.playbackRate !== 1.0) {
+        video.playbackRate = 1.0;
+      }
+    };
     const onProgress = (): void => {
       if (!video.buffered.length) return;
       setBufferedEnd(video.buffered.end(video.buffered.length - 1));
@@ -117,6 +125,7 @@ export function VideoController({
     video.addEventListener('pause', onPause);
     video.addEventListener('volumechange', onVol);
     video.addEventListener('ratechange', onRate);
+    video.addEventListener('loadedmetadata', onLoadedMetaRate);
     video.addEventListener('progress', onProgress);
     const onEnterPip = (): void => setInPip(true);
     const onLeavePip = (): void => setInPip(false);
@@ -134,6 +143,7 @@ export function VideoController({
       video.removeEventListener('pause', onPause);
       video.removeEventListener('volumechange', onVol);
       video.removeEventListener('ratechange', onRate);
+      video.removeEventListener('loadedmetadata', onLoadedMetaRate);
       video.removeEventListener('progress', onProgress);
       video.removeEventListener('enterpictureinpicture', onEnterPip);
       video.removeEventListener('leavepictureinpicture', onLeavePip);
