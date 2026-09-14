@@ -220,33 +220,71 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
     const isHlsResolved = isHls ?? /\.m3u8(\?|$)/i.test(src);
 
     if (isHlsResolved) {
-      // pendingSeekRef のリセットは実際にシークを適用した後に行う (React.StrictMode の
-      // 二重effect実行で1回目が先に消費してしまい、2回目 (実際に残る方) でシークされなくなるのを防ぐ)
+      // pendingSeekRef はここではリセットしない (initStreaming/initLocal/handleQualityChange が
+      // 次回のsrc切替時に必ず明示的に上書きするため不要。React.StrictMode の二重effect実行で
+      // 1回目がここでリセットしてしまうと、2回目 (実際に残る方) でシークされなくなる)
       const resumeAt = pendingSeekRef?.current ?? 0;
 
       // hls.js でストリーミング (Chromium/Electronはこちらが常に対応。
       // canPlayType('application/vnd.apple.mpegurl')はEnvironmentによって
       // 誤ってtrueを返すことがあるため、native HLSより優先する)
       if (Hls.isSupported()) {
-        const hls = new Hls({
-          enableWorker: true,
-          lowLatencyMode: false,
-          maxBufferLength: 60,
-          ...(resumeAt > 0 ? { startPosition: resumeAt } : {})
-        });
-        hlsRef.current = hls;
-        hls.attachMedia(video);
-        hls.loadSource(src);
-        hls.on(Hls.Events.MANIFEST_PARSED, () => {
-          video.play().catch(() => {});
-          if (pendingSeekRef && resumeAt > 0) pendingSeekRef.current = 0;
-        });
-        hls.on(Hls.Events.ERROR, (_e, data) => {
-          if (data.fatal) {
-            setError(`HLS error: ${data.type} / ${data.details}`);
-          }
-        });
+        // StrictMode の二重effect実行時、1回目のhlsインスタンスのMANIFEST_PARSEDが
+        // cleanup(destroy)より後に発火すると、2回目(実際に残る方)のresumeAtを
+        // 誤って0にリセットしてしまう→cancelledガードでdestroy後の副作用を防ぐ
+        let cancelled = false;
+        // ニコニコDomand配信は先頭セグメント(0秒付近)がopen-GOP構造 (IDRキーフレーム無し)
+        // のことがあり、SourceBufferがまっさらな状態 (=hls生成直後) での取得は問題ないが、
+        // 他の位置を再生した後のSourceBufferに既存データが乗った状態で同じセグメントを
+        // 再取得すると、hls.jsがバッファ増加を検知できず (BUFFER_APPEND_NO_PROGRESS)
+        // 再生が止まったままになる (hls.js issue #7774 の亜種)。
+        // 0秒付近へのシークを検知したらhlsインスタンスを作り直し、まっさらな
+        // SourceBufferで先頭セグメントを再取得させることで回避する。
+        let hls: Hls;
+        let manifestReady = false;
+        let rebuilding = false;
+
+        const buildHls = (startAt: number): Hls => {
+          const h = new Hls({
+            enableWorker: true,
+            lowLatencyMode: false,
+            maxBufferLength: 60,
+            interstitialsController: null as unknown as undefined,
+            ...(startAt > 0 ? { startPosition: startAt } : {})
+          });
+          hlsRef.current = h;
+          h.attachMedia(video);
+          h.loadSource(src);
+          h.on(Hls.Events.MANIFEST_PARSED, () => {
+            if (cancelled) return;
+            manifestReady = true;
+            video.play().catch(() => {});
+          });
+          h.on(Hls.Events.ERROR, (_e, data) => {
+            if (cancelled) return;
+            if (data.fatal) {
+              setError(`HLS error: ${data.type} / ${data.details}`);
+            }
+          });
+          return h;
+        };
+
+        hls = buildHls(resumeAt);
+
+        const onSeekingRebuild = (): void => {
+          if (!manifestReady || rebuilding || cancelled) return;
+          if (video.currentTime >= 1) return;
+          rebuilding = true;
+          manifestReady = false;
+          hls.destroy();
+          hls = buildHls(0);
+          rebuilding = false;
+        };
+        video.addEventListener('seeking', onSeekingRebuild);
+
         return () => {
+          cancelled = true;
+          video.removeEventListener('seeking', onSeekingRebuild);
           hls.destroy();
           hlsRef.current = null;
         };
@@ -257,7 +295,6 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
         if (resumeAt > 0) {
           video.addEventListener('loadedmetadata', () => {
             video.currentTime = resumeAt;
-            if (pendingSeekRef) pendingSeekRef.current = 0;
           }, { once: true });
         }
         video.addEventListener('error', () => {
@@ -306,7 +343,6 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
         const seekTo = pendingSeekRef.current;
         video.addEventListener('loadedmetadata', () => {
           video.currentTime = seekTo;
-          pendingSeekRef.current = 0;
         }, { once: true });
       }
       video.play().catch(() => {});

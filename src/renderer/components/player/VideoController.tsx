@@ -113,6 +113,12 @@ export function VideoController({
       if (video.playbackRate !== 1.0) {
         video.playbackRate = 1.0;
       }
+      // 前の動画でシークバーを pointerdown したまま (ドラッグ中に別操作へ移る等で)
+      // pointerup が届かず seekingRef.current=true が残留していると、動画切替後に
+      // シークバー要素が duration 確定で再マウントされた際、ブラウザが取りこぼしていた
+      // pointerup をその新要素へ配信し、誤って座標0(=0秒)へseekしてしまうことがある。
+      // 新しい動画がロードされたら必ずシーク状態をリセットして防ぐ。
+      seekingRef.current = false;
     };
     const onProgress = (): void => {
       if (!video.buffered.length) return;
@@ -254,7 +260,12 @@ export function VideoController({
 
   const seek = (sec: number): void => {
     if (!video) return;
-    video.currentTime = Math.max(0, Math.min(sec, video.duration || sec));
+    // ニコニコDomand配信のHLSは先頭セグメントがopen-GOP構造 (IDRキーフレーム無し) の
+    // ことがあり、0秒ちょうどへシークするとhls.jsがバッファを組み立てられず再生が
+    // 止まったままになることがある (hls.js issue #7774)。ストリーミング再生時のみ
+    // 0秒付近への着地をわずかにずらして、壊れた先頭セグメントとの一致を避ける。
+    const target = !isLocal && sec < 0.1 ? 0.1 : sec;
+    video.currentTime = Math.max(0, Math.min(target, video.duration || target));
   };
 
   const changeVolume = (v: number): void => {
@@ -333,6 +344,12 @@ export function VideoController({
           }}
           onPointerUp={(e) => {
             if (!seekingRef.current) return;
+            // 要素の再マウント等でポインタキャプチャが失われた後に、取りこぼされた
+            // pointerup がブラウザから配信された場合の誤seekを防ぐ二重ガード
+            if (!(e.currentTarget as HTMLDivElement).hasPointerCapture(e.pointerId)) {
+              seekingRef.current = false;
+              return;
+            }
             const pct = getPointerPct(e, seekBarRef.current!);
             const v = pct * duration;
             seek(v);
