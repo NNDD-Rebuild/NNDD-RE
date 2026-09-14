@@ -1,4 +1,5 @@
 import express, { type Express, type Request, type Response } from 'express';
+import { app as electronApp } from 'electron';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -163,6 +164,10 @@ export class NnddHttpServer {
     this.app.get('/library', (_req, res) => {
       res.type('text/html; charset=utf-8').send(generateLibraryPage());
     });
+
+    this.app.get('/library-assets/comment-bundle.js', (_req, res) =>
+      this.handleLibraryAsset(res, 'comment-bundle.js')
+    );
 
     // 404
     this.app.use((req, res) => {
@@ -368,17 +373,31 @@ export class NnddHttpServer {
       ? normal.filter((c) => nowNos!.has(c.no))
       : [...normal].sort((a, b) => b.no - a.no).slice(0, 1000);
     const merged = [...nowComments, ...owner].sort((a, b) => a.vposMs - b.vposMs);
-    res.json(
-      merged.map((c) => ({
-        no: c.no,
-        vposMs: c.vposMs,
-        text: c.text,
-        size: c.sizeCommand,
-        pos: c.positionCommand,
-        color: c.color,
-        strokeColor: c.strokeColor
-      }))
-    );
+    res.json(merged);
+  }
+
+  /** /library ページ用に生成されたブラウザバンドル (resources/library-assets/) を配信 */
+  private resolveLibraryAssetPath(filename: string): string | null {
+    const candidates = [
+      path.join(__dirname, '../../resources/library-assets', filename),
+      path.join(electronApp.getAppPath(), 'resources/library-assets', filename)
+    ];
+    for (const p of candidates) {
+      if (fs.existsSync(p)) return p;
+    }
+    return null;
+  }
+
+  private handleLibraryAsset(res: Response, filename: string): void {
+    const p = this.resolveLibraryAssetPath(filename);
+    if (!p) {
+      log.error(`library asset not found: ${filename} (run "npm run build:library-comment-bundle")`);
+      res.status(404).end();
+      return;
+    }
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache');
+    fs.createReadStream(p).pipe(res);
   }
 
   private findVideoByKey(key: string): NNDDREVideo | null {

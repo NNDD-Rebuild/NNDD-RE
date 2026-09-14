@@ -154,6 +154,11 @@ video{width:100%;display:block;max-height:70vh}
 .comment-layer{
   position:absolute;inset:0;pointer-events:none;overflow:hidden;
 }
+.comment-layer canvas{
+  position:absolute;inset:0;
+  width:100%;height:100%;
+  display:block;
+}
 .comment-item{
   position:absolute;
   color:#fff;
@@ -254,6 +259,7 @@ video{width:100%;display:block;max-height:70vh}
   </div>
 </div>
 
+<script src="/library-assets/comment-bundle.js"></script>
 <script>
 (function(){
 'use strict';
@@ -270,9 +276,75 @@ var comments = [];
 var lastVposMs = -1;
 var commentTimer = null;
 
-// ue/shita スロット管理
+// ue/shita スロット管理 (フォールバック描画専用)
 var ueSlots = [];
 var shitaSlots = [];
+
+// ---- comment renderer (通常プレイヤーと同じ niconicomments 描画) ----
+// WebGL2 非対応ブラウザ (古いスマホ等) では従来の DOM overlay 方式にフォールバックする。
+var supportsWebGL2 = (function(){
+  try { return !!document.createElement('canvas').getContext('webgl2'); }
+  catch(e){ return false; }
+})();
+var commentLayerEl = document.getElementById('comment-layer');
+var videoWrapEl = document.getElementById('video-wrap');
+var commentRenderer = null;
+var commentStarted = false;
+var commentResizeTimer = null;
+// フォールバック描画のベースフォントサイズ (動画実表示高さ / 1080 * 36 に連動)
+var fallbackBaseFontSize = 14;
+
+if (supportsWebGL2 && window.NNDDLibraryComments) {
+  commentRenderer = new window.NNDDLibraryComments.CommentRenderer(commentLayerEl);
+  // Firefox は同じ WebGL2 描画でも Chrome 比で著しく重い (縁取り描画・CA専用レイヤー分離のコストが
+  // 顕著に出る) ため、体感フレームレートを保つために描画コストの高い設定を軽量側に倒す。
+  var isFirefox = /firefox/i.test(navigator.userAgent);
+  var initialRenderConfig = Object.assign(
+    {}, window.NNDDLibraryComments.DEFAULT_RENDER_CONFIG, { enabled: commentEnabled }
+  );
+  if (isFirefox) {
+    initialRenderConfig.dropShadow = false;
+    initialRenderConfig.keepCA = false;
+  }
+  commentRenderer.setConfig(initialRenderConfig);
+  new ResizeObserver(function(){ syncCommentLayer(false); }).observe(commentLayerEl);
+} else {
+  new ResizeObserver(updateFallbackCommentScale).observe(videoWrapEl);
+}
+
+/** CommentRenderer のキャンバスサイズを動画表示サイズに同期させる */
+function syncCommentLayer(immediate){
+  if (!commentRenderer) return;
+  var rect = commentLayerEl.getBoundingClientRect();
+  if (rect.width <= 0 || rect.height <= 0) return;
+  if (!commentStarted) {
+    commentStarted = true;
+    requestAnimationFrame(function(){
+      commentRenderer.onResize(rect.width, rect.height);
+      commentRenderer.start(document.getElementById('player'));
+    });
+    return;
+  }
+  if (immediate) {
+    commentRenderer.onResize(rect.width, rect.height);
+    return;
+  }
+  if (commentResizeTimer !== null) clearTimeout(commentResizeTimer);
+  commentResizeTimer = setTimeout(function(){
+    commentResizeTimer = null;
+    var r = commentLayerEl.getBoundingClientRect();
+    commentRenderer.onResize(r.width, r.height);
+  }, 100);
+}
+
+/** フォールバック DOM overlay 描画のベースフォントサイズを動画表示サイズに連動させる */
+function updateFallbackCommentScale(){
+  var player = document.getElementById('player');
+  var h = (player && player.clientHeight) || videoWrapEl.clientHeight;
+  if (h <= 0) return;
+  fallbackBaseFontSize = Math.max(10, h / 1080 * 36);
+  commentLayerEl.style.fontSize = fallbackBaseFontSize + 'px';
+}
 
 // ---- color ----
 var COLOR_MAP = {
@@ -486,17 +558,30 @@ function openPlayer(v){
   document.getElementById('modal-meta').textContent =
     fmtDur(v.duration) + (v.pubDate ? ' \xb7 ' + fmtDate(v.pubDate) : '');
   player.src = '/api/video/' + id + '/stream';
-  layer.innerHTML = '';
   modal.classList.add('open');
-  comments = [];
-  lastVposMs = -1;
-  ueSlots = [];
-  shitaSlots = [];
+
+  if (commentRenderer) {
+    commentRenderer.setComments([]);
+    commentStarted = false;
+    syncCommentLayer(true);
+  } else {
+    layer.innerHTML = '';
+    comments = [];
+    lastVposMs = -1;
+    ueSlots = [];
+    shitaSlots = [];
+    updateFallbackCommentScale();
+    if(commentTimer) clearInterval(commentTimer);
+    commentTimer = setInterval(checkComments, 100);
+  }
+
   fetch('/api/video/' + id + '/comments').then(function(r){ return r.json(); }).then(function(data){
-    comments = data;
+    if (commentRenderer) {
+      commentRenderer.setComments(data);
+    } else {
+      comments = data;
+    }
   }).catch(function(){});
-  if(commentTimer) clearInterval(commentTimer);
-  commentTimer = setInterval(checkComments, 100);
   player.play().catch(function(){});
 }
 
@@ -506,10 +591,16 @@ function closePlayer(){
   player.src = '';
   if(document.fullscreenElement) document.exitFullscreen().catch(function(){});
   document.getElementById('modal').classList.remove('open');
-  document.getElementById('comment-layer').innerHTML = '';
-  if(commentTimer){ clearInterval(commentTimer); commentTimer = null; }
-  comments = [];
-  lastVposMs = -1;
+  if (commentRenderer) {
+    commentRenderer.stop();
+    commentStarted = false;
+    commentRenderer.setComments([]);
+  } else {
+    document.getElementById('comment-layer').innerHTML = '';
+    if(commentTimer){ clearInterval(commentTimer); commentTimer = null; }
+    comments = [];
+    lastVposMs = -1;
+  }
 }
 
 // ---- comments ----
@@ -520,7 +611,7 @@ function checkComments(){
   var layer = document.getElementById('comment-layer');
   for(var i=0; i<comments.length; i++){
     var c = comments[i];
-    if(c.vposMs > lastVposMs && c.vposMs <= curMs){
+    if(c.isShow !== false && c.vposMs > lastVposMs && c.vposMs <= curMs){
       showComment(layer, c);
     }
   }
@@ -542,16 +633,16 @@ function showComment(layer, c){
   div.className = 'comment-item';
   div.textContent = c.text;
 
-  // size: 0=big, 1=medium, 2=small
-  div.style.fontSize = c.size===0 ? '1.4em' : c.size===2 ? '0.75em' : '1em';
+  // sizeCommand: 0=big, 1=medium, 2=small
+  div.style.fontSize = c.sizeCommand===0 ? '1.4em' : c.sizeCommand===2 ? '0.75em' : '1em';
   div.style.color = toColor(c.color);
   if(c.strokeColor){
     var sc = toColor(c.strokeColor);
     div.style.textShadow = '1px 1px 0 '+sc+',-1px 1px 0 '+sc+',1px -1px 0 '+sc+',-1px -1px 0 '+sc;
   }
 
-  var LINE = 28;
-  var pos = c.pos;
+  var LINE = fallbackBaseFontSize * 1.3;
+  var pos = c.positionCommand;
   if(pos === 'ue'){
     var slot = getSlot(ueSlots, 8, 4000);
     div.style.top = (slot * LINE) + 'px';
@@ -621,7 +712,11 @@ document.getElementById('btn-comment').onclick = function(){
   var btn = document.getElementById('btn-comment');
   btn.textContent = commentEnabled ? 'コメント ON' : 'コメント OFF';
   btn.classList.toggle('off', !commentEnabled);
-  if(!commentEnabled) document.getElementById('comment-layer').innerHTML = '';
+  if (commentRenderer) {
+    commentRenderer.setConfig({ enabled: commentEnabled });
+  } else if(!commentEnabled) {
+    document.getElementById('comment-layer').innerHTML = '';
+  }
 };
 document.getElementById('btn-fullscreen').onclick = function(){
   var wrap = document.getElementById('video-wrap');
@@ -632,23 +727,32 @@ document.getElementById('btn-fullscreen').onclick = function(){
   }
 };
 document.addEventListener('fullscreenchange', function(){
-  var wrap = document.getElementById('video-wrap');
   var player = document.getElementById('player');
   var btn = document.getElementById('btn-fullscreen');
   if(!document.fullscreenElement){
-    // 全画面解除 - レイアウト変化でコメント位置がずれるのでリセット
     btn.textContent = '全画面';
-    lastVposMs = player.currentTime * 1000 - 1;
-    document.getElementById('comment-layer').innerHTML = '';
-    ueSlots = []; shitaSlots = [];
+    if (!commentRenderer) {
+      // フォールバック方式: レイアウト変化でコメント位置がずれるのでリセット
+      // (CommentRenderer方式は ResizeObserver が自動でサイズ追従する)
+      lastVposMs = player.currentTime * 1000 - 1;
+      document.getElementById('comment-layer').innerHTML = '';
+      ueSlots = []; shitaSlots = [];
+    }
   } else {
     btn.textContent = '全画面解除';
   }
 });
 document.getElementById('player').onseeking = function(){
-  lastVposMs = document.getElementById('player').currentTime * 1000 - 1;
-  document.getElementById('comment-layer').innerHTML = '';
-  ueSlots = []; shitaSlots = [];
+  if (commentRenderer) {
+    commentRenderer.onSeek();
+  } else {
+    lastVposMs = document.getElementById('player').currentTime * 1000 - 1;
+    document.getElementById('comment-layer').innerHTML = '';
+    ueSlots = []; shitaSlots = [];
+  }
+};
+document.getElementById('player').onseeked = function(){
+  if (commentRenderer) commentRenderer.onSeek();
 };
 
 // ---- init ----

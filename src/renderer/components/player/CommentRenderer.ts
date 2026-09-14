@@ -30,8 +30,8 @@ export interface CommentRenderConfig {
   dropShadow: boolean;
   /**
    * 文字縁の濃さ。
-   *   - 'light': 薄い (contextStrokeOpacity=0.2)
-   *   - 'normal': 標準 (contextStrokeOpacity=0.4)
+   *   - 'light': 薄い (contextStrokeOpacity=0.075)
+   *   - 'normal': 標準 (contextStrokeOpacity=0.3)
    */
   outlineIntensity: 'light' | 'normal';
   /** ベースのMEDIUMフォントサイズ */
@@ -96,6 +96,9 @@ export class CommentRenderer {
   private lastVpos = -1;
   private lastW = 0;
   private lastH = 0;
+  /** devicePixelRatio 適用後の実際の canvas 描画バッファサイズ (物理px) */
+  private lastPhysicalW = 0;
+  private lastPhysicalH = 0;
   private rebuildSeq = 0;
 
   /**
@@ -132,8 +135,8 @@ export class CommentRenderer {
    */
   private swapToFreshCanvas(): void {
     const fresh = this.newCanvasElement();
-    fresh.width = this.lastW > 0 ? this.lastW : this.canvas.width;
-    fresh.height = this.lastH > 0 ? this.lastH : this.canvas.height;
+    fresh.width = this.lastPhysicalW > 0 ? this.lastPhysicalW : this.canvas.width;
+    fresh.height = this.lastPhysicalH > 0 ? this.lastPhysicalH : this.canvas.height;
     this.container.appendChild(fresh);
     this.canvas.remove();
     this.canvas = fresh;
@@ -207,8 +210,14 @@ export class CommentRenderer {
     if (w === this.lastW && h === this.lastH) return;
     this.lastW = w;
     this.lastH = h;
-    this.canvas.width = w;
-    this.canvas.height = h;
+    // CSS px のみで canvas 解像度を決めると HiDPI 環境で実解像度不足になり、
+    // フルスクリーート等で拡大表示された際に文字・縁取りが滲んで太く見える。
+    // devicePixelRatio を乗算し物理ピクセル解像度で描画する。
+    const dpr = window.devicePixelRatio || 1;
+    this.lastPhysicalW = Math.round(w * dpr);
+    this.lastPhysicalH = Math.round(h * dpr);
+    this.canvas.width = this.lastPhysicalW;
+    this.canvas.height = this.lastPhysicalH;
     // NiconiComments はコンストラクタ時にスケールを計算するため再生成が必要
     if (this.video) {
       this.rebuildEngine();
@@ -251,8 +260,11 @@ export class CommentRenderer {
     if (this.canvas.width <= 0 || this.canvas.height <= 0) {
       const rect = this.canvas.getBoundingClientRect();
       if (rect.width > 0 && rect.height > 0) {
-        this.canvas.width = Math.round(rect.width);
-        this.canvas.height = Math.round(rect.height);
+        const dpr = window.devicePixelRatio || 1;
+        this.lastPhysicalW = Math.round(rect.width * dpr);
+        this.lastPhysicalH = Math.round(rect.height * dpr);
+        this.canvas.width = this.lastPhysicalW;
+        this.canvas.height = this.lastPhysicalH;
       } else {
         return; // レイアウト未確定 — onResize() で再呼び出しされる
       }
@@ -263,10 +275,10 @@ export class CommentRenderer {
     );
 
     // dropShadow=false → contextStrokeOpacity=0 (縁取り非表示)
-    // outlineIntensity: 'light'=0.15 / 'normal'=0.3 (デフォルト0.4の0.75倍)
+    // outlineIntensity: 'light'=0.075 / 'normal'=0.3
     const strokeOpacity = !this.config.dropShadow
       ? 0
-      : this.config.outlineIntensity === 'normal' ? 0.3 : 0.15;
+      : this.config.outlineIntensity === 'normal' ? 0.3 : 0.075;
 
     // ライブラリ内部は setScale(rendererSize.width / canvasWidth, rendererSize.height / canvasHeight)
     // で横方向・縦方向を個別にスケールする。canvasWidth/canvasHeight のアスペクト比が

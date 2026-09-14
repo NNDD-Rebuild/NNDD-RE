@@ -24,6 +24,9 @@ prebuilds/
 # Local config / runtime data
 userData/
 
+# Generated browser bundle for /library HTTP page
+resources/library-assets/
+
 # Test artifacts
 test-shots/
 apitest/
