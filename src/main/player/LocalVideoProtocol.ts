@@ -104,7 +104,10 @@ async function handleRequest(req: Request): Promise<Response> {
       if (!filePath) {
         return new Response('missing path', { status: 400 });
       }
-      const resolved = path.resolve(decodeURIComponent(filePath));
+      // filePath は URLSearchParams.get() の時点で既にデコード済み。再度
+      // decodeURIComponent すると、パスに生の "%" (例: タイトル中の「25%」) が
+      // 含まれる場合に不正なエスケープシーケンスとして URIError になる
+      const resolved = path.resolve(filePath);
 
       if (!isAllowed(resolved)) {
         log.warn('access denied:', resolved);
