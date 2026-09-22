@@ -294,6 +294,10 @@ export default function PlayerApp(): JSX.Element {
     'player.commentListDisplay',
     'tab'
   );
+  /** ブラウザ版は別ウィンドウを開けないため、window設定でも常にタブ表示にフォールバックする */
+  const isWebPlayer = (globalThis as { __NNDD_WEB__?: boolean }).__NNDD_WEB__ === true;
+  /** スマホ (タッチデバイス) のブラウザ版: 操作バーは常時表示せず一定時間で消す */
+  const isMobileTouch = isWebPlayer && typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
   /** 過去コメント時の同時描画制限 (0=無制限) */
   const [pastCommentMaxCount] = useConfig<number>('player.pastCommentMaxCount', 0);
   const [commentWindowAutoOpen] = useConfig<boolean>(
@@ -977,8 +981,18 @@ export default function PlayerApp(): JSX.Element {
     const el = containerRef.current;
     if (!el) return;
     if (!document.fullscreenElement) {
-      el.requestFullscreen?.();
+      el.requestFullscreen?.()
+        ?.then(() => {
+          // モバイル (縦持ち) でのフルスクリーンは横画面固定にする。
+          // lock() は型定義に無い実験的APIのため any 経由で呼ぶ。
+          // デスクトップや API 非対応環境では失敗するので無視する。
+          (screen.orientation as unknown as { lock?: (o: string) => Promise<void> })
+            .lock?.('landscape')
+            .catch(() => {});
+        })
+        .catch(() => {});
     } else {
+      screen.orientation?.unlock?.();
       document.exitFullscreen?.();
     }
   }, []);
@@ -1264,7 +1278,7 @@ export default function PlayerApp(): JSX.Element {
     }
     if (autoOpenDoneRef.current) return;
     autoOpenDoneRef.current = true;
-    if (commentListDisplay === 'window' && !audioOnly) {
+    if (commentListDisplay === 'window' && !audioOnly && !isWebPlayer) {
       openCommentWindow();
     }
   }, [loading, src, commentListDisplay, commentWindowAutoOpen, openCommentWindow, audioOnly]);
@@ -1302,6 +1316,16 @@ export default function PlayerApp(): JSX.Element {
       setShowControls(false);
     }, 2500);
   }, []);
+
+  /** スマホ: 操作バーが隠れている時のタップは表示だけ、表示中のタップで再生/一時停止を切り替える */
+  const handleVideoTap = useCallback((): void => {
+    const wasVisible = showControls;
+    showControlsTemporarily();
+    if (!wasVisible) return;
+    if (!video) return;
+    if (video.paused) video.play().catch(() => {});
+    else video.pause();
+  }, [showControls, showControlsTemporarily, video]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -1485,6 +1509,7 @@ export default function PlayerApp(): JSX.Element {
                   onVideoError={(code) => { handleVideoError(code).catch(console.error); }}
                   audioOnly={audioOnly}
                   onEnded={() => { consecutiveSkipRef.current = 0; advanceToNextVideo(); }}
+                  onVideoClick={isMobileTouch ? handleVideoTap : undefined}
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-nndd-subtext">
@@ -1498,12 +1523,12 @@ export default function PlayerApp(): JSX.Element {
                 isFullscreen
                   ? 'absolute left-0 right-0 bottom-0 z-10'
                   : 'static',
-                showControls || (!isFullscreen && controlsAlwaysVisible)
+                showControls || (!isFullscreen && controlsAlwaysVisible && !isMobileTouch)
                   ? 'opacity-100 pointer-events-auto'
                   : 'opacity-0 pointer-events-none'
               ].join(' ')}
             >
-              {(commentListDisplay === 'window' || (isLocal && folderVideos.length > 1)) && (
+              {((commentListDisplay === 'window' && !isWebPlayer) || (isLocal && folderVideos.length > 1)) && (
                 <div className="flex items-center justify-end gap-2 px-2 py-0.5 bg-black/80" style={{ zoom: controlZoom }}>
                   {isLocal && folderVideos.length > 1 && (
                     <label className="flex items-center gap-1 text-xs text-nndd-subtext cursor-pointer select-none hover:text-nndd-text">
@@ -1520,7 +1545,7 @@ export default function PlayerApp(): JSX.Element {
                       フォルダ連続再生
                     </label>
                   )}
-                  {commentListDisplay === 'window' && (
+                  {commentListDisplay === 'window' && !isWebPlayer && (
                     <button
                       onClick={openCommentWindow}
                       className="text-xs px-2 py-0.5 rounded border border-nndd-border text-nndd-subtext hover:text-nndd-text"
@@ -1573,7 +1598,7 @@ export default function PlayerApp(): JSX.Element {
             isLocal={isLocal}
             localCommentXmlPath={localCommentXmlPath}
             ichibaHtmlPath={localIchibaHtmlPath}
-            showCommentTab={commentListDisplay === 'tab'}
+            showCommentTab={commentListDisplay === 'tab' || isWebPlayer}
             onCommentsUpdated={(cs) => setComments(cs.map(ensureCommandResolved))}
             onPastCommentsLoaded={(cs) => setPastComments(cs)}
             onPastCommentTabActive={(active) => setShowPastComments(active)}

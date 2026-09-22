@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { NNDDREVideo } from '@shared/types';
 import { IpcChannel } from '@shared/types';
+import { buildLocalUrl } from '@shared/constants';
 import { ContinuousPlayButton } from '../common/ContinuousPlayButton';
 import { ContextMenuPopup, MenuItem } from '../common/VideoCard';
 import { useAppStore } from '@renderer/store/useAppStore';
@@ -358,11 +359,11 @@ export function LibraryView(): JSX.Element {
 
   const thumbPrimaryUrl = (v: NNDDREVideo): string => {
     const base = v.uri.replace(/\.[^.]+$/, '');
-    return `nndd-re-local://video?path=${encodeURIComponent(base + '[ThumbImg].jpeg')}`;
+    return buildLocalUrl(base + '[ThumbImg].jpeg');
   };
   const thumbFallbackUrl = (v: NNDDREVideo): string => {
     const base = v.uri.replace(/\.[^.]+$/, '');
-    return `nndd-re-local://video?path=${encodeURIComponent(base + '.jpg')}`;
+    return buildLocalUrl(base + '.jpg');
   };
 
   const isLanTab = selectedFolder === LAN_FOLDER;
@@ -827,7 +828,7 @@ export function LibraryView(): JSX.Element {
                         <td>{formatDuration(v.time)}</td>
                         <td>{v.playCount}</td>
                         <td>{v.pubDate ? v.pubDate.toLocaleDateString('ja-JP') : '-'}</td>
-                        <td>
+                        <td className="whitespace-nowrap">
                           <button onClick={(e) => { e.stopPropagation(); handlePlay(v); }} className="text-xs px-2 py-0.5 bg-nndd-accent text-white rounded mr-1">再生</button>
                           <button onClick={(e) => { e.stopPropagation(); handleOpenFolder(v); }} className="text-xs px-2 py-0.5 bg-nndd-border rounded mr-1">フォルダ</button>
                           {extractVideoId(v.videoName) && (

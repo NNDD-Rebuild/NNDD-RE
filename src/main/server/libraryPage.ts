@@ -549,6 +549,15 @@ function createCard(v){
 // ---- player ----
 function openPlayer(v){
   var id = v.videoId;
+  // REのプレイヤー (PlayerApp) をそのまま配信する web-player.html へ遷移する
+  if(id){
+    location.href = '/web-player.html?videoId=' + encodeURIComponent(id);
+    return;
+  }
+  if(v.uri){
+    location.href = '/web-player.html?path=' + encodeURIComponent(v.uri);
+    return;
+  }
   if(!id) return;
   var player = document.getElementById('player');
   var modal = document.getElementById('modal');

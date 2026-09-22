@@ -11,6 +11,7 @@ import { createLogger } from '../util/Logger';
 import { CommentXmlReader } from '../nicovideo/comment/CommentXmlReader';
 import { ThumbInfoXmlReader } from '../nicovideo/video/ThumbInfoXmlReader';
 import { generateLibraryPage } from './libraryPage';
+import { registerWebPlayerRoutes } from './webPlayerBridge';
 
 const log = createLogger('HTTPServer');
 
@@ -27,6 +28,9 @@ const log = createLogger('HTTPServer');
  *  - `GET  /api/mylist` ─ マイリスト一覧 (JSON)
  *  - `GET  /api/video/:id` ─ ローカル動画情報 (JSON)
  *  - `GET  /api/video/:id/stream` ─ 上記同等 (互換alias)
+ *
+ *  - `GET  /library`, `/web-player.html?videoId=` ─ REのライブラリ+プレイヤーをそのままブラウザ配信 (web-app.html)
+ *  - `POST /api/ipc` ─ ブラウザ版プレイヤー用 IPC ブリッジ (ホワイトリスト制)
  */
 export class NnddHttpServer {
   private app: Express;
@@ -161,13 +165,36 @@ export class NnddHttpServer {
       this.handleComments(req, res)
     );
 
-    this.app.get('/library', (_req, res) => {
-      res.type('text/html; charset=utf-8').send(generateLibraryPage());
+    // REのライブラリ+プレイヤーを1ページで配信 (ビルド未実施なら /library は旧・手書きページにフォールバック)
+    this.app.get(['/library', '/web-player.html'], (req, res) => {
+      const dir = this.resolveRendererDir();
+      if (dir) {
+        res.sendFile(path.join(dir, 'web-app.html'));
+        return;
+      }
+      if (req.path === '/library') {
+        res.type('text/html; charset=utf-8').send(generateLibraryPage());
+        return;
+      }
+      res.status(404).json({ error: 'renderer build not found' });
     });
 
     this.app.get('/library-assets/comment-bundle.js', (_req, res) =>
       this.handleLibraryAsset(res, 'comment-bundle.js')
     );
+
+    // ブラウザ版プレイヤー: IPC ブリッジ + out/renderer の静的配信
+    registerWebPlayerRoutes(this.app, {
+      library: this.library,
+      isVideoAllowed: () => this.allowVideo,
+      streamFile: (req, res, filePath) => this.streamFile(req, res, filePath)
+    });
+    const rendererDir = this.resolveRendererDir();
+    if (rendererDir) {
+      this.app.use(express.static(rendererDir, { index: false, dotfiles: 'ignore' }));
+    } else {
+      log.warn('renderer build (out/renderer) not found: web player disabled (run "npm run build")');
+    }
 
     // 404
     this.app.use((req, res) => {
@@ -287,12 +314,17 @@ export class NnddHttpServer {
       res.status(404).send('video not found');
       return;
     }
-    const stat = fs.statSync(v.uri);
+    this.streamFile(req, res, v.uri);
+  }
+
+  /** ファイルを Range 対応で配信する */
+  private streamFile(req: Request, res: Response, filePath: string): void {
+    const stat = fs.statSync(filePath);
     const size = stat.size;
     const range = req.headers.range;
 
     const contentType =
-      this.contentTypeFromPath(v.uri) ?? 'application/octet-stream';
+      this.contentTypeFromPath(filePath) ?? 'application/octet-stream';
 
     if (range) {
       const m = /^bytes=(\d*)-(\d*)$/.exec(range);
@@ -314,14 +346,14 @@ export class NnddHttpServer {
       res.setHeader('Accept-Ranges', 'bytes');
       res.setHeader('Content-Length', String(end - start + 1));
       res.setHeader('Content-Type', contentType);
-      fs.createReadStream(v.uri, { start, end }).pipe(res);
+      fs.createReadStream(filePath, { start, end }).pipe(res);
       return;
     }
 
     res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Content-Length', String(size));
     res.setHeader('Content-Type', contentType);
-    fs.createReadStream(v.uri).pipe(res);
+    fs.createReadStream(filePath).pipe(res);
   }
 
   private handleThumb(req: Request, res: Response): void {
@@ -398,6 +430,18 @@ export class NnddHttpServer {
     res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache');
     fs.createReadStream(p).pipe(res);
+  }
+
+  /** ブラウザ版プレイヤーの静的ファイル (electron-vite の renderer 出力) */
+  private resolveRendererDir(): string | null {
+    const candidates = [
+      path.join(__dirname, '../renderer'),
+      path.join(electronApp.getAppPath(), 'out/renderer')
+    ];
+    for (const p of candidates) {
+      if (fs.existsSync(path.join(p, 'web-app.html'))) return p;
+    }
+    return null;
   }
 
   private findVideoByKey(key: string): NNDDREVideo | null {
@@ -564,6 +608,13 @@ export class NnddHttpServer {
         return 'video/mp4';
       case '.webm':
         return 'video/webm';
+      case '.jpg':
+      case '.jpeg':
+        return 'image/jpeg';
+      case '.png':
+        return 'image/png';
+      case '.m4a':
+        return 'audio/mp4';
       case '.mkv':
         return 'video/x-matroska';
       case '.flv':

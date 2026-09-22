@@ -93,6 +93,14 @@ html.platform-linux {
   background: var(--nndd-scrollbar-thumb-hover);
 }
 
+/* スクロールバー非表示 (スクロール自体は維持) */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* 複数行省略 (TailwindでLineClampプラグイン不使用の代替) */
 .line-clamp-2 {
   display: -webkit-box;

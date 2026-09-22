@@ -54,6 +54,10 @@ export const NNDD_LOCAL_SCHEME = NNDD_RE_LOCAL_SCHEME;
 
 /** ローカル動画 URL を構築する (renderer からも呼べるよう shared に置く) */
 export function buildLocalUrl(absolutePath: string): string {
+  // ブラウザ版 (webShim が __NNDD_WEB__ を立てる) はカスタムスキームが使えないため HTTP 配信URLにする
+  if ((globalThis as { __NNDD_WEB__?: boolean }).__NNDD_WEB__) {
+    return `/api/local-media?path=${encodeURIComponent(absolutePath)}`;
+  }
   return `${NNDD_RE_LOCAL_SCHEME}://video?path=${encodeURIComponent(absolutePath)}`;
 }
 

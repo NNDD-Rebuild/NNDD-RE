@@ -1,0 +1,345 @@
+/*
+ * ブラウザ版 (web-app.html) 専用のレイアウト調整。
+ * REのコンポーネントはデスクトップ前提の固定幅なので、狭い画面でのみ CSS で上書きする。
+ * デスクトップ版 (index.html / player.html) はこのファイルを読み込まないため影響しない。
+ *
+ * 構造への依存箇所 (REのUIを変えたら見直すこと):
+ *   ライブラリ: LibraryView の root > aside(左ペイン) + main / table.nndd-datagrid / grid-cols-6
+ *   プレイヤー: PlayerApp の root > 本体列(動画+操作バー) + div.contents(境界 + aside)
+ */
+
+#web-root {
+  height: 100%;
+}
+
+/* ---- ライブラリ: フォルダ/タグ用ドロワーのトグル (広い画面では出さない) ---- */
+.web-lib-bar,
+.web-lib-backdrop {
+  display: none;
+}
+
+.web-library {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.web-lib-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+/* ---- 狭い画面 (スマホ縦・小さいタブレット) ---- */
+@media (max-width: 768px) {
+  .web-lib-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    padding-top: max(6px, env(safe-area-inset-top));
+    background: rgb(var(--nndd-panel));
+    border-bottom: 1px solid rgb(var(--nndd-border));
+  }
+  .web-lib-bar button {
+    padding: 8px 14px;
+    font-size: 15px;
+    border-radius: 6px;
+    background: rgb(var(--nndd-border));
+    color: inherit;
+  }
+
+  /* 左ペイン → 左から出るドロワー */
+  .web-lib-body aside {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 40;
+    width: min(80vw, 320px) !important;
+    transform: translateX(-100%);
+    transition: transform 0.2s;
+    box-shadow: 2px 0 12px rgba(0, 0, 0, 0.5);
+  }
+  .web-library.sidebar-open .web-lib-body aside {
+    transform: none;
+  }
+  .web-library.sidebar-open .web-lib-backdrop {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    background: rgba(0, 0, 0, 0.5);
+  }
+
+  /* 右ペインが表の幅に引っ張られて画面外へ伸びないようにする */
+  .web-lib-body main {
+    min-width: 0;
+  }
+  .web-lib-body main > div {
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+
+  /* カード表示: 2列 */
+  .web-lib-body .grid.grid-cols-6 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* 表表示: 星 / タイトル / 時間 / 操作(再生ボタン) だけ残す */
+  .web-lib-body table.nndd-datagrid :is(th, td):nth-child(2),
+  .web-lib-body table.nndd-datagrid :is(th, td):nth-child(5),
+  .web-lib-body table.nndd-datagrid :is(th, td):nth-child(6) {
+    display: none;
+  }
+  .web-lib-body table.nndd-datagrid th:nth-child(4) {
+    width: 3.5rem;
+  }
+  .web-lib-body table.nndd-datagrid th:nth-child(7) {
+    width: 4rem;
+  }
+  /* 変更系ボタン (ブラウザ版では使えない) は隠して再生ボタンだけにする */
+  .web-lib-body table.nndd-datagrid td:nth-child(7) button:not(:first-child) {
+    display: none;
+  }
+  .web-lib-body table.nndd-datagrid td:nth-child(7) button {
+    padding: 8px 12px;
+  }
+}
+
+/* ---- プレイヤー ---- */
+.web-player {
+  height: 100%;
+}
+
+/* 狭い縦画面: 動画を上、情報サイドバーを下に縦積みする */
+@media (max-width: 768px) and (orientation: portrait) {
+  .web-player > div {
+    flex-direction: column;
+    height: 100dvh;
+  }
+
+  /* 本体列 (動画+操作バー = containerRef): 普通の flex-column 積み上げに戻す
+     (動画16:9 → その下に操作バー、という通常の縦並び。containerRef 自体は
+     ROOT の flex-1 を打ち消して高さ auto にするだけ)。 */
+  .web-player > div > div:first-child {
+    flex: none !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    height: auto !important;
+    position: relative !important;
+  }
+  /* 動画領域を 16:9 に固定する (padding-bottom トリック: 高さ0+paddingで比率を作り、
+     中身は position:absolute で全面に敷く)。コメントは動画領域のサイズで描画されるため、
+     縦長のままだとコメントが巨大になり動画の外 (黒帯) にもはみ出す。 */
+  .web-player > div > div:first-child > div:first-child {
+    flex: none !important;
+    width: 100% !important;
+    height: 0 !important;
+    padding-bottom: 56.25% !important; /* 9/16 */
+    position: relative !important;
+    overflow: hidden !important;
+  }
+  .web-player > div > div:first-child > div:first-child > * {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+  }
+
+  /* 操作バー本体: オーバーレイにはせず、動画の下に普通に並べる
+     (シークバー・前後スキップ・速度)。 */
+  .web-player > div > div:first-child > div:nth-child(2) {
+    position: static !important;
+  }
+  .web-player div.select-none.border-t {
+    /* VideoController は style={{zoom: zoomFactor}} (既定1.3倍) を持つ。zoom は
+       position:absolute な子孫の基準点計算を狂わせる (containerRef 基準で置いたはずの
+       座標が意図通りにならない) ため、ブラウザ版では無効化する。ボタンサイズは
+       このあとの min-height/min-width で確保する。 */
+    zoom: 1 !important;
+    flex-wrap: wrap;
+    row-gap: 4px;
+    column-gap: 4px;
+    padding: 6px 8px;
+    min-width: 0;
+  }
+  /* シークバーも動画の一番下に細く重ねる。containing block は containerRef
+     (video-area + 操作バー本体を含む列全体) になるため、bottom:0 では
+     操作バー本体の下端に来てしまい動画に重ならない。秒数表示等と同じく
+     video-area の下端 (calc(56.25vw)) を基準にした top 指定で合わせる。 */
+  .web-player div.select-none.border-t > div.flex-1 {
+    position: absolute !important;
+    left: 0 !important;
+    right: 0 !important;
+    top: calc(56.25vw - 16px) !important;
+    bottom: auto !important;
+    height: 16px !important;
+    margin: 0 !important;
+    align-items: flex-end !important;
+    z-index: 26;
+  }
+  /* トラック自体 (h-1.5) は items-center で 16px 枠の中央に来るため、
+     下端いっぱいに詰めて動画とのあいだに隙間が出ないようにする。 */
+  .web-player div.select-none.border-t > div.flex-1 > div.h-1\.5 {
+    margin-bottom: 0 !important;
+  }
+  /* 再生/一時停止ボタン (先頭の button) は非表示: 動画エリアのタップで代替する */
+  .web-player div.select-none.border-t > button:first-of-type {
+    display: none;
+  }
+  /* 音量は端末の物理ボタンで操作する前提でスライダーを隠す (ミュートボタン自体は
+     ⚙️メニューへ移動するので、これも合わせて隠れる) */
+  .web-player div.select-none.border-t input[type='range'] {
+    display: none;
+  }
+  .web-player div.select-none.border-t button,
+  .web-player div.select-none.border-t select {
+    min-height: 32px;
+    min-width: 32px;
+    padding: 2px 6px;
+    flex: 0 0 auto;
+  }
+
+  /* 秒数・コメントON/OFF・フルスクリーンの3つだけ、動画下部に重ねるオーバーレイにする
+     (指示された対象だけ。シークバー・前後スキップ・速度は上の通常バーに残す)。
+     この3要素は DOM 上 containerRef の子孫 (video-area の兄弟の中) にあるため、
+     containing block は containerRef になる。video-area の高さは padding-bottom:56.25%
+     (=画面幅の56.25%) で決まるので、その下端を calc(56.25vw) として基準にする。
+     web-app.tsx で containerRef の幅を viewport 幅に一致させているので vw 計算で問題ない。 */
+  .web-player div.select-none.border-t > span.font-mono,
+  .web-player [title='コメント表示'],
+  .web-player [title='コメント非表示'],
+  .web-player [title='フルスクリーン'],
+  .web-player div.select-none.border-t select {
+    position: absolute !important;
+    top: calc(56.25vw - 44px) !important;
+    z-index: 25;
+    background: rgba(0, 0, 0, 0.65) !important;
+    border-radius: 6px !important;
+  }
+  .web-player div.select-none.border-t > span.font-mono {
+    left: 8px !important;
+    padding: 6px 10px !important;
+  }
+  .web-player [title='フルスクリーン'] {
+    right: 8px !important;
+  }
+  .web-player [title='コメント表示'],
+  .web-player [title='コメント非表示'] {
+    right: 54px !important;
+  }
+  /* 倍速ボタン: コメント表示/非表示ボタンのさらに左側に置く */
+  .web-player div.select-none.border-t select {
+    right: 120px !important;
+  }
+  /* ---- ⚙️メニュー: 「フォルダ連続再生」チェックボックスと「ミュート」ボタンは
+     PlayerApp / VideoController の実物をそのまま使う (機能を二重実装しない)。
+     表示位置だけ画面右下の固定パネルへ動かし、WebGearMenu.tsx が <html> に付け外しする
+     web-gear-open クラスで表示/非表示を切り替える。 */
+  .web-player [title='ミュート'],
+  .web-player [title='ミュート解除'],
+  .web-player [class*='bg-black/80'] {
+    /* こちらも zoom: controlZoom (既定1.3倍) を持つため無効化する (上と同じ理由) */
+    zoom: 1 !important;
+    position: fixed;
+    right: 12px;
+    bottom: calc(60px + env(safe-area-inset-bottom, 0px));
+    z-index: 45;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s;
+  }
+  .web-player [class*='bg-black/80'] {
+    bottom: calc(104px + env(safe-area-inset-bottom, 0px));
+    border-radius: 8px !important;
+  }
+  html.web-gear-open .web-player [title='ミュート'],
+  html.web-gear-open .web-player [title='ミュート解除'],
+  html.web-gear-open .web-player [class*='bg-black/80'] {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  /* サイドバーは残りの高さ全部を使う。ドラッグでの幅変更は縦積みでは意味がないので隠す */
+  .web-player .cursor-col-resize {
+    display: none;
+  }
+  .web-player aside {
+    flex: 1 1 0 !important;
+    min-height: 0;
+    width: 100% !important;
+  }
+
+  /* フルスクリーン中: 動画に56.25vw固定 (padding-bottomトリック) をかけたままだと
+     containerRef の高さが video-area 分にしか広がらず、画面残りが黒帯のまま
+     何も表示されなくなる。fullscreen 疑似クラスがついた containerRef だけ、
+     この節の固定サイズ指定を解除して通常の可変 flex レイアウトに戻す。
+     オーバーレイ化した各要素 (calc(56.25vw...) 基準の絶対配置) も、その前提
+     (video-area = 56.25vw) が崩れるため通常配置に戻す。 */
+  .web-player > div > div:first-child:fullscreen {
+    height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+  }
+  .web-player > div > div:first-child:fullscreen > div:first-child {
+    flex: 1 1 auto !important;
+    height: auto !important;
+    padding-bottom: 0 !important;
+  }
+  .web-player > div > div:first-child:fullscreen > div:nth-child(2) {
+    flex: none !important;
+  }
+  .web-player > div > div:first-child:fullscreen div.select-none.border-t > div.flex-1 {
+    position: static !important;
+    height: 20px !important;
+    margin: 0 4px !important;
+    align-items: center !important;
+  }
+  .web-player > div > div:first-child:fullscreen div.select-none.border-t > span.font-mono,
+  .web-player > div > div:first-child:fullscreen [title='コメント表示'],
+  .web-player > div > div:first-child:fullscreen [title='コメント非表示'],
+  .web-player > div > div:first-child:fullscreen [title='フルスクリーン'] {
+    position: static !important;
+    top: auto !important;
+    background: transparent !important;
+  }
+}
+
+/* 横向きスマホ (高さが小さい): 動画を最大化し、サイドバーは隠す */
+@media (max-height: 500px) and (orientation: landscape) and (pointer: coarse) {
+  .web-player aside,
+  .web-player .cursor-col-resize {
+    display: none;
+  }
+  .web-player > div > div:first-child {
+    min-width: 0;
+  }
+}
+
+/* ⚙️メニューのトリガーボタン (WebGearMenu.tsx)。操作バーを動画下部のオーバーレイに
+   変えたモバイル縦画面でのみ出す。 */
+.web-gear-btn {
+  display: none;
+}
+@media (max-width: 768px) and (orientation: portrait) {
+  .web-gear-btn {
+    display: flex;
+  }
+}
+
+/* スマホ (タッチデバイス) では音量スライダー・ミュートボタンを常に隠す。
+   音量は端末の物理ボタンで操作する前提のため。orientation を問わない
+   (portrait 限定の節にあるルールだと、フルスクリーン+横画面ロックで
+   orientation:portrait が外れた時に復活してしまう)。 */
+@media (pointer: coarse) {
+  .web-player div.select-none.border-t input[type='range'],
+  .web-player [title='ミュート'],
+  .web-player [title='ミュート解除'],
+  .web-player [title^='前の動画'],
+  .web-player [title^='次の動画'],
+  .web-player [title^='ミニプレイヤー'] {
+    display: none !important;
+  }
+}

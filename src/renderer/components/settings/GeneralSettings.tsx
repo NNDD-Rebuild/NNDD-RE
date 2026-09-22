@@ -414,7 +414,7 @@ export function GeneralSettings({ onDeveloperModeChange }: GeneralSettingsProps)
                   {showQr && (
                     <div className="mt-2 inline-block bg-white p-3">
                       <QRCodeSVG
-                        value={`${httpStatus.lanIp ?? 'localhost'}:${httpStatus.port}`}
+                        value={`http://${httpStatus.lanIp ?? 'localhost'}:${httpStatus.port}/library`}
                         size={128}
                       />
                     </div>
@@ -422,8 +422,8 @@ export function GeneralSettings({ onDeveloperModeChange }: GeneralSettingsProps)
                   {showQr && (
                     <p className="text-xs text-nndd-subtext mt-1">
                       {httpStatus.lanIp
-                        ? `${httpStatus.lanIp}:${httpStatus.port}`
-                        : `localhost:${httpStatus.port}`}
+                        ? `http://${httpStatus.lanIp}:${httpStatus.port}/library`
+                        : `http://localhost:${httpStatus.port}/library`}
                     </p>
                   )}
                 </div>

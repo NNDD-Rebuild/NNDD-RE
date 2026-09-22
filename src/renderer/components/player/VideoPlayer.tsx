@@ -33,6 +33,9 @@ interface Props {
   audioOnly?: boolean;
   /** ミニプレイヤー (Document Picture-in-Picture) のON/OFF通知 */
   onPipChange?: (inPip: boolean) => void;
+  /** video要素クリック時のカスタム処理。指定時はデフォルトの再生/一時停止トグルの代わりに呼ばれる
+   * (スマホブラウザ版: 1回目のタップで操作バー表示、2回目のタップで再生/一時停止) */
+  onVideoClick?: () => void;
 }
 
 export interface VideoPlayerHandle {
@@ -64,7 +67,8 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
     onVideoError,
     onEnded,
     audioOnly,
-    onPipChange
+    onPipChange,
+    onVideoClick
   },
   ref
 ) {
@@ -359,6 +363,10 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
         autoPlay
         controls={false}
         onClick={() => {
+          if (onVideoClick) {
+            onVideoClick();
+            return;
+          }
           const v = videoRef.current;
           if (!v) return;
           if (v.paused) v.play();

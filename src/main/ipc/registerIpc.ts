@@ -31,6 +31,7 @@ import {
 import type { RssTypeValue } from '@shared/types';
 import { NicoContext } from '../nicovideo/NicoContext';
 import { NnddHttpServer } from '../server/NnddHttpServer';
+import { installIpcRegistry } from './ipcRegistry';
 import { LanLibraryClient } from '../server/LanLibraryClient';
 import type { NgListItem } from '@shared/types';
 import {
@@ -91,6 +92,9 @@ export function registerIpcHandlers(
   mainWindowGetter: (() => BrowserWindow | null) | undefined,
   backupManager: BackupManager
 ): CmdApi {
+  // ブラウザ版プレイヤー用に ipcMain.handle の登録内容を記録する (以降の handle より前に呼ぶ)
+  installIpcRegistry();
+
   // --- ダウンロードマネージャ (シングルトン) ---
   const dlManager = new DownloadManager(library);
   const autoDl = new MyListAutoDownloader(library, dlManager);
