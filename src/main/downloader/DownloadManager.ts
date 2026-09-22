@@ -276,7 +276,10 @@ export class DownloadManager extends EventEmitter {
     item.startTime = new Date();
     try {
       this.updateStatus(item, DownloadStatusType.WATCH);
-      const watch = await WatchInfoHandler.fetchWatchInfoRaw(item.videoId);
+      // DLはユーザー操作起点の明示的な取得のため、hideWatchHistory設定に関わらず
+      // ログイン経由 (v3) で取得する。ゲスト経由 (v3_guest) の threadKey は
+      // nvComment API 側で INVALID_TOKEN 扱いされ、過去コメント全量取得に失敗するため。
+      const watch = await WatchInfoHandler.fetchWatchInfoRaw(item.videoId, true);
       item.videoName = watch.title;
       this.emit('change', item);
 
