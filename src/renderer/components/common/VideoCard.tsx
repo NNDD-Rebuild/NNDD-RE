@@ -409,11 +409,11 @@ function Actions({
   onRemove?: (id: string) => void;
 }): JSX.Element {
   return (
-    <div className="flex gap-1 flex-wrap">
+    <div className="nndd-card-actions flex gap-1 flex-wrap">
       {onPlay && (
         <button
           onClick={() => onPlay(data.videoId)}
-          className="text-xs px-2 py-0.5 bg-nndd-accent text-white rounded hover:opacity-80"
+          className="nndd-card-actions-btn text-xs px-2 py-0.5 bg-nndd-accent text-white rounded hover:opacity-80"
         >
           再生
         </button>
@@ -428,7 +428,7 @@ function Actions({
       {onNiconico && (
         <button
           onClick={() => onNiconico(data.videoId)}
-          className="text-xs px-2 py-0.5 bg-nndd-border rounded hover:bg-nndd-accent hover:text-white"
+          className="nndd-card-actions-btn text-xs px-2 py-0.5 bg-nndd-border rounded hover:bg-nndd-accent hover:text-white"
           title="ニコニコで開く"
         >
           ニコ動
@@ -437,7 +437,7 @@ function Actions({
       {onUserPage && data.authorId && (
         <button
           onClick={() => onUserPage(data.authorId!)}
-          className="text-xs px-2 py-0.5 bg-nndd-border rounded hover:bg-nndd-accent hover:text-white"
+          className="nndd-card-actions-btn text-xs px-2 py-0.5 bg-nndd-border rounded hover:bg-nndd-accent hover:text-white"
           title={data.authorNickname ? `${data.authorNickname} のページ` : 'ユーザーページ'}
         >
           ユーザー
@@ -446,7 +446,7 @@ function Actions({
       {onOpenInfo && (
         <button
           onClick={() => onOpenInfo(data.videoId)}
-          className="text-xs px-2 py-0.5 bg-nndd-border rounded hover:bg-nndd-accent hover:text-white"
+          className="nndd-card-actions-btn text-xs px-2 py-0.5 bg-nndd-border rounded hover:bg-nndd-accent hover:text-white"
         >
           情報
         </button>
@@ -454,7 +454,7 @@ function Actions({
       {onRemove && (
         <button
           onClick={() => onRemove(data.videoId)}
-          className="text-xs px-2 py-0.5 bg-nndd-border rounded hover:bg-red-600 hover:text-white"
+          className="nndd-card-actions-btn text-xs px-2 py-0.5 bg-nndd-border rounded hover:bg-red-600 hover:text-white"
           title="削除"
         >
           削除
@@ -484,7 +484,7 @@ function DownloadSplitButton({
     <div className="relative inline-flex">
       <button
         onClick={() => onDownload(videoId)}
-        className={`text-xs px-2 py-0.5 rounded-l ${baseCls}`}
+        className={`nndd-card-actions-btn text-xs px-2 py-0.5 rounded-l ${baseCls}`}
         title={isDownloaded ? 'コメントのみ再取得' : 'ダウンロード'}
       >
         DL

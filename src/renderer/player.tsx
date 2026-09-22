@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import PlayerApp from './PlayerApp';
+import './platformClass';
 import './styles/global.css';
 
 ReactDOM.createRoot(document.getElementById('player-root')!).render(

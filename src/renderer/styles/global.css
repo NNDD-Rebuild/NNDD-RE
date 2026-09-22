@@ -58,6 +58,26 @@ body {
   user-select: none;
 }
 
+/* Linux は日本語UIフォントの字面がWindows想定フォントより小さく見えるため底上げ。
+   html 側は Tailwind の rem 系ユーティリティ (px-2/text-xs/w-52等) の基準なので、
+   ここを上げるとボタンの padding 等も含めて連動して拡大する */
+html.platform-linux {
+  font-size: 19px;
+}
+.platform-linux body {
+  font-size: 15px;
+}
+
+/* VideoCard の操作ボタン群: html font-size 拡大でカード幅内に収まらなくなるため
+   Linux だけ詰める (Windows は元の gap-1/px-2 のまま) */
+.platform-linux .nndd-card-actions {
+  gap: 2px;
+}
+.platform-linux .nndd-card-actions-btn {
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
 ::-webkit-scrollbar {
   width: 10px;
   height: 10px;

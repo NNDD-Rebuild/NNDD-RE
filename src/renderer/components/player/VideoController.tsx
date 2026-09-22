@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import type { DomandStreamCandidate } from '@shared/types';
 import { useConfig } from '@renderer/hooks/useConfig';
+import { ControlBarSelect } from './ControlBarSelect';
+
+const PLAYBACK_RATE_OPTIONS = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0] as const;
+
+// Linuxのみカスタムドロップダウンに置き換える。ネイティブ<select>は全画面時に
+// 展開方向をJS/CSSから制御できず、Linux(Wayland)環境で選択肢が画面外にはみ出す
+// 問題があったため。Windows/macOSではネイティブselectのまま既存動作を維持する。
+const isLinux = window.electron?.process?.platform === 'linux';
 
 interface Props {
   video: HTMLVideoElement | null;
@@ -450,30 +458,54 @@ export function VideoController({
       />
 
       {!audioOnly && availableQualities && availableQualities.length >= 2 && onQualityChange && (
+        isLinux ? (
+          <ControlBarSelect
+            value={currentQualityId ?? ''}
+            options={availableQualities.map((q) => ({
+              value: q.id,
+              label: q.height ? `${q.height}p` : (q.id.match(/(\d+p)$/)?.[1] ?? q.id)
+            }))}
+            onChange={onQualityChange}
+            title="画質"
+          />
+        ) : (
+          <select
+            value={currentQualityId ?? ''}
+            onChange={(e) => onQualityChange(e.target.value)}
+            className="bg-nndd-border text-white text-sm rounded px-1 py-0.5 cursor-pointer"
+          >
+            {availableQualities.map((q) => (
+              <option key={q.id} value={q.id}>
+                {q.height ? `${q.height}p` : (q.id.match(/(\d+p)$/)?.[1] ?? q.id)}
+              </option>
+            ))}
+          </select>
+        )
+      )}
+
+      {isLinux ? (
+        <ControlBarSelect
+          value={String(rate)}
+          options={PLAYBACK_RATE_OPTIONS.map((r) => ({
+            value: String(r),
+            label: `${r.toFixed(2).replace(/\.?0+$/, '')}x`
+          }))}
+          onChange={(v) => changeRate(Number(v))}
+          title="再生速度"
+        />
+      ) : (
         <select
-          value={currentQualityId ?? ''}
-          onChange={(e) => onQualityChange(e.target.value)}
+          value={rate}
+          onChange={(e) => changeRate(Number(e.target.value))}
           className="bg-nndd-border text-white text-sm rounded px-1 py-0.5 cursor-pointer"
         >
-          {availableQualities.map((q) => (
-            <option key={q.id} value={q.id}>
-              {q.height ? `${q.height}p` : (q.id.match(/(\d+p)$/)?.[1] ?? q.id)}
+          {PLAYBACK_RATE_OPTIONS.map((r) => (
+            <option key={r} value={r}>
+              {r.toFixed(2).replace(/\.?0+$/, '')}x
             </option>
           ))}
         </select>
       )}
-
-      <select
-        value={rate}
-        onChange={(e) => changeRate(Number(e.target.value))}
-        className="bg-nndd-border text-white text-sm rounded px-1 py-0.5 cursor-pointer"
-      >
-        {[0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0].map((r) => (
-          <option key={r} value={r}>
-            {r.toFixed(2).replace(/\.?0+$/, '')}x
-          </option>
-        ))}
-      </select>
 
       {!hideCommentToggle && (
         <Btn
