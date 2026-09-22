@@ -86,6 +86,8 @@ export function VideoInfoView({
   const now = new Date();
   const localDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   const localTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+  const [pastDateFrom, setPastDateFrom] = useState('');
+  const [pastTimeFrom, setPastTimeFrom] = useState('00:00');
   const [pastDate, setPastDate] = useState(localDateStr);
   const [pastTime, setPastTime] = useState(localTimeStr);
   // ストリーミング時の過去コメント取得件数上限
@@ -235,6 +237,16 @@ export function VideoInfoView({
     }
   }, [pastDate, pastTime]);
 
+  /** From 指定日時を Unix 秒に変換 (未指定なら 0) */
+  const getFromUnixSec = useCallback((): number => {
+    if (!pastDateFrom) return 0;
+    try {
+      return Math.floor(new Date(`${pastDateFrom}T${pastTimeFrom}`).getTime() / 1000);
+    } catch {
+      return 0;
+    }
+  }, [pastDateFrom, pastTimeFrom]);
+
   /**
    * 取得済みコメントを CHUNK_SIZE ずつ非同期で state に積み込む (大量データの表示用)。
    */
@@ -276,7 +288,8 @@ export function VideoInfoView({
       const cs = await window.nndd.invoke<NNDDREComment[]>(
         IpcChannel.PAST_COMMENT_FETCH_LOCAL,
         xmlPath,
-        whenSec
+        whenSec,
+        getFromUnixSec()
       );
       loadPastCommentsChunked(cs);
     } catch (e) {
@@ -284,7 +297,7 @@ export function VideoInfoView({
     } finally {
       setPastLoading(false);
     }
-  }, [localCommentXmlPath, getWhenUnixSec, loadPastCommentsChunked]);
+  }, [localCommentXmlPath, getWhenUnixSec, getFromUnixSec, loadPastCommentsChunked]);
 
   /**
    * ストリーミング再生時、ニコニコから直接過去コメントを取得。
@@ -304,14 +317,16 @@ export function VideoInfoView({
         whenSec,
         pastFetchMaxCount
       );
-      loadPastCommentsChunked(cs);
+      const fromSec = getFromUnixSec();
+      const filtered = fromSec ? cs.filter((c) => c.date >= fromSec) : cs;
+      loadPastCommentsChunked(filtered);
     } catch (e) {
       setPastError(e instanceof Error ? e.message : String(e));
     } finally {
       setPastLoading(false);
       setPastProgressMsg(null);
     }
-  }, [videoId, getWhenUnixSec, pastFetchMaxCount, loadPastCommentsChunked]);
+  }, [videoId, getWhenUnixSec, getFromUnixSec, pastFetchMaxCount, loadPastCommentsChunked]);
 
   // handleFilterFromLocal の最新参照 (タブ自動ロード用)
   const handleFilterRef = useRef(handleFilterFromLocal);
@@ -412,6 +427,22 @@ export function VideoInfoView({
             {/* 日時選択 + ボタン */}
             <div className="shrink-0 p-2 border-b border-nndd-border bg-nndd-panel">
               <div className="flex items-center gap-1 flex-wrap mb-1">
+                <span className="text-xs text-nndd-subtext w-6">From</span>
+                <input
+                  type="date"
+                  value={pastDateFrom}
+                  onChange={(e) => setPastDateFrom(e.target.value)}
+                  className="text-xs bg-nndd-bg border border-nndd-border rounded px-1 py-0.5 text-nndd-text"
+                />
+                <input
+                  type="time"
+                  value={pastTimeFrom}
+                  onChange={(e) => setPastTimeFrom(e.target.value)}
+                  className="text-xs bg-nndd-bg border border-nndd-border rounded px-1 py-0.5 text-nndd-text"
+                />
+              </div>
+              <div className="flex items-center gap-1 flex-wrap mb-1">
+                <span className="text-xs text-nndd-subtext w-6">To</span>
                 <input
                   type="date"
                   value={pastDate}
