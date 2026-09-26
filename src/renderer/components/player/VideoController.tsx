@@ -83,10 +83,12 @@ export function VideoController({
   const pipSupported =
     docPipSupported || (typeof document !== 'undefined' && document.pictureInPictureEnabled);
   const [volumeNormalize] = useConfig<boolean>('player.volumeNormalize', false);
+  const [defaultVolume, , defaultVolumeLoading] = useConfig<number>('player.volume', 1);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const sourceNodeRef = useRef<MediaElementAudioSourceNode | null>(null);
   const compressorRef = useRef<DynamicsCompressorNode | null>(null);
   const connectedVideoRef = useRef<HTMLVideoElement | null>(null);
+  const defaultVolumeAppliedRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
     if (!video) return;
@@ -163,6 +165,15 @@ export function VideoController({
       video.removeEventListener('leavepictureinpicture', onLeavePip);
     };
   }, [video, isLocal]);
+
+  // 設定「デフォルト音量」を初回のみ適用 (video要素は再生毎に使い回されるため、
+  // 同一要素へ二重適用してユーザーが手動調整した音量を上書きしないよう要素単位でガードする)。
+  useEffect(() => {
+    if (!video || defaultVolumeLoading) return;
+    if (defaultVolumeAppliedRef.current === video) return;
+    defaultVolumeAppliedRef.current = video;
+    video.volume = Math.max(0, Math.min(1, defaultVolume));
+  }, [video, defaultVolume, defaultVolumeLoading]);
 
   // 音量ノーマライズ: DynamicsCompressorNode を挟むかどうかをルーティングで切替。
   // MediaElementAudioSourceNode は同一 video 要素に対して一度しか作成できないため、
