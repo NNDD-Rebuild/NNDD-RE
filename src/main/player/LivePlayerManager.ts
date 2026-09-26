@@ -1,7 +1,7 @@
 import { BrowserWindow, shell, type Session, type WebContents } from 'electron';
 import path from 'node:path';
 import { is } from '@electron-toolkit/utils';
-import { IpcChannel, type LiveEvent, type LiveStartResult } from '@shared/types';
+import { IpcChannel, type LiveCommentRange, type LiveEvent, type LiveStartResult } from '@shared/types';
 import { getConfigStore } from '../config/ConfigStore';
 import { createLogger } from '../util/Logger';
 import { LiveSession, type LiveStreamCookie } from '../nicovideo/live/LiveSession';
@@ -157,6 +157,10 @@ export class LivePlayerManager {
     if (!s) return;
     s.stop();
     this.sessions.delete(webContentsId);
+  }
+
+  fetchCommentsAround(webContentsId: number, vposMs: number): Promise<LiveCommentRange | null> {
+    return this.sessions.get(webContentsId)?.fetchCommentsAround(vposMs) ?? Promise.resolve(null);
   }
 
   changeQuality(webContentsId: number, quality: string): void {

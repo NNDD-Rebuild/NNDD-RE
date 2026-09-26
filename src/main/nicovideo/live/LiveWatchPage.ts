@@ -79,7 +79,9 @@ export async function fetchLiveWatchPage(id: string): Promise<LiveWatchPageInfo>
         program.thumbnail?.small ??
         socialGroup.thumbnailImageUrl ??
         ''
-    )
+    ),
+    chasePlayEnabled: Boolean(program.isChasePlayEnabled),
+    commentCount: typeof program.statistics?.commentCount === 'number' ? program.statistics.commentCount : 0
   };
 
   return {

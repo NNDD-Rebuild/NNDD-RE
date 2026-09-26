@@ -191,6 +191,8 @@ export const IpcChannel = {
   LIVE_START: 'nndd:live:start',
   /** 視聴終了 */
   LIVE_STOP: 'nndd:live:stop',
+  /** 再生位置 (vposMs) の周辺のコメントを取得 → LiveCommentRange | null。コメントは LIVE_EVENT で届く */
+  LIVE_FETCH_COMMENTS_AROUND: 'nndd:live:fetchCommentsAround',
   /** タイムシフトの予約 → 視聴開始 (programId)。ユーザー確認後にのみ呼ぶ */
   LIVE_TIMESHIFT_ACTIVATE: 'nndd:live:timeshiftActivate',
   /** 画質変更 (quality) */

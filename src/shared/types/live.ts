@@ -24,6 +24,10 @@ export interface LiveProgramInfo {
   vposBaseTimeMs: number;
   /** サムネイル URL (無ければ空) */
   thumbnailUrl: string;
+  /** 追っかけ再生 (放送中に過去へ巻き戻して視聴) に対応しているか */
+  chasePlayEnabled: boolean;
+  /** watchページ取得時点のコメント数 */
+  commentCount: number;
 }
 
 export interface LiveStatistics {
@@ -61,6 +65,19 @@ export interface LiveStartResult {
   program: LiveProgramInfo;
   /** タイムシフト視聴か */
   isTimeshift: boolean;
+  /** 追っかけ再生で視聴しているか (放送中のみ) */
+  chasePlay: boolean;
+  /**
+   * 過去コメントの取得方法。
+   * all: 開いたときに全件をバックグラウンドで取得 / seek: コメントが多いので再生位置の周辺だけ取得
+   */
+  commentFetchMode: 'all' | 'seek';
+}
+
+/** LIVE_FETCH_COMMENTS_AROUND の戻り値: 取得できた範囲 (番組の vpos 基準、ms) */
+export interface LiveCommentRange {
+  fromVposMs: number;
+  toVposMs: number;
 }
 
 /** 番組一覧 (フォロー中・検索・タイムシフト予約) の1件 */

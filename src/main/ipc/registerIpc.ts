@@ -1193,6 +1193,9 @@ export function registerIpcHandlers(
   ipcMain.handle(IpcChannel.LIVE_STOP, (e) => {
     LivePlayerManager.get().stopSession(e.sender.id);
   });
+  ipcMain.handle(IpcChannel.LIVE_FETCH_COMMENTS_AROUND, (e, vposMs: number) =>
+    LivePlayerManager.get().fetchCommentsAround(e.sender.id, Number(vposMs) || 0)
+  );
   ipcMain.handle(IpcChannel.LIVE_CHANGE_QUALITY, (e, quality: string) => {
     LivePlayerManager.get().changeQuality(e.sender.id, String(quality));
   });

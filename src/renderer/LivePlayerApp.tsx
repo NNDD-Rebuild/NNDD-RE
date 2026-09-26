@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import type {
+  LiveCommentRange,
   LiveConnectionState,
   LiveEvent,
   LiveNotice,
@@ -12,14 +13,18 @@ import type {
 import { CommentPosition, IpcChannel } from '@shared/types';
 import { CommentRenderer, DEFAULT_RENDER_CONFIG } from './components/player/CommentRenderer';
 import { useConfig } from './hooks/useConfig';
+import { LiveCommentList, type LiveListItem } from './components/live/LiveCommentList';
 
-/** コメントリストに表示する行 */
-type ListRow =
-  | { kind: 'comment'; key: string; comment: NNDDREComment }
-  | { kind: 'notice'; key: string; notice: LiveNotice };
-
-/** コメントリストの保持件数 */
-const LIST_LIMIT = 500;
+/** コメントリストの並び替え・再描画をまとめる間隔 (ms) */
+const LIST_FLUSH_MS = 300;
+/**
+ * 全件取得中、描画エンジンへ過去コメントを反映する間隔 (ms)。
+ * 反映 (setComments) は毎回エンジンの作り直しになるので、取得中は間引いて再生を邪魔しない
+ */
+const ARCHIVE_APPLY_INTERVAL_MS = 5000;
+/** 周辺取得モード: 再生位置の前後この範囲 (ms) のコメントが無ければ取得する */
+const AROUND_NEED_BEFORE_MS = 30_000;
+const AROUND_NEED_AFTER_MS = 60_000;
 /**
  * 届いた時点で表示位置を過ぎているコメントを「今」に寄せる許容幅 (ms)。
  * これより古いもの (接続直後に読む直前区間等) は元の位置のまま = 画面には流さない。
@@ -27,6 +32,11 @@ const LIST_LIMIT = 500;
 const LATE_COMMENT_WINDOW_MS = 10_000;
 /** niconicomments の流れコメントは vpos の 1 秒前に右端から出現する */
 const NAKA_LEAD_MS = 1000;
+/** 過去コメントと生コメントの重複判定キー (vpos は描画用に調整する前の値) */
+function commentKey(c: NNDDREComment): string {
+  return `${c.no}-${c.userId}-${c.vposMs}`;
+}
+
 /**
  * 生放送コメントの vpos は投稿した瞬間の時刻なので、流れコメントはその時刻に右端から出るのが正しい。
  * niconicomments は vpos の 1 秒前に出現させるため、流れコメントだけ出現時刻分ずらす
@@ -38,8 +48,6 @@ function alignNaka(c: NNDDREComment): NNDDREComment {
 
 /** タイムシフト予約・視聴開始が必要なときに main から返るエラーコード (LiveWatchPage.ts) */
 const TIMESHIFT_ACTIVATION_REQUIRED = '[TIMESHIFT_ACTIVATION_REQUIRED]';
-/** タイムシフト時、コメントリストに表示する再生位置までの件数 */
-const ARCHIVE_LIST_COUNT = 200;
 
 const QUALITY_LABELS: Record<string, string> = {
   abr: '自動',
@@ -66,11 +74,6 @@ function errorText(e: unknown): string {
   return msg.replace(/^Error invoking remote method '[^']+': (?:\w*Error: )?/, '');
 }
 
-function formatTime(ms: number): string {
-  const d = new Date(ms);
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
-}
-
 function formatElapsed(ms: number): string {
   if (ms < 0) ms = 0;
   const s = Math.floor(ms / 1000);
@@ -89,19 +92,30 @@ export default function LivePlayerApp(): JSX.Element {
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
-  const listRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<Hls | null>(null);
   const rendererRef = useRef<CommentRenderer | null>(null);
   const programRef = useRef<LiveProgramInfo | null>(null);
-  const autoScrollRef = useRef(true);
-  const rowSeq = useRef(0);
+  const noticeSeq = useRef(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const controlsHideTimer = useRef<number | null>(null);
   const isTimeshiftRef = useRef(false);
-  /** タイムシフトの過去コメント (vpos 昇順) */
+  const chasePlayRef = useRef(false);
+  /** 受信した生コメント (描画用に調整済み) と、過去コメントとの重複判定キー */
+  const liveAddedRef = useRef<NNDDREComment[]>([]);
+  const liveKeysRef = useRef(new Set<string>());
+  /** 過去コメント (取得順)。描画エンジンへは並べ替えてから渡す */
   const archiveRef = useRef<NNDDREComment[]>([]);
   const archiveFlushTimer = useRef<number | null>(null);
-  const archiveListIndex = useRef(-1);
+  /** コメントリストの全行 (vposMs 昇順) と重複判定用キー */
+  const listItemsRef = useRef<LiveListItem[]>([]);
+  const listKeysRef = useRef(new Set<string>());
+  const listFlushTimer = useRef<number | null>(null);
+  const commentFetchModeRef = useRef<LiveStartResult['commentFetchMode']>('all');
+  /** 周辺取得モード: 取得済みの範囲 (vpos ms) と取得中フラグ */
+  const loadedRangesRef = useRef<LiveCommentRange[]>([]);
+  const aroundFetchingRef = useRef(false);
+  /** 視聴開始 (接続) した時刻 (unix ms)。これ以降のコメントは生コメントで届く */
+  const connectedAtRef = useRef(0);
   /**
    * 今映っている映像の vpos (1/100秒)。
    * HLS に EXT-X-PROGRAM-DATE-TIME があれば playingDate、無ければ現在時刻からライブ遅延を引いて推定し、
@@ -126,7 +140,9 @@ export default function LivePlayerApp(): JSX.Element {
   const [stateMessage, setStateMessage] = useState('');
   const [statistics, setStatistics] = useState<LiveStatistics | null>(null);
   const [operatorComment, setOperatorComment] = useState<LiveNotice | null>(null);
-  const [rows, setRows] = useState<ListRow[]>([]);
+  const [listItems, setListItems] = useState<LiveListItem[]>([]);
+  /** 再生位置までに含まれるリスト行の件数 */
+  const [listIndex, setListIndex] = useState(0);
   const [quality, setQuality] = useState('abr');
   const [qualities, setQualities] = useState<string[]>([]);
   const [streamUri, setStreamUri] = useState('');
@@ -145,12 +161,26 @@ export default function LivePlayerApp(): JSX.Element {
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [chasePlay, setChasePlay] = useState(false);
+  /** 追っかけ再生時のシーク可能範囲 (秒) */
+  const [seekRange, setSeekRange] = useState<{ start: number; end: number } | null>(null);
 
-  const appendRows = useCallback((added: ListRow[]) => {
-    setRows((prev) => {
-      const merged = [...prev, ...added];
-      return merged.length > LIST_LIMIT ? merged.slice(merged.length - LIST_LIMIT) : merged;
-    });
+  /**
+   * コメントリストへ行を追加する。過去コメントと生コメントは同じキーになるので重複は自然に除かれる。
+   * 並べ替えと再描画は LIST_FLUSH_MS ごとにまとめる
+   */
+  const addListItems = useCallback((items: LiveListItem[]) => {
+    for (const it of items) {
+      if (listKeysRef.current.has(it.key)) continue;
+      listKeysRef.current.add(it.key);
+      listItemsRef.current.push(it);
+    }
+    if (listFlushTimer.current !== null) return;
+    listFlushTimer.current = window.setTimeout(() => {
+      listFlushTimer.current = null;
+      listItemsRef.current.sort((a, b) => a.vposMs - b.vposMs);
+      setListItems([...listItemsRef.current]);
+    }, LIST_FLUSH_MS);
   }, []);
 
   // ---- LiveEvent 受信 ----
@@ -179,29 +209,47 @@ export default function LivePlayerApp(): JSX.Element {
               ? { ...c, vposMs: Math.ceil(appearMs) }
               : c;
           });
-          rendererRef.current?.addComments(adjusted);
-          appendRows(
-            ev.comments.map((c) => ({ kind: 'comment', key: `c${rowSeq.current++}`, comment: c }))
-          );
+          // 追っかけ再生では過去コメントも保持しているため件数上限で捨てない
+          rendererRef.current?.addComments(adjusted, chasePlayRef.current ? Infinity : undefined);
+          // 過去コメントとの突き合わせ用に受信分を覚えておく
+          liveAddedRef.current.push(...adjusted);
+          for (const c of ev.comments) liveKeysRef.current.add(commentKey(c));
+          addListItems(ev.comments.map((c) => ({ key: commentKey(c), vposMs: c.vposMs, comment: c })));
           break;
         }
         case 'archiveComments': {
           if (ev.comments.length > 0) archiveRef.current = archiveRef.current.concat(ev.comments);
           if (ev.done) setArchiveLoading(false);
+          addListItems(ev.comments.map((c) => ({ key: commentKey(c), vposMs: c.vposMs, comment: c })));
           // ページ毎に届くので、まとめてからエンジンへ渡す (setComments は毎回作り直しになる)
           if (archiveFlushTimer.current !== null) window.clearTimeout(archiveFlushTimer.current);
           archiveFlushTimer.current = window.setTimeout(() => {
             archiveFlushTimer.current = null;
-            const sorted = [...archiveRef.current].sort((a, b) => a.vposMs - b.vposMs);
+            // 周辺取得では同じ範囲を重ねて取得することがあるので重複を除く
+            const unique = new Map(archiveRef.current.map((c) => [commentKey(c), c]));
+            const sorted = [...unique.values()].sort((a, b) => a.vposMs - b.vposMs);
             archiveRef.current = sorted;
-            archiveListIndex.current = -1;
-            rendererRef.current?.setComments(sorted.map(alignNaka));
-          }, ev.done ? 0 : 500);
+            if (isTimeshiftRef.current) {
+              rendererRef.current?.setComments(sorted.map(alignNaka));
+            } else {
+              // 放送中: 開いた時点より前のコメント + 受信済みの生コメント (重複は生コメント側を優先)
+              const past = sorted.filter((c) => !liveKeysRef.current.has(commentKey(c))).map(alignNaka);
+              rendererRef.current?.setComments([...past, ...liveAddedRef.current]);
+            }
+          }, ev.done ? 0 : commentFetchModeRef.current === 'seek' ? 300 : ARCHIVE_APPLY_INTERVAL_MS);
           break;
         }
-        case 'notice':
-          appendRows([{ kind: 'notice', key: `n${rowSeq.current++}`, notice: ev.notice }]);
+        case 'notice': {
+          const base = programRef.current?.vposBaseTimeMs ?? 0;
+          addListItems([
+            {
+              key: `n${noticeSeq.current++}`,
+              vposMs: base ? ev.notice.at - base : 0,
+              notice: ev.notice
+            }
+          ]);
           break;
+        }
         case 'statistics':
           setStatistics(ev.statistics);
           break;
@@ -211,7 +259,7 @@ export default function LivePlayerApp(): JSX.Element {
       }
     });
     return off;
-  }, [appendRows]);
+  }, [addListItems]);
 
   // ---- 視聴開始 ----
   useEffect(() => {
@@ -228,8 +276,13 @@ export default function LivePlayerApp(): JSX.Element {
         if (cancelled) return;
         programRef.current = r.program;
         isTimeshiftRef.current = r.isTimeshift;
+        chasePlayRef.current = r.chasePlay;
         setIsTimeshift(r.isTimeshift);
-        if (r.isTimeshift) setArchiveLoading(true);
+        setChasePlay(r.chasePlay);
+        commentFetchModeRef.current = r.commentFetchMode;
+        connectedAtRef.current = Date.now();
+        // 周辺取得モードは必要になった時点で取得するので、ここでは取得中にしない
+        setArchiveLoading(r.commentFetchMode === 'all');
         setProgram(r.program);
         document.title = `${r.program.title} - NNDD-RE Live`;
       })
@@ -369,46 +422,86 @@ export default function LivePlayerApp(): JSX.Element {
   useEffect(() => {
     const t = window.setInterval(() => {
       setNow(Date.now());
-      if (isTimeshiftRef.current) updateArchiveList();
+      const v = videoRef.current;
+      if (chasePlayRef.current && v && v.seekable.length > 0) {
+        setSeekRange({ start: v.seekable.start(0), end: v.seekable.end(v.seekable.length - 1) });
+      }
     }, 1000);
     return () => window.clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  /** タイムシフト: コメントリストを再生位置までの直近 ARCHIVE_LIST_COUNT 件にする */
-  const updateArchiveList = (): void => {
-    const list = archiveRef.current;
-    const nowMs = currentVposRef.current() * 10;
-    // vposMs <= nowMs を満たす件数を二分探索
-    let lo = 0;
-    let hi = list.length;
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1;
-      if (list[mid].vposMs <= nowMs) lo = mid + 1;
-      else hi = mid;
+  /**
+   * 周辺取得モード (コメントが多い番組): 再生位置の前後のコメントが未取得なら取得する。
+   * シーク時と、再生が取得済み範囲の端に近づいたときに呼ばれる
+   */
+  const ensureCommentsAround = useCallback(async (): Promise<void> => {
+    if (commentFetchModeRef.current !== 'seek' || aroundFetchingRef.current) return;
+    const base = programRef.current?.vposBaseTimeMs;
+    if (!base) return;
+    const pos = currentVposRef.current() * 10;
+    const needFrom = pos - AROUND_NEED_BEFORE_MS;
+    // 放送中は接続した時刻より後のコメントは生コメントで届くので、そこまでで足りる
+    const needTo = isTimeshiftRef.current
+      ? pos + AROUND_NEED_AFTER_MS
+      : Math.min(pos + AROUND_NEED_AFTER_MS, connectedAtRef.current - base);
+    if (needTo <= needFrom) return;
+    const covered = loadedRangesRef.current.some((r) => r.fromVposMs <= needFrom && r.toVposMs >= needTo);
+    if (covered) return;
+    aroundFetchingRef.current = true;
+    setArchiveLoading(true);
+    try {
+      const range = await window.nndd.invoke<LiveCommentRange | null>(
+        IpcChannel.LIVE_FETCH_COMMENTS_AROUND,
+        Math.max(0, pos)
+      );
+      if (range) loadedRangesRef.current.push(range);
+    } catch (e) {
+      console.warn('fetch comments around failed', e);
+    } finally {
+      aroundFetchingRef.current = false;
+      setArchiveLoading(false);
     }
-    if (lo === archiveListIndex.current) return;
-    archiveListIndex.current = lo;
-    const from = Math.max(0, lo - ARCHIVE_LIST_COUNT);
-    setRows(
-      list.slice(from, lo).map((c) => ({
-        kind: 'comment',
-        key: `a${c.vposMs}-${c.no}-${c.userId}`,
-        comment: c
-      }))
-    );
-  };
+  }, []);
 
-  // ---- コメントリストの自動スクロール ----
   useEffect(() => {
-    const el = listRef.current;
-    if (el && autoScrollRef.current) el.scrollTop = el.scrollHeight;
-  }, [rows]);
+    const t = window.setInterval(() => void ensureCommentsAround(), 2000);
+    const video = videoRef.current;
+    const onSeeked = (): void => void ensureCommentsAround();
+    video?.addEventListener('seeked', onSeeked);
+    return () => {
+      window.clearInterval(t);
+      video?.removeEventListener('seeked', onSeeked);
+    };
+  }, [ensureCommentsAround]);
 
-  const onListScroll = (): void => {
-    const el = listRef.current;
-    if (!el) return;
-    autoScrollRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+  // ---- コメントリストの再生位置 ----
+  useEffect(() => {
+    const t = window.setInterval(() => {
+      const list = listItemsRef.current;
+      const nowMs = currentVposRef.current() * 10;
+      // vposMs <= nowMs を満たす件数を二分探索
+      let lo = 0;
+      let hi = list.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (list[mid].vposMs <= nowMs) lo = mid + 1;
+        else hi = mid;
+      }
+      setListIndex(lo);
+    }, 500);
+    return () => window.clearInterval(t);
+  }, []);
+
+  /** コメントリストから指定時刻へシークする (タイムシフト・追っかけ再生のみ) */
+  const seekToVpos = (vposMs: number): void => {
+    const v = videoRef.current;
+    if (!v) return;
+    let target = v.currentTime + (vposMs - currentVposRef.current() * 10) / 1000;
+    if (v.seekable.length > 0) {
+      target = Math.max(v.seekable.start(0), Math.min(v.seekable.end(v.seekable.length - 1), target));
+    }
+    v.currentTime = target;
   };
 
   const togglePlay = (): void => {
@@ -561,13 +654,38 @@ export default function LivePlayerApp(): JSX.Element {
                 {archiveLoading && <span className="text-xs text-neutral-400">コメント取得中…</span>}
               </>
             ) : (
-              <button
-                onClick={seekToLive}
-                className="px-2 py-0.5 rounded text-xs bg-red-700 hover:bg-red-600"
-                title="最新の位置へ"
-              >
-                最新
-              </button>
+              <>
+                {chasePlay && seekRange && (
+                  <>
+                    <input
+                      type="range"
+                      min={seekRange.start}
+                      max={seekRange.end}
+                      step={1}
+                      value={Math.min(Math.max(currentTime, seekRange.start), seekRange.end)}
+                      onChange={(e) => {
+                        const v = videoRef.current;
+                        if (v) v.currentTime = Number(e.target.value);
+                      }}
+                      className="flex-1 min-w-0"
+                      title="追っかけ再生"
+                    />
+                    <span className="text-xs tabular-nums text-neutral-300">
+                      {seekRange.end - currentTime > 5
+                        ? `-${formatElapsed((seekRange.end - currentTime) * 1000)}`
+                        : 'LIVE'}
+                    </span>
+                    {archiveLoading && <span className="text-xs text-neutral-400">コメント取得中…</span>}
+                  </>
+                )}
+                <button
+                  onClick={seekToLive}
+                  className="px-2 py-0.5 rounded text-xs bg-red-700 hover:bg-red-600"
+                  title="最新の位置へ"
+                >
+                  最新
+                </button>
+              </>
             )}
             <button onClick={() => setMuted((m) => !m)} className="w-6" title="ミュート">
               {muted || volume === 0 ? '🔇' : '🔊'}
@@ -581,7 +699,7 @@ export default function LivePlayerApp(): JSX.Element {
               onChange={(e) => void setVolume(Number(e.target.value))}
               className="w-24"
             />
-            {!isTimeshift && <div className="flex-1" />}
+            {!isTimeshift && !(chasePlay && seekRange) && <div className="flex-1" />}
             <label className="flex items-center gap-1 text-xs cursor-pointer">
               <input
                 type="checkbox"
@@ -610,30 +728,12 @@ export default function LivePlayerApp(): JSX.Element {
         </div>
 
         {/* コメントリスト */}
-        <div
-          ref={listRef}
-          onScroll={onListScroll}
-          className={`${isFullscreen ? 'hidden' : ''} w-80 shrink-0 overflow-y-auto bg-neutral-950 border-l border-neutral-800 text-xs select-text`}
-        >
-          {rows.map((r) =>
-            r.kind === 'comment' ? (
-              <div
-                key={r.key}
-                className={`flex gap-2 px-2 py-0.5 border-b border-neutral-900 ${r.comment.isShow ? '' : 'text-neutral-500'}`}
-              >
-                <span className="shrink-0 w-10 text-right text-neutral-500 tabular-nums">
-                  {r.comment.no || ''}
-                </span>
-                <span className="break-all">{r.comment.text}</span>
-              </div>
-            ) : (
-              <div key={r.key} className="px-2 py-1 border-b border-neutral-900 bg-neutral-900 text-amber-300">
-                <span className="text-neutral-500 mr-1">{formatTime(r.notice.at)}</span>
-                {r.notice.text}
-              </div>
-            )
-          )}
-        </div>
+        <LiveCommentList
+          items={listItems}
+          currentIndex={listIndex}
+          onSeek={isTimeshift || chasePlay ? seekToVpos : undefined}
+          className={`${isFullscreen ? 'hidden' : ''} w-80 shrink-0 bg-neutral-950 border-l border-neutral-800`}
+        />
       </div>
     </div>
   );

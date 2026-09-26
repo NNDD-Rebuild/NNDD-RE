@@ -1,4 +1,11 @@
-import type { LiveEvent, LiveNotice, LiveProgramInfo, LiveStartResult, NNDDREComment } from '@shared/types';
+import type {
+  LiveCommentRange,
+  LiveEvent,
+  LiveNotice,
+  LiveProgramInfo,
+  LiveStartResult,
+  NNDDREComment
+} from '@shared/types';
 import { NicoHeaders } from '@shared/constants';
 import { NicoContext } from '../NicoContext';
 import { createLogger } from '../../util/Logger';
@@ -30,6 +37,11 @@ interface WsMessage {
 }
 
 const MAX_RECONNECTS = 5;
+/** これを超えるコメント数の番組は全件取得せず、再生位置の周辺だけ取得する */
+const FULL_ARCHIVE_LIMIT = 10_000;
+/** 周辺取得の範囲: 指定位置の何秒後から、何秒前まで遡るか */
+const AROUND_AHEAD_SEC = 300;
+const AROUND_BEHIND_SEC = 60;
 /** コメントを renderer へまとめて送る間隔 (受信毎に IPC すると多コメ時に重い) */
 const COMMENT_FLUSH_MS = 200;
 
@@ -53,6 +65,14 @@ export class LiveSession {
   private quality = 'abr';
   private program: LiveProgramInfo | null = null;
   private isTimeshift = false;
+  /** 追っかけ再生 (放送中に過去へ巻き戻せる HLS) で視聴するか */
+  private chasePlay = false;
+  /** 過去コメント取得用 (タイムシフト / 追っかけ再生)。再接続しても取り直さない */
+  private archiveNdgr: NdgrClient | null = null;
+  /** 周辺取得用 (commentFetchMode = seek) */
+  private aroundNdgr: NdgrClient | null = null;
+  private viewUri: string | null = null;
+  private commentFetchMode: LiveStartResult['commentFetchMode'] = 'all';
 
   constructor(
     private readonly programId: string,
@@ -67,13 +87,24 @@ export class LiveSession {
     if (!page.webSocketUrl) throw unavailableError(page);
     // タイムシフト視聴時は視聴WebSocketの URL が .../watch/{id}/timeshift になる
     this.isTimeshift = /\/timeshift(\?|$)/.test(page.webSocketUrl);
+    this.chasePlay = !this.isTimeshift && page.program.chasePlayEnabled;
+    this.commentFetchMode = page.program.commentCount > FULL_ARCHIVE_LIMIT ? 'seek' : 'all';
     this.emit({ type: 'state', state: 'connecting' });
     void this.connect(page.webSocketUrl, false);
-    return { program: page.program, isTimeshift: this.isTimeshift };
+    return {
+      program: page.program,
+      isTimeshift: this.isTimeshift,
+      chasePlay: this.chasePlay,
+      commentFetchMode: this.commentFetchMode
+    };
   }
 
   stop(): void {
     this.stopped = true;
+    this.archiveNdgr?.stop();
+    this.archiveNdgr = null;
+    this.aroundNdgr?.stop();
+    this.aroundNdgr = null;
     this.cleanupConnection();
     if (this.flushTimer) clearInterval(this.flushTimer);
     this.flushTimer = null;
@@ -85,7 +116,7 @@ export class LiveSession {
   }
 
   private streamRequest(): Record<string, unknown> {
-    return { quality: this.quality, protocol: 'hls', latency: 'low', chasePlay: false };
+    return { quality: this.quality, protocol: 'hls', latency: 'low', chasePlay: this.chasePlay };
   }
 
   private async connect(wsUrl: string, reconnect: boolean): Promise<void> {
@@ -197,9 +228,12 @@ export class LiveSession {
         });
         break;
       case 'messageServer':
-        if (d.viewUri && !this.ndgr && this.isTimeshift) {
-          this.startArchive(String(d.viewUri));
+        if (d.viewUri) this.viewUri = String(d.viewUri);
+        if (d.viewUri && this.isTimeshift) {
+          if (!this.archiveNdgr && this.commentFetchMode === 'all') this.startArchive(String(d.viewUri));
         } else if (d.viewUri && !this.ndgr) {
+          // 開いた時点より前のコメントも全件取得する (コメントリストの表示と、追っかけ再生で巻き戻した位置で流す分)
+          if (!this.archiveNdgr && this.commentFetchMode === 'all') this.startArchive(String(d.viewUri));
           this.ndgr = new NdgrClient(String(d.viewUri), {
             onMessage: (m) => this.onNdgrMessage(m),
             onError: () =>
@@ -242,24 +276,53 @@ export class LiveSession {
     }
   }
 
-  /** タイムシフト: 過去コメントを全件取得して archiveComments で送る */
-  private startArchive(viewUri: string): void {
+  /**
+   * 指定した再生位置の周辺 (AROUND_BEHIND_SEC 前〜AROUND_AHEAD_SEC 後) のコメントを取得し、
+   * archiveComments で送る。commentFetchMode = seek の番組で、シーク時や取得範囲の端に近づいたときに呼ばれる。
+   * @returns 取得できた範囲。コメントサーバー未接続などで取得できなければ null
+   */
+  async fetchCommentsAround(vposMs: number): Promise<LiveCommentRange | null> {
+    const base = this.program?.vposBaseTimeMs ?? 0;
+    if (!this.viewUri || !base || this.stopped) return null;
+    if (!this.aroundNdgr) this.aroundNdgr = new NdgrClient(this.viewUri, { onMessage: () => {}, onError: () => {} });
+    const posSec = (base + vposMs) / 1000;
+    const atSec = Math.min(posSec + AROUND_AHEAD_SEC, Date.now() / 1000);
+    const untilSec = posSec - AROUND_BEHIND_SEC;
+    const oldest = await this.aroundNdgr.fetchBackwardAround(atSec, untilSec, (messages) => {
+      const comments = this.toComments(messages);
+      if (comments.length > 0) this.emit({ type: 'archiveComments', comments, done: false });
+    });
+    return {
+      // 取得できた最古の時刻が遡りたい位置より新しければ、そこまでしか埋まっていない
+      fromVposMs: (oldest === null ? atSec : Math.max(oldest, untilSec)) * 1000 - base,
+      toVposMs: atSec * 1000 - base
+    };
+  }
+
+  /** PackedSegment の中身からコメント (chat / overflowed_chat) だけ取り出す */
+  private toComments(messages: ChunkedMessage[]): NNDDREComment[] {
+    const comments: NNDDREComment[] = [];
+    for (const m of messages) {
+      if (m.payload.case !== 'message') continue;
+      const data = m.payload.value.data;
+      const at = m.meta?.at ? Number(m.meta.at.seconds) * 1000 : 0;
+      if (data.case === 'chat') comments.push(chatToComment(data.value, at));
+      else if (data.case === 'overflowedChat') comments.push(chatToComment(data.value, at, false));
+    }
+    return comments;
+  }
+
+  /** タイムシフト・追っかけ再生: 過去コメントを全件取得して archiveComments で送る */
+  private startArchive(viewUri: string, maxMessages = Infinity): void {
     const ndgr = new NdgrClient(viewUri, { onMessage: () => {}, onError: () => {} });
-    this.ndgr = ndgr;
+    this.archiveNdgr = ndgr;
     let total = 0;
     void ndgr
       .fetchArchive((messages) => {
-        const comments: NNDDREComment[] = [];
-        for (const m of messages) {
-          if (m.payload.case !== 'message') continue;
-          const data = m.payload.value.data;
-          const at = m.meta?.at ? Number(m.meta.at.seconds) * 1000 : 0;
-          if (data.case === 'chat') comments.push(chatToComment(data.value, at));
-          else if (data.case === 'overflowedChat') comments.push(chatToComment(data.value, at, false));
-        }
+        const comments = this.toComments(messages);
         total += comments.length;
         this.emit({ type: 'archiveComments', comments, done: false });
-      })
+      }, maxMessages)
       .then(() => {
         log.info(`archive comments loaded: ${total}`);
         this.emit({ type: 'archiveComments', comments: [], done: true });

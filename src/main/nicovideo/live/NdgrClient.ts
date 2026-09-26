@@ -4,6 +4,7 @@ import { NicoHeaders } from '@shared/constants';
 import { createLogger } from '../../util/Logger';
 import {
   type ChunkedMessage,
+  type PackedSegment,
   ChunkedEntrySchema,
   ChunkedMessageSchema,
   PackedSegmentSchema
@@ -61,40 +62,78 @@ export class NdgrClient {
    * PackedSegment (ChunkedMessage の配列、長さプレフィックス無しの単体メッセージ) が返る。
    * PackedSegment.next.uri を辿ると更に古い区間が取れる。
    * 1ページ毎に onBatch を呼ぶ (新しい区間 → 古い区間の順)。
+   * @param maxMessages この件数以上取得したら古い方へ遡るのをやめる (省略時は全件)
    */
-  async fetchArchive(onBatch: (messages: ChunkedMessage[]) => void): Promise<void> {
+  async fetchArchive(
+    onBatch: (messages: ChunkedMessage[]) => void,
+    maxMessages = Infinity
+  ): Promise<void> {
+    let uri = await this.findBackwardUri('now');
+    if (!uri) throw new Error('NDGR: 過去コメントの取得先が見つかりませんでした');
+    let count = 0;
+    while (uri && !this.stopped && count < maxMessages) {
+      const packed = await this.fetchPacked(uri);
+      onBatch(packed.messages);
+      count += packed.messages.length;
+      uri = packed.next?.uri;
+    }
+  }
+
+  /**
+   * 指定時刻より前のコメントを、untilSec に届くまで (最大 maxPages ページ) 取得する。
+   * view API に過去の時刻を at で渡すと、その時点から遡る backward が返る
+   * (コメント数が多い番組で、シーク位置の周辺だけ取得するのに使う)。
+   * @returns 取得できた最も古いコメントの時刻 (unix 秒)。1件も無ければ null
+   */
+  async fetchBackwardAround(
+    atSec: number,
+    untilSec: number,
+    onBatch: (messages: ChunkedMessage[]) => void,
+    maxPages = 4
+  ): Promise<number | null> {
+    let uri = await this.findBackwardUri(String(Math.floor(atSec)));
+    let oldest: number | null = null;
+    for (let page = 0; uri && page < maxPages && !this.stopped; page++) {
+      const packed = await this.fetchPacked(uri);
+      onBatch(packed.messages);
+      for (const m of packed.messages) {
+        const t = m.meta?.at ? Number(m.meta.at.seconds) : null;
+        if (t !== null && (oldest === null || t < oldest)) oldest = t;
+      }
+      if (oldest !== null && oldest <= untilSec) break;
+      uri = packed.next?.uri;
+    }
+    return oldest;
+  }
+
+  /** view API を at から辿り、backward (過去コメントの起点 URI) を探す */
+  private async findBackwardUri(startAt: string): Promise<string | undefined> {
     const sep = this.viewUri.includes('?') ? '&' : '?';
-    let at = 'now';
-    let uri: string | undefined;
+    let at = startAt;
     // at=now は next.at だけ返すので、次の at で backward が流れてくるまで辿る
-    for (let i = 0; i < 3 && !uri && !this.stopped; i++) {
+    for (let i = 0; i < 3 && !this.stopped; i++) {
       let next: string | null = null;
       for await (const entry of this.streamProto(`${this.viewUri}${sep}at=${at}`, ChunkedEntrySchema)) {
         const e = entry.entry;
-        if (e.case === 'backward') {
-          uri = e.value.segment?.uri;
-          break;
-        }
+        if (e.case === 'backward') return e.value.segment?.uri;
         if (e.case === 'next') {
           next = e.value.at.toString();
           break;
         }
       }
-      if (!next) break;
+      if (!next) return undefined;
       at = next;
     }
-    if (!uri) throw new Error('NDGR: 過去コメントの取得先が見つかりませんでした');
+    return undefined;
+  }
 
-    while (uri && !this.stopped) {
-      const res = await fetch(uri, {
-        headers: { 'User-Agent': NicoHeaders.USER_AGENT },
-        signal: this.ac.signal
-      });
-      if (!res.ok) throw new Error(`NDGR backward HTTP ${res.status}`);
-      const packed = fromBinary(PackedSegmentSchema, new Uint8Array(await res.arrayBuffer()));
-      onBatch(packed.messages);
-      uri = packed.next?.uri;
-    }
+  private async fetchPacked(uri: string): Promise<PackedSegment> {
+    const res = await fetch(uri, {
+      headers: { 'User-Agent': NicoHeaders.USER_AGENT },
+      signal: this.ac.signal
+    });
+    if (!res.ok) throw new Error(`NDGR backward HTTP ${res.status}`);
+    return fromBinary(PackedSegmentSchema, new Uint8Array(await res.arrayBuffer()));
   }
 
   private async viewLoop(): Promise<void> {
