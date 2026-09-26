@@ -157,6 +157,52 @@ npm run build       # プロダクションビルド
 - UI は `src/renderer/components/library/LibraryView.tsx` 内にインライン実装された「LANライブラリ」タブ。IPCチャンネルは `LAN_STATUS` / `LAN_LIBRARY_LIST` / `LAN_VIDEO_STREAM`
 - **注意**: `src/renderer/components/lan/LanLibraryView.tsx` は同機能の初期プロトタイプで、`App.tsx`/`SettingsView.tsx` を含めコードベースのどこからも参照されていない孤立コンポーネント（未使用、技術的負債）。実運用は上記の `LibraryView.tsx` 内タブなので、新規開発時に誤って `LanLibraryView.tsx` を編集しないよう注意
 
+### ニコニコ生放送 (`src/main/nicovideo/live/`)
+
+放送中・追っかけ再生・タイムシフトの視聴。データの流れ:
+
+```
+live.nicovideo.jp/watch/lvXXX の #embedded-data (data-props)
+  → site.relive.webSocketUrl (視聴WebSocket)
+      送信: startWatching { stream: { quality, protocol:'hls', latency:'low', chasePlay }, room, reconnect }
+            keepSeat (seat.keepIntervalSec ごと) / ping への pong
+      受信: stream        → HLS の URL + 署名Cookie (stream.cookies)
+            messageServer → コメントサーバー (NDGR) の viewUri
+            statistics / disconnect / serverTime 等
+  → HLS: hls.js で再生 (renderer)
+  → コメント: NDGR (protobuf over HTTP) から受信 → niconicomments で描画
+```
+
+主なファイル:
+
+- **`LiveWatchPage.ts`**: watchページの解析 (`fetchLiveWatchPage`)、視聴できない理由の判定、タイムシフトの予約→視聴開始 (`activateTimeshift`、視聴期限のカウントが始まるので必ずユーザー確認後に呼ぶ)
+- **`LiveSession.ts`**: 1番組分の視聴セッション。WebSocket の維持・再接続・画質変更、NDGR の起動、受信内容を `LiveEvent` として renderer へ送る。タイムシフトかどうかは webSocketUrl が `/timeshift` で終わるかで判定
+- **`NdgrClient.ts`**: コメントサーバー (NDGR) のクライアント。放送中の受信 (`start`)、過去コメントの全件取得 (`fetchArchive`)、指定時刻の周辺だけの取得 (`fetchBackwardAround`)
+- **`LiveChatConverter.ts`**: NDGR の Chat → `NNDDREComment` (位置・サイズ・色・フォント・184 をコマンド文字列に変換)
+- **`LiveListClient.ts`**: 番組一覧 (フォロー中・番組検索・ランキング・カテゴリ別・タイムシフト予約)
+- **`LivePoc.ts`**: 視聴フロー・番組一覧APIの調査用 PoC。設定 > デバッグ から番組ID または URL を指定して実行し、結果をログに出す
+- **`src/main/player/LivePlayerManager.ts`**: 生放送プレイヤーウィンドウの管理。ウィンドウごとにメモリ上の専用 partition を使い、HLS の署名Cookieを webRequest でリクエストヘッダーへ付与する。同じ番組は1ウィンドウのみ
+- **`src/main/player/LiveCommentWindowManager.ts`**: コメントリストの浮動ウィンドウ。コメントのデータはプレイヤー側が持ち、このクラスは中継だけ行う (プレイヤー → snapshot / append / position → 浮動ウィンドウ)
+
+コメントの protobuf 定義は `proto/nicolive/` (`n-air-app/nicolive-comment-protobuf`、MIT。取得元とコミットは同フォルダの README)。`npm run gen:proto` で `src/main/nicovideo/live/gen/` に TypeScript を生成する (`@bufbuild/protobuf` v2 + buf)。生成物は手で編集しない。
+
+過去コメントの取得方法は番組のコメント数で切り替える (`LiveSession` の `FULL_ARCHIVE_LIMIT` = 1万件):
+
+- 1万件以下: 開いたときに全件をバックグラウンドで取得
+- 1万件超: 再生位置の周辺だけ取得し、シーク時や取得済み範囲の端に近づいたときに追加で取得
+
+#### 生放送 API の注意点 (調査で分かったこと)
+
+- **NDGR**: `viewUri?at=now` は `ChunkedEntry.next.at` だけを返す。`?at={next.at}` をストリーミングで読むと `segment` / `previous` / `backward` と次の `next` が流れてくる。`at` に過去の unix 秒を渡すと、その時点から遡る `backward` が取れる
+- **NDGR の過去コメント**: `backward.segment.uri` の応答は `PackedSegment` 単体 (長さプレフィックス無し)。`next.uri` を辿ると更に古い区間。1ページ約570件
+- **HLS の署名Cookie**: `stream.cookies` は CloudFront 署名Cookieがパス別 (playlists / segments/video / segments/audio / keys) に複数来る。URL のパスに合うものだけ送らないと 403。hls.js は withCredentials 無しで取得するため、Chromium の Cookie ストアに入れても送られない → webRequest でヘッダーに付ける
+- **番組検索** (`api.cas.nicovideo.jp/v2/search/programs.json`): `X-Frontend-Id: 9` ヘッダー必須、`searchWord` 必須 (空は不可)、`searchTargets` は `keyword` のみ、`limit` は 20 が上限 (超えると `invalid limit`)
+- **フォロー中**: 放送中は `/front/api/pages/follow/v1/programs?status=onair`。放送予定はこの API では取れず、`/follow` ページの embedded-data (`followedPrograms.comingsoonProgramListState`) から読む
+- **ランキング**: 専用 API は無く、`/ranking?type=onair|comingsoon|closed` (closed は `select_date=YYYYMMDD`) の embedded-data から読む
+- **カテゴリ別**: `/front/api/pages/recent/v1/programs?tab=…&offset=…&sortOrder=…`。`offset` は件数ではなくページ番号 (1ページ70件)
+- **コメント描画**: niconicomments の流れコメントは vpos の1秒前に右端から出現する。生放送コメントの vpos は投稿した瞬間なので、流れコメントは +1秒して渡す。遅れて届いたリアルタイムのコメントは出現位置を「今」に寄せる (接続直後にまとめて届く直前区間の分は寄せない)
+- **遅れ表示**: hls.js はライブ時に最新セグメントより数セグメント手前を再生する。遅れはシーク可能範囲の末尾ではなく `hls.liveSyncPosition` を基準に計算する
+
 ### その他
 
 - **`NnddHttpServer`**: Express サーバー (内蔵, `/api/library`, `/api/mylist`, `POST /NNDDServer` 等)
@@ -228,6 +274,21 @@ npm run build       # プロダクションビルド
 | `LAN_LIBRARY_LIST` | リモートライブラリ一覧取得 |
 | `LAN_VIDEO_STREAM` | リモート動画のストリームURL取得 |
 
+### 生放送
+
+| チャンネル | 説明 |
+|---|---|
+| `LIVE_OPEN_PLAYER` | 生放送プレイヤーを開く (番組ID / URL) |
+| `LIVE_START` / `LIVE_STOP` | プレイヤーからの視聴開始・終了 (開始時に `LiveStartResult` を返す) |
+| `LIVE_EVENT` | main → プレイヤーへのイベント (`LiveEvent`: ストリーム・コメント・統計・状態など) |
+| `LIVE_CHANGE_QUALITY` | 画質変更 |
+| `LIVE_TIMESHIFT_ACTIVATE` | タイムシフトの予約 → 視聴開始 (ユーザー確認後のみ) |
+| `LIVE_FETCH_COMMENTS_AROUND` | 再生位置の周辺のコメントを取得 (コメント数が多い番組) |
+| `LIVE_LIST_FOLLOWING` / `LIVE_SEARCH` / `LIVE_RANKING` / `LIVE_RECENT` / `LIVE_LIST_TIMESHIFT_RESERVATIONS` | 番組一覧 |
+| `LIVE_COMMENT_WINDOW_*` | コメントリストの浮動ウィンドウの開閉・中継 |
+| `NAV_LIVE_SEARCH` | プレイヤーのタグから生放送タブで番組検索 |
+| `LIVE_POC_RUN` | 調査用 PoC の実行 (デバッグ設定) |
+
 ---
 
 ## Preload（src/preload/index.ts）
@@ -254,7 +315,7 @@ window.nndd.on(
 
 ### メインウィンドウ（App.tsx）
 
-8 タブ構成（`useAppStore.ts` の `MAIN_TABS` で定義）：
+10 タブ構成（`useAppStore.ts` の `MAIN_TABS` で定義）。主なもの：
 
 1. **ランキング** (`components/ranking/RankingView.tsx`)
    - 17 ジャンル × 5 期間
@@ -271,6 +332,10 @@ window.nndd.on(
 4. **フォロー** (`components/follow/FollowView.tsx`)
    - フォローチャンネル・ユーザーの新着
 
+- **生放送** (`components/live/LiveView.tsx`)
+   - 番組ID・URL の直接入力、フォロー中 (放送中 / 放送予定)・ランキング・カテゴリ・検索・タイムシフト予約の一覧
+   - 一覧の並びは動画一覧と同じ `VirtualizedItemList`
+
 5. **DLリスト** (`components/download/DownloadView.tsx`)
    - キュー・進捗表示
 
@@ -283,7 +348,7 @@ window.nndd.on(
    - 視聴履歴
 
 8. **設定** (`components/settings/SettingsView.tsx`)
-   - 12サブタブ（下記参照）
+   - 13サブタブ（下記参照）
 
 ### コンポーネント
 
@@ -308,14 +373,20 @@ window.nndd.on(
 - **`VideoInfoView.tsx`**: 動画情報（タイトル・説明・統計）
 - **`NgListDialog.tsx`**: NGリスト管理ダイアログ
 
+#### 生放送 (別エントリ)
+
+- **`LivePlayerApp.tsx`** (`live-player.html`): 生放送プレイヤー。レイアウト・操作バー・コメントリストは通常プレイヤーと共通 (`VideoController` の `live` などのオプション、`CommentList`)。`CommentRenderer` は `addComments` / `setVposProvider` で生放送用に使う
+- **`LiveCommentApp.tsx`** (`live-comment.html`): コメントリストの浮動ウィンドウ。通常プレイヤーの `CommentApp` と同じ見た目
+
 #### settings
 
-`SettingsView.tsx` の `SUBTABS` は11個 + 開発者モード限定の「デバッグ」で計12サブタブ:
+`SettingsView.tsx` の `SUBTABS` は12個 + 開発者モード限定の「デバッグ」で計13サブタブ:
 
 - **`SettingsView.tsx`**: 設定ハブ
 - **`GeneralSettings.tsx`**: 全般（ログイン・HTTPサーバー・更新・LANライブラリ説明）
 - **`NicoSettings.tsx`**: ニコニコ（クッキー情報）
 - **`PlayerSettings.tsx`**: プレイヤー（キーボード・UI）
+- **`LiveSettings.tsx`**: 生放送（別番組を別ウィンドウで開くか、コメントリストの表示方式）
 - **`LibrarySettings.tsx`**: ライブラリ（DLディレクトリ・キャッシュ）
 - **`ScheduleSettings.tsx`**: スケジューラー（曜日・時刻）
 - **`NgCommentSettings.tsx`**: NGコメント（完全一致・投稿者NG等）
