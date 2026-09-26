@@ -613,6 +613,11 @@ function closePlayer(){
 }
 
 // ---- comments ----
+/** 投稿者コメントのニコスクリプト (@コメント禁止 等) / Flash スクリプト (/～) は画面に流さない */
+function isOwnerScript(c){
+  if(c.fork !== 'owner' && c.fork !== '1') return false;
+  return /^[@＠\/]/.test(c.text || '');
+}
 function checkComments(){
   var player = document.getElementById('player');
   if(player.paused || !commentEnabled) return;
@@ -620,7 +625,7 @@ function checkComments(){
   var layer = document.getElementById('comment-layer');
   for(var i=0; i<comments.length; i++){
     var c = comments[i];
-    if(c.isShow !== false && c.vposMs > lastVposMs && c.vposMs <= curMs){
+    if(c.isShow !== false && !isOwnerScript(c) && c.vposMs > lastVposMs && c.vposMs <= curMs){
       showComment(layer, c);
     }
   }

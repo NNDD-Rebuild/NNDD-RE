@@ -699,6 +699,8 @@ export default function PlayerApp(): JSX.Element {
         ownerCs = await window.nndd
           .invoke<NNDDREComment[]>(window.nndd.channels.COMMENT_READ_LOCAL, files.ownerCommentXml)
           .catch(() => []);
+        // fork 属性が無い古いXML (本家NNDD等) でも投稿者コメントとして扱う (ニコスクリプト処理に必要)
+        ownerCs = ownerCs.map((c) => (c.fork ? c : { ...c, fork: '1' }));
       }
       if (files?.nowCommentJson) {
         const nos = await window.nndd.invoke<number[]>(

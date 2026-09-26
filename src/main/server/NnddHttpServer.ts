@@ -387,7 +387,10 @@ export class NnddHttpServer {
     }
     const base = v.uri.replace(/\.[^.]+$/, '');
     const normal = CommentXmlReader.readFile(base + VideoFileSuffix.COMMENT_XML);
-    const owner = CommentXmlReader.readFile(base + VideoFileSuffix.OWNER_COMMENT_XML);
+    // fork 属性が無い古いXMLでも投稿者コメントと判別できるよう '1' を補う
+    const owner = CommentXmlReader.readFile(base + VideoFileSuffix.OWNER_COMMENT_XML).map((c) =>
+      c.fork ? c : { ...c, fork: '1' }
+    );
 
     // [NowComment].json が存在すれば今コメno一覧でフィルタ、なければ全件
     let nowNos: Set<number> | null = null;

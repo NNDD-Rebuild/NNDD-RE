@@ -338,7 +338,9 @@ export class CommentRenderer {
         content: c.text,
         date: c.date,
         date_usec: 0,
-        owner: false,
+        // 投稿者コメント扱いにしないとニコスクリプト (@コメント禁止 等) が通常コメントとして流れる
+        // fork は 'owner' (ストリーミング) / '1' (ローカルXML)
+        owner: c.fork === 'owner' || c.fork === '1',
         premium: c.isPremium,
         mail: c.mail ? c.mail.split(/\s+/).filter(Boolean) : [],
         user_id: userId,
