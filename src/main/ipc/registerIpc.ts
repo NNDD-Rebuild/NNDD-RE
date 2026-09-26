@@ -9,10 +9,12 @@ import { LivePlayerManager } from '../player/LivePlayerManager';
 import { activateTimeshift, normalizeLiveId } from '../nicovideo/live/LiveWatchPage';
 import {
   fetchFollowingPrograms,
+  fetchLiveRanking,
+  fetchRecentPrograms,
   fetchTimeshiftReservations,
   searchPrograms
 } from '../nicovideo/live/LiveListClient';
-import type { LiveSearchParams } from '@shared/types';
+import type { LiveRankingParams, LiveRecentParams, LiveSearchParams } from '@shared/types';
 import { getConfigStore } from '../config/ConfigStore';
 import {
   createLogger,
@@ -1186,6 +1188,8 @@ export function registerIpcHandlers(
   );
   ipcMain.handle(IpcChannel.LIVE_SEARCH, (_e, params: LiveSearchParams) => searchPrograms(params));
   ipcMain.handle(IpcChannel.LIVE_LIST_TIMESHIFT_RESERVATIONS, () => fetchTimeshiftReservations());
+  ipcMain.handle(IpcChannel.LIVE_RANKING, (_e, params: LiveRankingParams) => fetchLiveRanking(params));
+  ipcMain.handle(IpcChannel.LIVE_RECENT, (_e, params: LiveRecentParams) => fetchRecentPrograms(params));
   ipcMain.handle(IpcChannel.LIVE_STOP, (e) => {
     LivePlayerManager.get().stopSession(e.sender.id);
   });

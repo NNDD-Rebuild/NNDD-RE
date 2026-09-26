@@ -97,3 +97,34 @@ export interface LiveSearchParams {
   order: 'asc' | 'desc';
   offset: number;
 }
+
+/** 生放送ランキング (live.nicovideo.jp/ranking) */
+export interface LiveRankingResult {
+  /** 公式・チャンネル番組 */
+  official: LiveProgramSummary[];
+  /** ユーザー番組 */
+  user: LiveProgramSummary[];
+}
+
+/** 放送中番組のカテゴリ (live.nicovideo.jp/recent の tab) */
+export type LiveRecentCategory = 'common' | 'try' | 'live' | 'req' | 'face' | 'totu' | 'vtuber';
+
+/** カテゴリ別の放送中番組の取得条件 */
+export interface LiveRecentParams {
+  category: LiveRecentCategory;
+  sortOrder:
+    | 'recentDesc'
+    | 'recentAsc'
+    | 'viewCountDesc'
+    | 'commentCountDesc'
+    | 'userLevelDesc';
+  /** ページ番号 (0 始まり、1 ページ 70 件) */
+  page: number;
+}
+
+/** ランキングの種類 (live.nicovideo.jp/ranking の type) */
+export interface LiveRankingParams {
+  type: 'onair' | 'comingsoon' | 'closed';
+  /** closed のときの対象日 (YYYYMMDD)。省略時は当日 */
+  date?: string;
+}

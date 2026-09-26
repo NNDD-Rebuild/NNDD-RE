@@ -1,15 +1,60 @@
-import { useCallback, useEffect, useState } from 'react';
-import type { LiveProgramListResult, LiveProgramSummary, LiveSearchParams } from '@shared/types';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type {
+  LiveProgramListResult,
+  LiveProgramSummary,
+  LiveRankingParams,
+  LiveRankingResult,
+  LiveRecentCategory,
+  LiveRecentParams,
+  LiveSearchParams
+} from '@shared/types';
 import { IpcChannel } from '@shared/types';
 
-type SubTab = 'followOnair' | 'followReserved' | 'search' | 'timeshift';
+type SubTab = 'followOnair' | 'followReserved' | 'ranking' | 'recent' | 'search' | 'timeshift';
+type RankingKind = 'official' | 'user';
 
 const SUB_TABS: { id: SubTab; label: string }[] = [
   { id: 'followOnair', label: 'フォロー中 (放送中)' },
   { id: 'followReserved', label: 'フォロー中 (予約)' },
+  { id: 'ranking', label: 'ランキング' },
+  { id: 'recent', label: 'カテゴリ' },
   { id: 'search', label: '検索' },
   { id: 'timeshift', label: 'タイムシフト予約' }
 ];
+
+const RANKING_TYPES: { value: LiveRankingParams['type']; label: string }[] = [
+  { value: 'onair', label: '放送中' },
+  { value: 'comingsoon', label: '放送予定' },
+  { value: 'closed', label: '終了 (日付指定)' }
+];
+
+const RECENT_CATEGORIES: { value: LiveRecentCategory; label: string }[] = [
+  { value: 'common', label: '一般' },
+  { value: 'try', label: 'やってみた' },
+  { value: 'live', label: 'ゲーム' },
+  { value: 'req', label: '動画紹介' },
+  { value: 'face', label: '顔出し' },
+  { value: 'totu', label: '凸待ち' },
+  { value: 'vtuber', label: 'VTuber' }
+];
+
+const RECENT_SORTS: { value: LiveRecentParams['sortOrder']; label: string }[] = [
+  { value: 'recentDesc', label: '開始が新しい順' },
+  { value: 'recentAsc', label: '開始が古い順' },
+  { value: 'viewCountDesc', label: '来場者が多い順' },
+  { value: 'commentCountDesc', label: 'コメントが多い順' },
+  { value: 'userLevelDesc', label: '放送者レベルが高い順' }
+];
+
+/** カテゴリ別一覧の 1 ページの件数 (API 側で固定) */
+const RECENT_PAGE_SIZE = 70;
+
+/** 今日の日付 (YYYY-MM-DD、input[type=date] 用) */
+function todayInput(): string {
+  const d = new Date();
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
 
 const SORTS: { value: string; label: string }[] = [
   { value: 'startTime:desc', label: '開始が新しい順' },
@@ -41,7 +86,16 @@ function openPlayer(input: string): Promise<void> {
   return window.nndd.invoke(IpcChannel.LIVE_OPEN_PLAYER, input);
 }
 
-function ProgramCard({ p, onOpen }: { p: LiveProgramSummary; onOpen: (id: string) => void }): JSX.Element {
+function ProgramCard({
+  p,
+  rank,
+  onOpen
+}: {
+  p: LiveProgramSummary;
+  /** ランキング順位 (ランキング表示時のみ) */
+  rank?: number;
+  onOpen: (id: string) => void;
+}): JSX.Element {
   const badge = STATUS_BADGE[p.status];
   return (
     <button
@@ -52,6 +106,11 @@ function ProgramCard({ p, onOpen }: { p: LiveProgramSummary; onOpen: (id: string
       <div className="relative w-full aspect-video bg-black">
         {p.thumbnailUrl && (
           <img src={p.thumbnailUrl} alt="" loading="lazy" className="w-full h-full object-cover" />
+        )}
+        {rank !== undefined && (
+          <span className="absolute bottom-1 left-1 min-w-[1.5rem] px-1 py-0.5 rounded text-xs font-bold text-white text-center bg-black/80">
+            {rank}
+          </span>
         )}
         {badge && (
           <span className={`absolute top-1 left-1 px-1.5 py-0.5 rounded text-[10px] font-bold text-white ${badge.className}`}>
@@ -104,6 +163,15 @@ export function LiveView(): JSX.Element {
   const [sort, setSort] = useState(SORTS[0].value);
   /** 実行済みの検索条件 (「もっと見る」で同じ条件を使う) */
   const [searched, setSearched] = useState<Omit<LiveSearchParams, 'offset'> | null>(null);
+  const [ranking, setRanking] = useState<LiveRankingResult | null>(null);
+  const [rankingKind, setRankingKind] = useState<RankingKind>('official');
+  const [rankingType, setRankingType] = useState<LiveRankingParams['type']>('onair');
+  const [rankingDate, setRankingDate] = useState(todayInput());
+  const [recentCategory, setRecentCategory] = useState<LiveRecentCategory>('common');
+  const [recentSort, setRecentSort] = useState<LiveRecentParams['sortOrder']>('viewCountDesc');
+  /** fetchList から最新の絞り込み条件を読むための参照 */
+  const filterRef = useRef({ rankingType, rankingDate, recentCategory, recentSort });
+  filterRef.current = { rankingType, rankingDate, recentCategory, recentSort };
 
   const fetchList = useCallback(
     async (tab: SubTab, offset: number, search: Omit<LiveSearchParams, 'offset'> | null): Promise<LiveProgramListResult | null> => {
@@ -116,6 +184,25 @@ export function LiveView(): JSX.Element {
           });
         case 'timeshift':
           return window.nndd.invoke<LiveProgramListResult>(IpcChannel.LIVE_LIST_TIMESHIFT_RESERVATIONS);
+        case 'ranking': {
+          const f = filterRef.current;
+          const params: LiveRankingParams = {
+            type: f.rankingType,
+            date: f.rankingType === 'closed' ? f.rankingDate.replace(/-/g, '') : undefined
+          };
+          const r = await window.nndd.invoke<LiveRankingResult>(IpcChannel.LIVE_RANKING, params);
+          setRanking(r);
+          return null;
+        }
+        case 'recent': {
+          const f = filterRef.current;
+          const params: LiveRecentParams = {
+            category: f.recentCategory,
+            sortOrder: f.recentSort,
+            page: Math.floor(offset / RECENT_PAGE_SIZE)
+          };
+          return window.nndd.invoke<LiveProgramListResult>(IpcChannel.LIVE_RECENT, params);
+        }
         case 'search':
           if (!search) return null;
           return window.nndd.invoke<LiveProgramListResult>(IpcChannel.LIVE_SEARCH, { ...search, offset });
@@ -157,6 +244,16 @@ export function LiveView(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subTab]);
 
+  // 絞り込み条件の変更で読み直す
+  useEffect(() => {
+    if (subTab === 'ranking') void load('ranking', null, false, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rankingType, rankingDate]);
+  useEffect(() => {
+    if (subTab === 'recent') void load('recent', null, false, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recentCategory, recentSort]);
+
   const runSearch = (): void => {
     const word = keyword.trim();
     if (!word) return;
@@ -176,7 +273,9 @@ export function LiveView(): JSX.Element {
     openPlayer(id).catch((e) => setOpenError(errorText(e)));
   };
 
-  const canLoadMore = subTab !== 'timeshift' && programs.length < total && !loading;
+  const isRanking = subTab === 'ranking';
+  const shown = isRanking ? (ranking?.[rankingKind] ?? []) : programs;
+  const canLoadMore = !isRanking && subTab !== 'timeshift' && programs.length < total && !loading;
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -275,17 +374,93 @@ export function LiveView(): JSX.Element {
         </form>
       )}
 
+      {/* ランキング種別 */}
+      {isRanking && (
+        <div className="flex flex-wrap items-center gap-1 px-3 pt-2">
+          <select
+            value={rankingType}
+            onChange={(e) => setRankingType(e.target.value as LiveRankingParams['type'])}
+            className="bg-nndd-bg border border-nndd-border px-1 py-0.5 text-xs mr-1"
+          >
+            {RANKING_TYPES.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </select>
+          {rankingType === 'closed' && (
+            <input
+              type="date"
+              value={rankingDate}
+              max={todayInput()}
+              onChange={(e) => e.target.value && setRankingDate(e.target.value)}
+              className="bg-nndd-bg border border-nndd-border px-1 py-0.5 text-xs mr-1"
+            />
+          )}
+          {(['official', 'user'] as const).map((k) => (
+            <button
+              key={k}
+              onClick={() => setRankingKind(k)}
+              className={[
+                'px-3 py-0.5 text-xs rounded border',
+                rankingKind === k
+                  ? 'bg-nndd-accent text-white border-nndd-accent'
+                  : 'border-nndd-border hover:bg-nndd-border'
+              ].join(' ')}
+            >
+              {k === 'official' ? '公式・チャンネル' : 'ユーザー'}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* カテゴリ */}
+      {subTab === 'recent' && (
+        <div className="flex flex-wrap items-center gap-1 px-3 pt-2">
+          {RECENT_CATEGORIES.map((c) => (
+            <button
+              key={c.value}
+              onClick={() => setRecentCategory(c.value)}
+              className={[
+                'px-3 py-0.5 text-xs rounded border',
+                recentCategory === c.value
+                  ? 'bg-nndd-accent text-white border-nndd-accent'
+                  : 'border-nndd-border hover:bg-nndd-border'
+              ].join(' ')}
+            >
+              {c.label}
+            </button>
+          ))}
+          <select
+            value={recentSort}
+            onChange={(e) => setRecentSort(e.target.value as LiveRecentParams['sortOrder'])}
+            className="ml-2 bg-nndd-bg border border-nndd-border px-1 py-0.5 text-xs"
+          >
+            {RECENT_SORTS.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {/* 一覧 */}
       <div className="flex-1 min-h-0 overflow-y-auto p-3">
         {error && <div className="mb-2 text-xs text-red-500">{error}</div>}
-        {!loading && !error && programs.length === 0 && (
+        {!loading && !error && shown.length === 0 && (
           <div className="text-xs text-nndd-subtext">
             {subTab === 'search' && !searched ? 'キーワードを入力して検索してください。' : '番組がありません。'}
           </div>
         )}
         <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(200px,1fr))]">
-          {programs.map((p, i) => (
-            <ProgramCard key={`${p.programId}-${i}`} p={p} onOpen={onOpen} />
+          {shown.map((p, i) => (
+            <ProgramCard
+              key={`${p.programId}-${i}`}
+              p={p}
+              rank={isRanking ? i + 1 : undefined}
+              onOpen={onOpen}
+            />
           ))}
         </div>
         {loading && <div className="mt-3 text-xs text-nndd-subtext">読み込み中…</div>}

@@ -1,4 +1,11 @@
-import type { LiveProgramListResult, LiveProgramSummary, LiveSearchParams } from '@shared/types';
+import type {
+  LiveProgramListResult,
+  LiveProgramSummary,
+  LiveRankingParams,
+  LiveRankingResult,
+  LiveRecentParams,
+  LiveSearchParams
+} from '@shared/types';
 import { NicoContext } from '../NicoContext';
 import { LIVE_ORIGIN, parseEmbeddedData } from './LiveWatchPage';
 
@@ -101,30 +108,102 @@ export async function searchPrograms(params: LiveSearchParams): Promise<LiveProg
   return { programs, total: num(json.meta?.totalCount) ?? programs.length };
 }
 
-/** タイムシフト予約一覧 (live.nicovideo.jp/embed/timeshift-reservations の embedded-data) */
-export async function fetchTimeshiftReservations(): Promise<LiveProgramListResult> {
-  const html = await NicoContext.get().http.getText(`${LIVE_ORIGIN}/embed/timeshift-reservations`, {
+/** 秒・ミリ秒どちらで来ても ms に揃える (embedded-data の beginTime は秒) */
+const toMs = (v: unknown): number => {
+  const n = num(v) ?? 0;
+  return n > 0 && n < 1e12 ? n * 1000 : n;
+};
+
+/**
+ * live.nicovideo.jp のページ埋め込みデータに含まれる番組 (タイムシフト予約一覧・ランキング等で共通の形式)
+ */
+function fromEmbeddedProgram(r: any): LiveProgramSummary {
+  return {
+    programId: str(r.nicoliveProgramId),
+    title: str(r.title),
+    thumbnailUrl: str(r.listingThumbnail),
+    status: normalizeStatus(r.status),
+    beginAtMs: toMs(r.beginTime),
+    endAtMs: toMs(r.endTime),
+    viewers: num(r.statistics?.watchCount),
+    comments: num(r.statistics?.commentCount),
+    ownerName: str(r.supplier?.name) || str(r.socialGroup?.name),
+    ownerIconUrl:
+      str(r.socialGroup?.thumbnailUrl) ||
+      str(r.supplier?.icons?.uri50x50) ||
+      str(r.supplier?.icons?.uri150x150),
+    providerType: str(r.providerType),
+    isMemberOnly: Boolean(r.isFollowerOnly || r.payment),
+    timeshiftPlayable: typeof r.timeshift?.isPlayable === 'boolean' ? r.timeshift.isPlayable : undefined
+  };
+}
+
+async function fetchEmbeddedData(path: string, label: string): Promise<Record<string, any>> {
+  const html = await NicoContext.get().http.getText(`${LIVE_ORIGIN}${path}`, {
     headers: { Referer: `${LIVE_ORIGIN}/` }
   });
   const props = parseEmbeddedData(html);
-  if (!props) throw new Error('タイムシフト予約一覧の解析に失敗しました');
-  const list: any[] = props.reservations?.reservations ?? [];
-  const programs = list.map(
-    (r): LiveProgramSummary => ({
-      programId: str(r.nicoliveProgramId),
-      title: str(r.title),
-      thumbnailUrl: str(r.listingThumbnail),
-      status: normalizeStatus(r.status),
-      beginAtMs: (num(r.beginTime) ?? 0) * 1000,
-      endAtMs: (num(r.endTime) ?? 0) * 1000,
-      viewers: num(r.statistics?.watchCount),
-      comments: num(r.statistics?.commentCount),
-      ownerName: '',
-      ownerIconUrl: '',
-      providerType: str(r.providerType),
-      isMemberOnly: Boolean(r.isFollowerOnly || r.payment),
-      timeshiftPlayable: typeof r.timeshift?.isPlayable === 'boolean' ? r.timeshift.isPlayable : undefined
+  if (!props) throw new Error(`${label}の解析に失敗しました`);
+  return props;
+}
+
+/** タイムシフト予約一覧 (live.nicovideo.jp/embed/timeshift-reservations の embedded-data) */
+export async function fetchTimeshiftReservations(): Promise<LiveProgramListResult> {
+  const props = await fetchEmbeddedData('/embed/timeshift-reservations', 'タイムシフト予約一覧');
+  const programs = ((props.reservations?.reservations ?? []) as any[]).map(fromEmbeddedProgram);
+  return { programs, total: programs.length };
+}
+
+/**
+ * 生放送ランキング (live.nicovideo.jp/ranking の embedded-data)。
+ * 専用 API は無く、ページに埋め込まれた ranking.{officialAndChannelPrograms, userPrograms} を読む。
+ * 各要素は { type: 'seed', value: 番組 } 形式
+ */
+export async function fetchLiveRanking(params: LiveRankingParams): Promise<LiveRankingResult> {
+  const q = new URLSearchParams({ type: params.type });
+  if (params.type === 'closed' && params.date && /^\d{8}$/.test(params.date)) q.set('select_date', params.date);
+  const props = await fetchEmbeddedData(`/ranking?${q}`, 'ランキング');
+  const pick = (list: unknown): LiveProgramSummary[] =>
+    (Array.isArray(list) ? list : [])
+      .map((item: any) => item?.value ?? item)
+      .filter((v: any) => v && v.nicoliveProgramId)
+      .map(fromEmbeddedProgram);
+  return {
+    official: pick(props.ranking?.officialAndChannelPrograms),
+    user: pick(props.ranking?.userPrograms)
+  };
+}
+
+/**
+ * カテゴリ別の放送中番組 (live.nicovideo.jp/recent が使う API)。
+ * offset は件数ではなくページ番号 (1 ページ 70 件)
+ */
+export async function fetchRecentPrograms(params: LiveRecentParams): Promise<LiveProgramListResult> {
+  const q = new URLSearchParams({
+    tab: params.category,
+    offset: String(params.page),
+    sortOrder: params.sortOrder
+  });
+  const json = await NicoContext.get().http.getJson<{ meta?: { totalCount?: number }; data?: any[] }>(
+    `${LIVE_ORIGIN}/front/api/pages/recent/v1/programs?${q}`,
+    { headers: LIVE_HEADERS }
+  );
+  const programs = (json.data ?? []).map(
+    (p): LiveProgramSummary => ({
+      programId: str(p.id),
+      title: str(p.title),
+      thumbnailUrl: str(p.listingThumbnail),
+      status: normalizeStatus(p.liveCycle),
+      beginAtMs: num(p.beginAt) ?? 0,
+      endAtMs: num(p.endAt) ?? 0,
+      viewers: num(p.statistics?.watchCount),
+      comments: num(p.statistics?.commentCount),
+      ownerName: str(p.programProvider?.name) || str(p.socialGroup?.name),
+      ownerIconUrl: str(p.programProvider?.icon) || str(p.socialGroup?.thumbnailUrl),
+      providerType: str(p.providerType),
+      isMemberOnly: Boolean(p.isFollowerOnly || p.isPayProgram),
+      timeshiftPlayable: typeof p.timeshift?.isPlayable === 'boolean' ? p.timeshift.isPlayable : undefined
     })
   );
-  return { programs, total: programs.length };
+  return { programs, total: num(json.meta?.totalCount) ?? programs.length };
 }

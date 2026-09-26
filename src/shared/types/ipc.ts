@@ -199,6 +199,10 @@ export const IpcChannel = {
   LIVE_LIST_FOLLOWING: 'nndd:live:listFollowing',
   /** 番組検索 (LiveSearchParams) → LiveProgramListResult */
   LIVE_SEARCH: 'nndd:live:search',
+  /** 生放送ランキング (LiveRankingParams) → LiveRankingResult */
+  LIVE_RANKING: 'nndd:live:ranking',
+  /** カテゴリ別の放送中番組 (LiveRecentParams) → LiveProgramListResult */
+  LIVE_RECENT: 'nndd:live:recent',
   /** タイムシフト予約一覧 → LiveProgramListResult */
   LIVE_LIST_TIMESHIFT_RESERVATIONS: 'nndd:live:listTimeshiftReservations',
   /** main → 生放送プレイヤーへのイベント通知 (LiveEvent) */
