@@ -13,6 +13,26 @@ export function DebugSettings(): JSX.Element {
   const [apiDumpPath, setApiDumpPath] = useState('');
   const [apiDumpTargets, setApiDumpTargets] = useState<ApiDumpTarget[]>(['watch']);
   const [saving, setSaving] = useState(false);
+  const [liveId, setLiveId] = useState('');
+  const [liveRunning, setLiveRunning] = useState(false);
+  const [liveResult, setLiveResult] = useState<string[]>([]);
+
+  const runLivePoc = async (): Promise<void> => {
+    if (!liveId.trim()) return;
+    setLiveRunning(true);
+    setLiveResult([]);
+    try {
+      const lines = await window.nndd.invoke<string[]>(
+        window.nndd.channels.LIVE_POC_RUN,
+        liveId.trim()
+      );
+      setLiveResult(lines);
+    } catch (e) {
+      setLiveResult([`エラー: ${String(e)}`]);
+    } finally {
+      setLiveRunning(false);
+    }
+  };
 
   useEffect(() => {
     window.nndd
@@ -145,6 +165,29 @@ export function DebugSettings(): JSX.Element {
           💡 設定を変更すると、次回の動画再生から新しい設定で記録されます。
           環境変数 <code className="bg-nndd-bg px-1 rounded">DEBUG_API_DUMP</code> での設定は不要になります。
         </p>
+      </Section>
+
+      <Section title="生放送 視聴フロー調査 (PoC)">
+        <p className="text-xs text-nndd-subtext mb-2">
+          番組ID (lv...) を指定して watchページ・視聴WebSocket・HLS・コメントサーバーへ1回ずつ接続し、
+          結果をログに出力します。トークン等はマスクされます。
+        </p>
+        <div className="flex items-center gap-2 mb-2">
+          <input
+            value={liveId}
+            onChange={(e) => setLiveId(e.target.value)}
+            className="flex-1 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
+            placeholder="lv123456789"
+          />
+          <Btn onClick={() => void runLivePoc()} disabled={liveRunning || !liveId.trim()}>
+            {liveRunning ? '実行中...' : '実行'}
+          </Btn>
+        </div>
+        {liveResult.length > 0 && (
+          <pre className="text-[11px] bg-nndd-bg border border-nndd-border p-2 max-h-80 overflow-auto whitespace-pre-wrap break-all">
+            {liveResult.join('\n')}
+          </pre>
+        )}
       </Section>
 
       <Section title="トラブルシューティング">

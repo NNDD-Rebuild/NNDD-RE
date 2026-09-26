@@ -1153,6 +1153,12 @@ export function registerIpcHandlers(
     return ConnectionDiag.runAll();
   });
 
+  // --- 生放送 視聴フロー調査 PoC ---
+  ipcMain.handle(IpcChannel.LIVE_POC_RUN, async (_e, programId: string) => {
+    const { runLivePoc } = await import('../nicovideo/live/LivePoc');
+    return runLivePoc(programId);
+  });
+
   // --- HTTPサーバー制御 ---
   let runtimeHttpServer: NnddHttpServer | null = null;
 

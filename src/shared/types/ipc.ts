@@ -181,6 +181,9 @@ export const IpcChannel = {
   // 接続診断
   DIAG_RUN: 'nndd:diag:run',
 
+  // 生放送 視聴フロー調査 PoC (デバッグ設定から実行)
+  LIVE_POC_RUN: 'nndd:live:pocRun',
+
   // HTTPサーバー制御
   HTTPD_START: 'nndd:httpd:start',
   HTTPD_STOP: 'nndd:httpd:stop',
