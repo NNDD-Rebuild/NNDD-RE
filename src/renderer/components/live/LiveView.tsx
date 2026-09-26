@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   LiveProgramListResult,
   LiveProgramSummary,
@@ -10,13 +10,14 @@ import type {
 } from '@shared/types';
 import { IpcChannel, LIVE_SEARCH_PAGE_SIZE } from '@shared/types';
 import { useAppStore } from '@renderer/store/useAppStore';
+import { VirtualizedItemList } from '../common/VirtualizedItemList';
 
 type SubTab = 'followOnair' | 'followReserved' | 'ranking' | 'recent' | 'search' | 'timeshift';
 type RankingKind = 'official' | 'user';
 
 const SUB_TABS: { id: SubTab; label: string }[] = [
   { id: 'followOnair', label: 'フォロー中 (放送中)' },
-  { id: 'followReserved', label: 'フォロー中 (予約)' },
+  { id: 'followReserved', label: 'フォロー中 (放送予定)' },
   { id: 'ranking', label: 'ランキング' },
   { id: 'recent', label: 'カテゴリ' },
   { id: 'search', label: '検索' },
@@ -79,7 +80,7 @@ function formatDateTime(ms: number): string {
 
 const STATUS_BADGE: Record<string, { label: string; className: string }> = {
   ON_AIR: { label: '放送中', className: 'bg-red-600' },
-  RELEASED: { label: '予約', className: 'bg-blue-600' },
+  RELEASED: { label: '放送予定', className: 'bg-blue-600' },
   ENDED: { label: '終了', className: 'bg-neutral-600' }
 };
 
@@ -98,13 +99,13 @@ function ProgramCard({
   onOpen: (id: string) => void;
 }): JSX.Element {
   const badge = STATUS_BADGE[p.status];
+  // 見た目は動画一覧のカード (VideoCard のグリッド表示) に揃える
   return (
-    <button
-      onClick={() => onOpen(p.programId)}
-      className="flex flex-col text-left rounded border border-nndd-border bg-nndd-panel hover:border-nndd-accent overflow-hidden"
-      title={p.title}
+    <div
+      className="bg-nndd-panel hover:bg-nndd-border rounded overflow-hidden flex flex-col h-full"
+      onDoubleClick={() => onOpen(p.programId)}
     >
-      <div className="relative w-full aspect-video bg-black">
+      <div className="relative w-full aspect-video bg-black cursor-pointer" onClick={() => onOpen(p.programId)}>
         {p.thumbnailUrl && (
           <img src={p.thumbnailUrl} alt="" loading="lazy" className="w-full h-full object-cover" />
         )}
@@ -124,24 +125,44 @@ function ProgramCard({
           </span>
         )}
       </div>
-      <div className="p-2 flex flex-col gap-1 min-w-0">
-        <div className="text-xs font-bold line-clamp-2">{p.title}</div>
-        {p.ownerName && (
-          <div className="flex items-center gap-1 text-[11px] text-nndd-subtext min-w-0">
-            {p.ownerIconUrl && <img src={p.ownerIconUrl} alt="" className="w-4 h-4 rounded-full shrink-0" />}
-            <span className="truncate">{p.ownerName}</span>
+      <div className="p-2 flex-1 flex flex-col">
+        <div className="flex items-start gap-1.5 mb-1">
+          {p.ownerIconUrl && (
+            <img
+              src={p.ownerIconUrl}
+              alt=""
+              className="flex-shrink-0 mt-0.5 w-5 h-5 rounded-full object-cover"
+              loading="lazy"
+              title={p.ownerName}
+            />
+          )}
+          <div
+            className="text-sm font-medium line-clamp-2 min-h-[2.5em] cursor-pointer hover:underline"
+            title={p.title}
+            onClick={() => onOpen(p.programId)}
+          >
+            {p.title}
           </div>
-        )}
-        <div className="text-[11px] text-nndd-subtext tabular-nums">
-          {formatDateTime(p.beginAtMs)}
-          {p.viewers !== undefined && ` ・ 来場 ${p.viewers.toLocaleString()}`}
-          {p.comments !== undefined && ` ・ コメ ${p.comments.toLocaleString()}`}
+        </div>
+        {p.ownerName && <div className="text-xs text-nndd-subtext truncate mb-0.5">{p.ownerName}</div>}
+        <div className="text-xs text-nndd-subtext flex flex-wrap gap-x-2 gap-y-0.5 min-h-[1.25em]">
+          {p.viewers !== undefined && <span>👥 {p.viewers.toLocaleString()}</span>}
+          {p.comments !== undefined && <span>💬 {p.comments.toLocaleString()}</span>}
+          <span className="ml-auto">{formatDateTime(p.beginAtMs)}</span>
         </div>
         {p.status === 'ENDED' && p.timeshiftPlayable === false && (
-          <div className="text-[11px] text-nndd-subtext">タイムシフト視聴不可</div>
+          <div className="text-xs text-nndd-subtext">タイムシフト視聴不可</div>
         )}
+        <div className="mt-auto pt-2 flex gap-1">
+          <button
+            onClick={() => onOpen(p.programId)}
+            className="text-xs px-2 py-0.5 bg-nndd-accent text-white rounded hover:opacity-80"
+          >
+            視聴
+          </button>
+        </div>
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -302,8 +323,23 @@ export function LiveView(): JSX.Element {
 
   const isRanking = subTab === 'ranking';
   const shown = isRanking ? (ranking?.[rankingKind] ?? []) : programs;
+  const cardItems = useMemo(
+    () =>
+      shown.map((p, i) => ({
+        key: `${p.programId}-${i}`,
+        p,
+        rank: isRanking ? i + 1 : undefined
+      })),
+    [shown, isRanking]
+  );
   const canLoadMore =
-    !isRanking && subTab !== 'timeshift' && subTab !== 'search' && programs.length < total && !loading;
+    !isRanking &&
+    subTab !== 'timeshift' &&
+    subTab !== 'search' &&
+    // 放送予定はページの埋め込みデータから一度に全件読むので続きは無い
+    subTab !== 'followReserved' &&
+    programs.length < total &&
+    !loading;
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -513,16 +549,14 @@ export function LiveView(): JSX.Element {
             {subTab === 'search' && !searched ? 'キーワードを入力して検索してください。' : '番組がありません。'}
           </div>
         )}
-        <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(200px,1fr))]">
-          {shown.map((p, i) => (
-            <ProgramCard
-              key={`${p.programId}-${i}`}
-              p={p}
-              rank={isRanking ? i + 1 : undefined}
-              onOpen={onOpen}
-            />
-          ))}
-        </div>
+        {/* 列数・カード幅は動画一覧と同じ VirtualizedItemList のグリッドで決める */}
+        <VirtualizedItemList
+          items={cardItems}
+          layout="grid"
+          scrollElementRef={listScrollRef}
+          getKey={(c) => c.key}
+          renderItem={(c) => <ProgramCard p={c.p} rank={c.rank} onOpen={onOpen} />}
+        />
         {loading && <div className="mt-3 text-xs text-nndd-subtext">読み込み中…</div>}
         {canLoadMore && (
           <div className="mt-3 text-center">

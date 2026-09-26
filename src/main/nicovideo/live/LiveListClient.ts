@@ -44,32 +44,56 @@ function normalizeStatus(v: unknown): string {
 }
 
 /** フォロー中の番組 (live.nicovideo.jp/follow が使う API) */
+/** フォロー中 API (/front/api/pages/follow/v1/programs) 形式の番組 */
+function fromFollowApiProgram(p: any): LiveProgramSummary {
+  return {
+    programId: str(p.id),
+    title: str(p.title),
+    thumbnailUrl: str(p.listingThumbnail),
+    status: normalizeStatus(p.liveCycle),
+    beginAtMs: num(p.beginAt) ?? 0,
+    endAtMs: num(p.endAt) ?? 0,
+    viewers: num(p.statistics?.watchCount),
+    comments: num(p.statistics?.commentCount),
+    ownerName: str(p.socialGroup?.name) || str(p.programProvider?.name),
+    ownerIconUrl: str(p.socialGroup?.thumbnailUrl) || str(p.programProvider?.icon),
+    providerType: str(p.providerType),
+    isMemberOnly: Boolean(p.isFollowerOnly || p.isPayProgram),
+    timeshiftPlayable: typeof p.timeshift?.isPlayable === 'boolean' ? p.timeshift.isPlayable : undefined
+  };
+}
+
+/**
+ * フォロー中の番組。
+ * - onair: live.nicovideo.jp/follow が使う API
+ * - reserved (放送予定): API の status 指定では取れないため、/follow ページの埋め込みデータ
+ *   (followedPrograms.comingsoonProgramListState) から読む
+ */
 export async function fetchFollowingPrograms(
   status: 'onair' | 'reserved',
   offset: number
 ): Promise<LiveProgramListResult> {
+  if (status === 'reserved') return fetchFollowingComingSoon();
   const url = `${LIVE_ORIGIN}/front/api/pages/follow/v1/programs?status=${status}&offset=${offset}`;
   const json = await NicoContext.get().http.getJson<{ data?: { programs?: any[]; total?: number } }>(url, {
     headers: LIVE_HEADERS
   });
-  const programs = (json.data?.programs ?? []).map(
-    (p): LiveProgramSummary => ({
-      programId: str(p.id),
-      title: str(p.title),
-      thumbnailUrl: str(p.listingThumbnail),
-      status: normalizeStatus(p.liveCycle),
-      beginAtMs: num(p.beginAt) ?? 0,
-      endAtMs: num(p.endAt) ?? 0,
-      viewers: num(p.statistics?.watchCount),
-      comments: num(p.statistics?.commentCount),
-      ownerName: str(p.socialGroup?.name),
-      ownerIconUrl: str(p.socialGroup?.thumbnailUrl),
-      providerType: str(p.providerType),
-      isMemberOnly: Boolean(p.isFollowerOnly || p.isPayProgram),
-      timeshiftPlayable: typeof p.timeshift?.isPlayable === 'boolean' ? p.timeshift.isPlayable : undefined
-    })
-  );
+  const programs = (json.data?.programs ?? []).map(fromFollowApiProgram);
   return { programs, total: num(json.data?.total) ?? programs.length };
+}
+
+async function fetchFollowingComingSoon(): Promise<LiveProgramListResult> {
+  const props = await fetchEmbeddedData('/follow', 'フォロー中の番組');
+  const state = props.followedPrograms?.comingsoonProgramListState;
+  const items: any[] = state?.domain?.items ?? [];
+  const programs = items
+    // ランキング等と同じ { type, value } 形式と、API と同じ形式の両方に対応する
+    .map((item) => item?.value ?? item)
+    .filter((v) => v && (v.nicoliveProgramId || v.id))
+    .map((v) => (v.nicoliveProgramId ? fromEmbeddedProgram(v) : fromFollowApiProgram(v)))
+    // 放送予定は開始が近い順
+    .sort((a, b) => a.beginAtMs - b.beginAtMs);
+  return { programs, total: num(state?.totalProgramsCount) ?? programs.length };
 }
 
 /** 番組検索 (api.cas.nicovideo.jp) */
