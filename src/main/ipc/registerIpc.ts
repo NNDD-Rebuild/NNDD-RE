@@ -1729,21 +1729,35 @@ export function registerIpcHandlers(
     const pmod = await import('node:path');
     const root = library.videoDir;
     if (!fsmod.existsSync(root)) return [];
-    try {
-      return fsmod.readdirSync(root, { withFileTypes: true })
-        .filter((e) => e.isDirectory())
-        .map((e) => pmod.join(root, e.name));
-    } catch {
-      return [];
-    }
+    // サブフォルダも含め階層をすべて返す (呼び出し側でパスのprefix関係からツリーを再構築する)。
+    const result: string[] = [];
+    const walk = (dir: string): void => {
+      let entries: import('node:fs').Dirent[];
+      try {
+        entries = fsmod.readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const ent of entries) {
+        if (!ent.isDirectory()) continue;
+        // 直下の system は本家NNDDの管理フォルダなので表示対象外
+        if (dir === root && ent.name.toLowerCase() === 'system') continue;
+        const p = pmod.join(dir, ent.name);
+        result.push(p);
+        walk(p);
+      }
+    };
+    walk(root);
+    return result;
   });
 
   ipcMain.handle(IpcChannel.LIBRARY_FOLDER_DELETE, async (_e, folderPath: string) => {
     const fsmod = await import('node:fs');
-    // DB から該当フォルダの動画を削除
+    // DB から該当フォルダ配下 (サブフォルダ含む) の動画を削除
+    const normFolder = folderPath.replace(/[/\\]+$/, '');
     const videos = library.videoDao.listWithTags().filter((v) => {
       const d = v.uri.replace(/[/\\][^/\\]+$/, '');
-      return d === folderPath;
+      return d === normFolder || d.startsWith(normFolder + '/') || d.startsWith(normFolder + '\\');
     });
     for (const v of videos) {
       library.videoDao.delete(v.id);

@@ -19,6 +19,135 @@ interface LanVideo {
 
 const LAN_FOLDER = '__lan__';
 
+interface FolderNode {
+  path: string;
+  name: string;
+  children: FolderNode[];
+}
+
+/**
+ * フルパスのフラットな一覧をprefix関係から親子ツリーに組み立てる。
+ * DB/ファイル一覧はフラットなまま(パス文字列)保持し、表示時にのみツリー化する。
+ */
+function buildFolderTree(paths: string[]): FolderNode[] {
+  const sorted = [...paths].sort((a, b) => a.length - b.length);
+  const nodeByPath = new Map<string, FolderNode>();
+  const roots: FolderNode[] = [];
+  for (const p of sorted) {
+    const node: FolderNode = { path: p, name: p.split(/[/\\]/).pop() || p, children: [] };
+    nodeByPath.set(p, node);
+    let parent: FolderNode | undefined;
+    let bestLen = -1;
+    for (const [candPath, candNode] of nodeByPath) {
+      if (candPath === p) continue;
+      if ((p.startsWith(candPath + '/') || p.startsWith(candPath + '\\')) && candPath.length > bestLen) {
+        parent = candNode;
+        bestLen = candPath.length;
+      }
+    }
+    if (parent) parent.children.push(node);
+    else roots.push(node);
+  }
+  const sortChildren = (nodes: FolderNode[]): void => {
+    nodes.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
+    for (const n of nodes) sortChildren(n.children);
+  };
+  sortChildren(roots);
+  return roots;
+}
+
+function FolderTreeItem({
+  node,
+  depth,
+  selectedFolder,
+  dragOverFolder,
+  expanded,
+  videoCounts,
+  onSelect,
+  onToggleExpand,
+  onDelete,
+  onDragOverFolder,
+  onDragLeaveFolder,
+  onDropFolder
+}: {
+  node: FolderNode;
+  depth: number;
+  selectedFolder: string | null;
+  dragOverFolder: string | null;
+  expanded: Set<string>;
+  videoCounts: Map<string, number>;
+  onSelect: (path: string) => void;
+  onToggleExpand: (path: string) => void;
+  onDelete: (path: string) => void;
+  onDragOverFolder: (path: string, e: React.DragEvent) => void;
+  onDragLeaveFolder: () => void;
+  onDropFolder: (e: React.DragEvent, path: string) => void;
+}): JSX.Element {
+  const isOpen = expanded.has(node.path);
+  const count = videoCounts.get(node.path) ?? 0;
+  const hasChildren = node.children.length > 0;
+  return (
+    <div>
+      <div
+        className={[
+          'flex items-center gap-1 rounded text-xs group',
+          selectedFolder === node.path
+            ? 'bg-nndd-accent text-white'
+            : dragOverFolder === node.path
+            ? 'bg-nndd-accent/50 ring-1 ring-nndd-accent'
+            : 'hover:bg-nndd-border'
+        ].join(' ')}
+        style={{ paddingLeft: depth * 12 }}
+        onDragOver={(e) => onDragOverFolder(node.path, e)}
+        onDragLeave={onDragLeaveFolder}
+        onDrop={(e) => void onDropFolder(e, node.path)}
+      >
+        <button
+          onClick={() => onToggleExpand(node.path)}
+          className="shrink-0 w-3 text-center opacity-70"
+        >
+          {hasChildren ? (isOpen ? '▾' : '▸') : ''}
+        </button>
+        <button
+          onClick={() => onSelect(node.path)}
+          className="flex-1 text-left px-1 py-0.5 truncate"
+          title={node.path}
+        >
+          {node.name} <span className="text-[10px] opacity-70">({count})</span>
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete(node.path); }}
+          className="shrink-0 px-1 py-0.5 opacity-0 group-hover:opacity-100 hover:text-red-500 dark:hover:text-red-400 transition-opacity"
+          title="フォルダ削除"
+        >
+          🗑
+        </button>
+      </div>
+      {hasChildren && isOpen && (
+        <div>
+          {node.children.map((child) => (
+            <FolderTreeItem
+              key={child.path}
+              node={child}
+              depth={depth + 1}
+              selectedFolder={selectedFolder}
+              dragOverFolder={dragOverFolder}
+              expanded={expanded}
+              videoCounts={videoCounts}
+              onSelect={onSelect}
+              onToggleExpand={onToggleExpand}
+              onDelete={onDelete}
+              onDragOverFolder={onDragOverFolder}
+              onDragLeaveFolder={onDragLeaveFolder}
+              onDropFolder={onDropFolder}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function LibraryView(): JSX.Element {
   const [videos, setVideos] = useState<NNDDREVideo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -63,6 +192,7 @@ export function LibraryView(): JSX.Element {
   const [newFolderName, setNewFolderName] = useState('');
   const [folderCreateError, setFolderCreateError] = useState<string | null>(null);
   const [fsFolders, setFsFolders] = useState<string[]>([]);
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
 
   const [selectedVideoIds, setSelectedVideoIds] = useState<Set<number>>(new Set());
   const lastClickedIdRef = useRef<number | null>(null);
@@ -167,6 +297,45 @@ export function LibraryView(): JSX.Element {
     }
     return [...set].sort();
   }, [videos, fsFolders]);
+
+  const folderTree = useMemo(() => buildFolderTree(folders), [folders]);
+
+  // 初回ロード時のみ第一階層 (ツリーのルート) を展開状態にする
+  const initialExpandDoneRef = useRef(false);
+  useEffect(() => {
+    if (initialExpandDoneRef.current || folderTree.length === 0) return;
+    initialExpandDoneRef.current = true;
+    setExpandedFolders((prev) => {
+      const next = new Set(prev);
+      for (const n of folderTree) next.add(n.path);
+      return next;
+    });
+  }, [folderTree]);
+
+  const folderVideoCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const v of videos) {
+      const d = v.uri.replace(/[/\\][^/\\]+$/, '');
+      map.set(d, (map.get(d) ?? 0) + 1);
+    }
+    return map;
+  }, [videos]);
+
+  const toggleFolderExpand = (path: string): void => {
+    setExpandedFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path); else next.add(path);
+      return next;
+    });
+  };
+
+  const handleFolderDragOver = (path: string, e: React.DragEvent): void => {
+    if (e.dataTransfer.types.includes('application/nndd-video-ids')) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      setDragOverFolder(path);
+    }
+  };
 
   const filtered = useMemo(() => {
     if (selectedFolder === LAN_FOLDER) return [];
@@ -416,50 +585,26 @@ export function LibraryView(): JSX.Element {
                 すべて <span className="text-[10px] opacity-70">({videos.length})</span>
               </button>
 
-              {folders.length === 0 && (
+              {folderTree.length === 0 && (
                 <div className="text-xs text-nndd-subtext">フォルダなし</div>
               )}
-              {folders.map((f) => {
-                const count = videos.filter((v) => v.uri.replace(/[/\\][^/\\]+$/, '') === f).length;
-                return (
-                  <div
-                    key={f}
-                    className={[
-                      'flex items-center gap-1 rounded text-xs group',
-                      selectedFolder === f
-                        ? 'bg-nndd-accent text-white'
-                        : dragOverFolder === f
-                        ? 'bg-nndd-accent/50 ring-1 ring-nndd-accent'
-                        : 'hover:bg-nndd-border'
-                    ].join(' ')}
-                    onDragOver={(e) => {
-                      if (e.dataTransfer.types.includes('application/nndd-video-ids')) {
-                        e.preventDefault();
-                        e.dataTransfer.dropEffect = 'move';
-                        setDragOverFolder(f);
-                      }
-                    }}
-                    onDragLeave={() => setDragOverFolder(null)}
-                    onDrop={(e) => void handleFolderDrop(e, f)}
-                  >
-                    <button
-                      onClick={() => setSelectedFolder(f)}
-                      className="flex-1 text-left px-2 py-0.5 truncate"
-                      title={f}
-                    >
-                      {f.split(/[/\\]/).pop() || f}{' '}
-                      <span className="text-[10px] opacity-70">({count})</span>
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); void handleFolderDelete(f); }}
-                      className="shrink-0 px-1 py-0.5 opacity-0 group-hover:opacity-100 hover:text-red-500 dark:hover:text-red-400 transition-opacity"
-                      title="フォルダ削除"
-                    >
-                      🗑
-                    </button>
-                  </div>
-                );
-              })}
+              {folderTree.map((node) => (
+                <FolderTreeItem
+                  key={node.path}
+                  node={node}
+                  depth={0}
+                  selectedFolder={selectedFolder}
+                  dragOverFolder={dragOverFolder}
+                  expanded={expandedFolders}
+                  videoCounts={folderVideoCounts}
+                  onSelect={setSelectedFolder}
+                  onToggleExpand={toggleFolderExpand}
+                  onDelete={(path) => void handleFolderDelete(path)}
+                  onDragOverFolder={handleFolderDragOver}
+                  onDragLeaveFolder={() => setDragOverFolder(null)}
+                  onDropFolder={handleFolderDrop}
+                />
+              ))}
 
               {/* LANライブラリ */}
               {lanEnabled && (
