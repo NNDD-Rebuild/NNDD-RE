@@ -62,3 +62,38 @@ export interface LiveStartResult {
   /** タイムシフト視聴か */
   isTimeshift: boolean;
 }
+
+/** 番組一覧 (フォロー中・検索・タイムシフト予約) の1件 */
+export interface LiveProgramSummary {
+  programId: string;
+  title: string;
+  thumbnailUrl: string;
+  /** ON_AIR / RELEASED (放送前) / ENDED */
+  status: string;
+  beginAtMs: number;
+  endAtMs: number;
+  viewers?: number;
+  comments?: number;
+  /** 放送者・コミュニティ・チャンネル名 */
+  ownerName: string;
+  ownerIconUrl: string;
+  providerType: string;
+  isMemberOnly: boolean;
+  /** タイムシフトが視聴可能か (分かる場合のみ) */
+  timeshiftPlayable?: boolean;
+}
+
+export interface LiveProgramListResult {
+  programs: LiveProgramSummary[];
+  total: number;
+}
+
+/** 番組検索の条件 */
+export interface LiveSearchParams {
+  keyword: string;
+  /** onair: 放送中 / reserved: 放送予定 / past: 過去 */
+  liveStatus: 'onair' | 'reserved' | 'past';
+  sort: 'startTime' | 'viewCounter' | 'commentCounter';
+  order: 'asc' | 'desc';
+  offset: number;
+}

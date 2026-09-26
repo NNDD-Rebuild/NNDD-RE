@@ -195,6 +195,12 @@ export const IpcChannel = {
   LIVE_TIMESHIFT_ACTIVATE: 'nndd:live:timeshiftActivate',
   /** 画質変更 (quality) */
   LIVE_CHANGE_QUALITY: 'nndd:live:changeQuality',
+  /** フォロー中の番組一覧 ({ status: 'onair' | 'reserved', offset }) → LiveProgramListResult */
+  LIVE_LIST_FOLLOWING: 'nndd:live:listFollowing',
+  /** 番組検索 (LiveSearchParams) → LiveProgramListResult */
+  LIVE_SEARCH: 'nndd:live:search',
+  /** タイムシフト予約一覧 → LiveProgramListResult */
+  LIVE_LIST_TIMESHIFT_RESERVATIONS: 'nndd:live:listTimeshiftReservations',
   /** main → 生放送プレイヤーへのイベント通知 (LiveEvent) */
   LIVE_EVENT: 'nndd:live:event',
 

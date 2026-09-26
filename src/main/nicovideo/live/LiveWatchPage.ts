@@ -36,6 +36,12 @@ function decodeHtmlEntities(s: string): string {
     .replace(/&amp;/g, '&');
 }
 
+/** live.nicovideo.jp の HTML から `#embedded-data` の data-props を取り出す。無ければ null */
+export function parseEmbeddedData(html: string): Record<string, any> | null {
+  const m = html.match(/id="embedded-data"\s+data-props="([^"]*)"/);
+  return m ? (JSON.parse(decodeHtmlEntities(m[1])) as Record<string, any>) : null;
+}
+
 /** URL・番組ID文字列から lv/co/ch ID を取り出す。取れなければ null */
 export function normalizeLiveId(input: string): string | null {
   const m = input.trim().match(/\b(lv\d+|co\d+|ch\d+)\b/);
@@ -53,11 +59,9 @@ export async function fetchLiveWatchPage(id: string): Promise<LiveWatchPageInfo>
   const html = await NicoContext.get().http.getText(`${LIVE_ORIGIN}/watch/${id}`, {
     headers: { Referer: `${LIVE_ORIGIN}/` }
   });
-  const m = html.match(/id="embedded-data"\s+data-props="([^"]*)"/);
-  if (!m) throw new Error('生放送ページの解析に失敗しました (embedded-data が見つかりません)');
-
   // embedded-data は外部データなので必要なフィールドだけ防御的に読む
-  const props = JSON.parse(decodeHtmlEntities(m[1])) as Record<string, any>;
+  const props = parseEmbeddedData(html);
+  if (!props) throw new Error('生放送ページの解析に失敗しました (embedded-data が見つかりません)');
   const program = props.program ?? {};
   const socialGroup = props.socialGroup ?? {};
 

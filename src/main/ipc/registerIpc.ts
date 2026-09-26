@@ -7,6 +7,12 @@ import { IpcChannel } from '@shared/types';
 import { LibraryManager } from '../db/LibraryManager';
 import { LivePlayerManager } from '../player/LivePlayerManager';
 import { activateTimeshift, normalizeLiveId } from '../nicovideo/live/LiveWatchPage';
+import {
+  fetchFollowingPrograms,
+  fetchTimeshiftReservations,
+  searchPrograms
+} from '../nicovideo/live/LiveListClient';
+import type { LiveSearchParams } from '@shared/types';
 import { getConfigStore } from '../config/ConfigStore';
 import {
   createLogger,
@@ -1173,6 +1179,13 @@ export function registerIpcHandlers(
   ipcMain.handle(IpcChannel.LIVE_TIMESHIFT_ACTIVATE, (_e, programId: string) =>
     activateTimeshift(String(programId))
   );
+  ipcMain.handle(
+    IpcChannel.LIVE_LIST_FOLLOWING,
+    (_e, args: { status: 'onair' | 'reserved'; offset: number }) =>
+      fetchFollowingPrograms(args.status === 'reserved' ? 'reserved' : 'onair', Number(args.offset) || 0)
+  );
+  ipcMain.handle(IpcChannel.LIVE_SEARCH, (_e, params: LiveSearchParams) => searchPrograms(params));
+  ipcMain.handle(IpcChannel.LIVE_LIST_TIMESHIFT_RESERVATIONS, () => fetchTimeshiftReservations());
   ipcMain.handle(IpcChannel.LIVE_STOP, (e) => {
     LivePlayerManager.get().stopSession(e.sender.id);
   });
