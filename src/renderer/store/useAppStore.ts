@@ -9,6 +9,7 @@ export type MainTab =
   | 'ranking'
   | 'search'
   | 'follow'
+  | 'live'
   | 'mylist'
   | 'download'
   | 'library'
@@ -20,6 +21,7 @@ export const MAIN_TABS: { id: MainTab; label: string }[] = [
   { id: 'ranking', label: 'ランキング' },
   { id: 'search', label: '検索' },
   { id: 'follow', label: 'フォロー中' },
+  { id: 'live', label: '生放送' },
   { id: 'mylist', label: 'マイリスト' },
   { id: 'download', label: 'DLリスト' },
   { id: 'library', label: 'ライブラリ' },

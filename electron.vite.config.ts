@@ -48,6 +48,7 @@ export default defineConfig({
         input: {
           index: resolve(__dirname, 'src/renderer/index.html'),
           player: resolve(__dirname, 'src/renderer/player.html'),
+          'live-player': resolve(__dirname, 'src/renderer/live-player.html'),
           'web-app': resolve(__dirname, 'src/renderer/web-app.html'),
           comment: resolve(__dirname, 'src/renderer/comment.html')
         }

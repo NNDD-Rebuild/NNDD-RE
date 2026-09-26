@@ -5,6 +5,8 @@ import { ipcMain, dialog, shell, app, BrowserWindow, webContents, WebContentsVie
 import type { Session } from 'electron';
 import { IpcChannel } from '@shared/types';
 import { LibraryManager } from '../db/LibraryManager';
+import { LivePlayerManager } from '../player/LivePlayerManager';
+import { normalizeLiveId } from '../nicovideo/live/LiveWatchPage';
 import { getConfigStore } from '../config/ConfigStore';
 import {
   createLogger,
@@ -1157,6 +1159,22 @@ export function registerIpcHandlers(
   ipcMain.handle(IpcChannel.LIVE_POC_RUN, async (_e, programId: string) => {
     const { runLivePoc } = await import('../nicovideo/live/LivePoc');
     return runLivePoc(programId);
+  });
+
+  // --- 生放送 ---
+  ipcMain.handle(IpcChannel.LIVE_OPEN_PLAYER, (_e, input: string) => {
+    const id = normalizeLiveId(String(input ?? ''));
+    if (!id) throw new Error('番組ID (lv/co/ch) または生放送URLを指定してください');
+    LivePlayerManager.get().open(id);
+  });
+  ipcMain.handle(IpcChannel.LIVE_START, (e, programId: string) =>
+    LivePlayerManager.get().startSession(e.sender, String(programId))
+  );
+  ipcMain.handle(IpcChannel.LIVE_STOP, (e) => {
+    LivePlayerManager.get().stopSession(e.sender.id);
+  });
+  ipcMain.handle(IpcChannel.LIVE_CHANGE_QUALITY, (e, quality: string) => {
+    LivePlayerManager.get().changeQuality(e.sender.id, String(quality));
   });
 
   // --- HTTPサーバー制御 ---

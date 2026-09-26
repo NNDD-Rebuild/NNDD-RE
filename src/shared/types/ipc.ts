@@ -184,6 +184,18 @@ export const IpcChannel = {
   // 生放送 視聴フロー調査 PoC (デバッグ設定から実行)
   LIVE_POC_RUN: 'nndd:live:pocRun',
 
+  // 生放送
+  /** 生放送プレイヤーウィンドウを開く (programId) */
+  LIVE_OPEN_PLAYER: 'nndd:live:openPlayer',
+  /** 生放送プレイヤーから視聴開始を要求 (programId) → LiveStartResult */
+  LIVE_START: 'nndd:live:start',
+  /** 視聴終了 */
+  LIVE_STOP: 'nndd:live:stop',
+  /** 画質変更 (quality) */
+  LIVE_CHANGE_QUALITY: 'nndd:live:changeQuality',
+  /** main → 生放送プレイヤーへのイベント通知 (LiveEvent) */
+  LIVE_EVENT: 'nndd:live:event',
+
   // HTTPサーバー制御
   HTTPD_START: 'nndd:httpd:start',
   HTTPD_STOP: 'nndd:httpd:stop',

@@ -100,6 +100,8 @@ export class CommentRenderer {
   private lastPhysicalW = 0;
   private lastPhysicalH = 0;
   private rebuildSeq = 0;
+  /** 生放送用: video.currentTime の代わりに描画位置 (1/100秒) を返す関数 */
+  private vposProvider: (() => number) | null = null;
 
   /**
    * @param container コメント canvas を配置するコンテナ要素。
@@ -166,6 +168,34 @@ export class CommentRenderer {
     }
   }
 
+  /**
+   * 描画位置の取得元を差し替える (生放送用)。
+   * 生放送の HLS は currentTime が番組の経過時間と一致しないため、
+   * 呼び出し側で番組基準時刻からの経過時間を計算して渡す。null で video.currentTime に戻す。
+   */
+  setVposProvider(fn: (() => number) | null): void {
+    this.vposProvider = fn;
+  }
+
+  /**
+   * コメントを追加する (生放送用)。setComments と違いエンジンを作り直さない。
+   * @param keepLast 保持するコメント数の上限 (リサイズ等での再構築時に使う分)
+   */
+  addComments(comments: NNDDREComment[], keepLast = 5000): void {
+    if (comments.length === 0) return;
+    const merged = [...this.comments, ...comments];
+    this.comments = merged.length > keepLast ? merged.slice(merged.length - keepLast) : merged;
+    // エンジン未生成 (再構築待ち) の場合は生成時に this.comments ごと読み込まれる
+    if (this.nc) {
+      const formatted = this.toFormattedComments(this.filterComments(comments));
+      if (formatted.length > 0) this.nc.addComments(...formatted);
+    }
+  }
+
+  private currentVpos(video: HTMLVideoElement): number {
+    return this.vposProvider ? this.vposProvider() : video.currentTime * 100;
+  }
+
   /** 描画開始 */
   start(video: HTMLVideoElement): void {
     this.stop();
@@ -195,7 +225,7 @@ export class CommentRenderer {
   /** seek されたら呼ぶ */
   onSeek(): void {
     if (this.video && this.nc) {
-      const vpos = this.video.currentTime * 100;
+      const vpos = this.currentVpos(this.video);
       this.nc.drawCanvas(vpos, true);
       this.lastVpos = vpos;
     }
@@ -314,7 +344,7 @@ export class CommentRenderer {
       if (!this.config.enabled) this.clearCanvas();
       return;
     }
-    const vpos = this.video.currentTime * 100;
+    const vpos = this.currentVpos(this.video);
     this.nc.drawCanvas(vpos);
     this.lastVpos = vpos;
   }

@@ -4,6 +4,7 @@ import { IpcChannel } from '@shared/types';
 import { RankingView } from './components/ranking/RankingView';
 import { SearchView } from './components/search/SearchView';
 import { FollowView } from './components/follow/FollowView';
+import { LiveView } from './components/live/LiveView';
 import { MyListView } from './components/mylist/MyListView';
 import { DownloadView } from './components/download/DownloadView';
 import { LibraryView } from './components/library/LibraryView';
@@ -110,6 +111,7 @@ export default function App(): JSX.Element {
       case 'ranking': return <RankingView />;
       case 'search': return <SearchView />;
       case 'follow': return <FollowView />;
+      case 'live': return <LiveView />;
       case 'mylist': return <MyListView />;
       case 'download': return <DownloadView />;
       case 'library': return <LibraryView />;
