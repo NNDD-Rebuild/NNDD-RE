@@ -158,6 +158,54 @@ function hexHead(buf: Uint8Array, n = 32): string {
   return Buffer.from(buf.subarray(0, n)).toString('hex');
 }
 
+/** JSON の構造を「キー: 型」で要約する (配列は先頭要素のみ、深さ制限あり) */
+function describeShape(v: unknown, depth = 0): unknown {
+  if (depth > 4) return '…';
+  if (Array.isArray(v)) return v.length === 0 ? [] : [`len=${v.length}`, describeShape(v[0], depth + 1)];
+  if (v && typeof v === 'object') {
+    const o: Record<string, unknown> = {};
+    for (const [k, val] of Object.entries(v)) o[k] = describeShape(val, depth + 1);
+    return o;
+  }
+  if (typeof v === 'string') return v.length > 60 ? `str(${v.slice(0, 60)}…)` : `str(${v})`;
+  return v;
+}
+
+/** 番組一覧系 API の調査: URL を GET してステータスとレスポンス構造をログに出す */
+async function runApiProbe(urls: string[], p: (line: string) => void): Promise<void> {
+  const http = NicoContext.get().http;
+  for (const url of urls) {
+    try {
+      const res = await http.fetch(url, {
+        headers: {
+          'X-Frontend-Id': '9',
+          Origin: LIVE_ORIGIN,
+          Referer: `${LIVE_ORIGIN}/`,
+          Accept: 'application/json, */*;q=0.8'
+        }
+      });
+      const text = await res.text();
+      p(`[probe] ${url} → HTTP ${res.status} ${res.headers.get('content-type')} len=${text.length}`);
+      try {
+        p(`[probe] shape: ${truncate(JSON.stringify(describeShape(JSON.parse(text))), 4000)}`);
+      } catch {
+        // HTML の場合は embedded-data (data-props) を解析する
+        const m = text.match(/id="embedded-data"\s+data-props="([^"]*)"/);
+        if (m) {
+          // site はサイト内リンク集で巨大なので除く
+          const { site: _site, ...props } = JSON.parse(decodeHtmlEntities(m[1])) as Record<string, unknown>;
+          p(`[probe] embedded-data keys: ${Object.keys(props).join(',')}`);
+          p(`[probe] embedded-data shape: ${truncate(JSON.stringify(describeShape(props)), 8000)}`);
+        } else {
+          p(`[probe] body: ${truncate(text, 600)}`);
+        }
+      }
+    } catch (e) {
+      p(`[probe] ${url} failed: ${String(e)}`);
+    }
+  }
+}
+
 export async function runLivePoc(rawId: string): Promise<string[]> {
   const out: string[] = [];
   const p = (line: string): void => {
@@ -165,6 +213,10 @@ export async function runLivePoc(rawId: string): Promise<string[]> {
     out.push(m);
     log.info(m);
   };
+  if (/^https?:\/\//.test(rawId.trim())) {
+    await runApiProbe(rawId.trim().split(/\s+/), p);
+    return out;
+  }
 
   const id = rawId.trim();
   const ctx = NicoContext.get();
