@@ -585,7 +585,6 @@ export default function LivePlayerApp(): JSX.Element {
               onPause={() => setPaused(true)}
               onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
               onDurationChange={(e) => setDuration(e.currentTarget.duration)}
-              onClick={togglePlay}
             />
             <div ref={overlayRef} className="absolute inset-0 pointer-events-none" />
             {operatorComment && (
