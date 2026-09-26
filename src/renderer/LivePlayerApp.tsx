@@ -9,7 +9,7 @@ import type {
   LiveStatistics,
   NNDDREComment
 } from '@shared/types';
-import { IpcChannel } from '@shared/types';
+import { CommentPosition, IpcChannel } from '@shared/types';
 import { CommentRenderer, DEFAULT_RENDER_CONFIG } from './components/player/CommentRenderer';
 import { useConfig } from './hooks/useConfig';
 
@@ -27,6 +27,15 @@ const LIST_LIMIT = 500;
 const LATE_COMMENT_WINDOW_MS = 10_000;
 /** niconicomments の流れコメントは vpos の 1 秒前に右端から出現する */
 const NAKA_LEAD_MS = 1000;
+/**
+ * 生放送コメントの vpos は投稿した瞬間の時刻なので、流れコメントはその時刻に右端から出るのが正しい。
+ * niconicomments は vpos の 1 秒前に出現させるため、流れコメントだけ出現時刻分ずらす
+ * (ue/shita の固定コメントは vpos ちょうどに表示されるのでそのまま)。
+ */
+function alignNaka(c: NNDDREComment): NNDDREComment {
+  return c.positionCommand === CommentPosition.NAKA ? { ...c, vposMs: c.vposMs + NAKA_LEAD_MS } : c;
+}
+
 /** タイムシフト予約・視聴開始が必要なときに main から返るエラーコード (LiveWatchPage.ts) */
 const TIMESHIFT_ACTIVATION_REQUIRED = '[TIMESHIFT_ACTIVATION_REQUIRED]';
 /** タイムシフト時、コメントリストに表示する再生位置までの件数 */
@@ -158,12 +167,14 @@ export default function LivePlayerApp(): JSX.Element {
           // コメントサーバーからの到着は投稿時刻より遅れるため、そのまま渡すと
           // 「既に流れ始めていたはずの位置」= 画面の途中から出現する。
           // 既に出現済みのはずのものは、出現時刻 (vpos - 1秒) が今になるよう寄せて右端から流す
-          const appearMs = currentVposRef.current() * 10 + NAKA_LEAD_MS;
-          const adjusted = ev.comments.map((c) =>
-            c.vposMs < appearMs && appearMs - c.vposMs <= LATE_COMMENT_WINDOW_MS
+          const nowMs = currentVposRef.current() * 10;
+          const adjusted = ev.comments.map(alignNaka).map((c) => {
+            // 出現時刻が今になる vpos (流れコメントは 1 秒前に出現するので +1 秒)
+            const appearMs = nowMs + (c.positionCommand === CommentPosition.NAKA ? NAKA_LEAD_MS : 0);
+            return c.vposMs < appearMs && appearMs - c.vposMs <= LATE_COMMENT_WINDOW_MS
               ? { ...c, vposMs: Math.ceil(appearMs) }
-              : c
-          );
+              : c;
+          });
           rendererRef.current?.addComments(adjusted);
           appendRows(
             ev.comments.map((c) => ({ kind: 'comment', key: `c${rowSeq.current++}`, comment: c }))
@@ -180,7 +191,7 @@ export default function LivePlayerApp(): JSX.Element {
             const sorted = [...archiveRef.current].sort((a, b) => a.vposMs - b.vposMs);
             archiveRef.current = sorted;
             archiveListIndex.current = -1;
-            rendererRef.current?.setComments(sorted);
+            rendererRef.current?.setComments(sorted.map(alignNaka));
           }, ev.done ? 0 : 500);
           break;
         }
