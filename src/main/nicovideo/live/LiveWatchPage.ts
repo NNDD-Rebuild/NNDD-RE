@@ -9,12 +9,20 @@ export interface LiveWatchPageInfo {
   /** 視聴WebSocketのURL。空なら視聴不可 (タイムシフト未予約・会員限定等) */
   webSocketUrl: string;
   isLoggedIn: boolean;
+  /** タイムシフト公開状態 (programTimeshift.publication.status: Before / Open 等)。無ければ空 */
+  timeshiftPublication: string;
 }
+
+/** タイムシフトの予約・視聴開始 (確認の上で実行する) が必要なことを示すエラーコード */
+export const TIMESHIFT_ACTIVATION_REQUIRED = 'TIMESHIFT_ACTIVATION_REQUIRED';
 
 /** 視聴できない理由を表すエラー (UI にそのまま表示できるメッセージを持つ) */
 export class LiveUnavailableError extends Error {
-  constructor(message: string) {
-    super(message);
+  /**
+   * @param code IPC 越しには message しか渡らないため、コードは message 先頭に `[CODE]` として埋め込む
+   */
+  constructor(message: string, code?: string) {
+    super(code ? `[${code}] ${message}` : message);
     this.name = 'LiveUnavailableError';
   }
 }
@@ -73,8 +81,20 @@ export async function fetchLiveWatchPage(id: string): Promise<LiveWatchPageInfo>
   return {
     program: info,
     webSocketUrl: String(props.site?.relive?.webSocketUrl ?? ''),
-    isLoggedIn: Boolean(props.user?.isLoggedIn)
+    isLoggedIn: Boolean(props.user?.isLoggedIn),
+    timeshiftPublication: String(props.programTimeshift?.publication?.status ?? '')
   };
+}
+
+/** webSocketUrl が空のとき、ユーザーに見せる理由を推定したエラーを作る */
+export function unavailableError(page: LiveWatchPageInfo): LiveUnavailableError {
+  if (page.isLoggedIn && page.program.status === 'ENDED' && page.timeshiftPublication === 'Open') {
+    return new LiveUnavailableError(
+      'タイムシフトを視聴するには、予約と視聴開始の操作が必要です。',
+      TIMESHIFT_ACTIVATION_REQUIRED
+    );
+  }
+  return new LiveUnavailableError(describeUnavailable(page));
 }
 
 /** webSocketUrl が空のとき、ユーザーに見せる理由を推定する */
@@ -84,4 +104,29 @@ export function describeUnavailable(page: LiveWatchPageInfo): string {
   if (status === 'ENDED') return 'この番組は終了しています (タイムシフト未予約、または公開期間外の可能性があります)。';
   if (status === 'RELEASED') return 'この番組はまだ開始していません。';
   return 'この番組は視聴できません (会員限定・視聴権が必要な番組の可能性があります)。';
+}
+
+/**
+ * タイムシフトの予約 → 視聴開始 を行う。
+ * 視聴開始 (PATCH) で視聴期限のカウントが始まり取り消せないため、必ずユーザー確認後に呼ぶこと。
+ */
+export async function activateTimeshift(programId: string): Promise<void> {
+  const url = `https://live2.nicovideo.jp/api/v2/programs/${programId}/timeshift/reservation`;
+  const headers = { 'X-Frontend-Id': '9', Origin: LIVE_ORIGIN, Referer: `${LIVE_ORIGIN}/` };
+  const http = NicoContext.get().http;
+
+  // 予約 (既に予約済みなら errorCode=DUPLICATED が返るので無視する)
+  const reserve = await http.fetch(url, { method: 'POST', headers });
+  if (!reserve.ok) {
+    const body = (await reserve.json().catch(() => ({}))) as { meta?: { errorCode?: string } };
+    if (body.meta?.errorCode !== 'DUPLICATED') {
+      throw new Error(`タイムシフトの予約に失敗しました (HTTP ${reserve.status} ${body.meta?.errorCode ?? ''})`.trim());
+    }
+  }
+  // 視聴開始
+  const use = await http.fetch(url, { method: 'PATCH', headers });
+  if (!use.ok) {
+    const body = (await use.json().catch(() => ({}))) as { meta?: { errorCode?: string } };
+    throw new Error(`タイムシフトの視聴開始に失敗しました (HTTP ${use.status} ${body.meta?.errorCode ?? ''})`.trim());
+  }
 }

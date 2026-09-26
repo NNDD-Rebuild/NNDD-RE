@@ -1,4 +1,4 @@
-import type { LiveEvent, LiveNotice, LiveProgramInfo, NNDDREComment } from '@shared/types';
+import type { LiveEvent, LiveNotice, LiveProgramInfo, LiveStartResult, NNDDREComment } from '@shared/types';
 import { NicoHeaders } from '@shared/constants';
 import { NicoContext } from '../NicoContext';
 import { createLogger } from '../../util/Logger';
@@ -6,8 +6,8 @@ import { NdgrClient } from './NdgrClient';
 import { chatToComment } from './LiveChatConverter';
 import {
   LIVE_ORIGIN,
-  LiveUnavailableError,
   describeUnavailable,
+  unavailableError,
   fetchLiveWatchPage
 } from './LiveWatchPage';
 import type { ChunkedMessage } from './gen/dwango/nicolive/chat/service/edge/payload_pb';
@@ -52,6 +52,7 @@ export class LiveSession {
   private reconnects = 0;
   private quality = 'abr';
   private program: LiveProgramInfo | null = null;
+  private isTimeshift = false;
 
   constructor(
     private readonly programId: string,
@@ -59,14 +60,16 @@ export class LiveSession {
     private readonly onStreamCookies: (cookies: LiveStreamCookie[]) => void
   ) {}
 
-  /** watchページを解析して WebSocket 接続を始める。番組情報を返す */
-  async start(): Promise<LiveProgramInfo> {
+  /** watchページを解析して WebSocket 接続を始める */
+  async start(): Promise<LiveStartResult> {
     const page = await fetchLiveWatchPage(this.programId);
     this.program = page.program;
-    if (!page.webSocketUrl) throw new LiveUnavailableError(describeUnavailable(page));
+    if (!page.webSocketUrl) throw unavailableError(page);
+    // タイムシフト視聴時は視聴WebSocketの URL が .../watch/{id}/timeshift になる
+    this.isTimeshift = /\/timeshift(\?|$)/.test(page.webSocketUrl);
     this.emit({ type: 'state', state: 'connecting' });
-    this.connect(page.webSocketUrl, false);
-    return page.program;
+    void this.connect(page.webSocketUrl, false);
+    return { program: page.program, isTimeshift: this.isTimeshift };
   }
 
   stop(): void {
@@ -194,7 +197,9 @@ export class LiveSession {
         });
         break;
       case 'messageServer':
-        if (d.viewUri && !this.ndgr) {
+        if (d.viewUri && !this.ndgr && this.isTimeshift) {
+          this.startArchive(String(d.viewUri));
+        } else if (d.viewUri && !this.ndgr) {
           this.ndgr = new NdgrClient(String(d.viewUri), {
             onMessage: (m) => this.onNdgrMessage(m),
             onError: () =>
@@ -235,6 +240,36 @@ export class LiveSession {
       default:
         break;
     }
+  }
+
+  /** タイムシフト: 過去コメントを全件取得して archiveComments で送る */
+  private startArchive(viewUri: string): void {
+    const ndgr = new NdgrClient(viewUri, { onMessage: () => {}, onError: () => {} });
+    this.ndgr = ndgr;
+    let total = 0;
+    void ndgr
+      .fetchArchive((messages) => {
+        const comments: NNDDREComment[] = [];
+        for (const m of messages) {
+          if (m.payload.case !== 'message') continue;
+          const data = m.payload.value.data;
+          const at = m.meta?.at ? Number(m.meta.at.seconds) * 1000 : 0;
+          if (data.case === 'chat') comments.push(chatToComment(data.value, at));
+          else if (data.case === 'overflowedChat') comments.push(chatToComment(data.value, at, false));
+        }
+        total += comments.length;
+        this.emit({ type: 'archiveComments', comments, done: false });
+      })
+      .then(() => {
+        log.info(`archive comments loaded: ${total}`);
+        this.emit({ type: 'archiveComments', comments: [], done: true });
+      })
+      .catch((e) => {
+        if (this.stopped) return;
+        log.warn('archive fetch failed:', e);
+        this.emit({ type: 'notice', notice: { kind: 'notification', text: '過去コメントの取得に失敗しました', at: Date.now() } });
+        this.emit({ type: 'archiveComments', comments: [], done: true });
+      });
   }
 
   private startFlushTimer(): void {

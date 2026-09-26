@@ -99,8 +99,7 @@ export class LivePlayerManager {
     const id = sender.id;
     sender.once('destroyed', () => this.stopSession(id));
     try {
-      const program = await session.start();
-      return { program };
+      return await session.start();
     } catch (e) {
       this.stopSession(id);
       throw e;

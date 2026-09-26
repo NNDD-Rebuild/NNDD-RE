@@ -1,11 +1,12 @@
-import type { DescMessage, MessageShape } from '@bufbuild/protobuf';
+import { fromBinary, type DescMessage, type MessageShape } from '@bufbuild/protobuf';
 import { sizeDelimitedDecodeStream } from '@bufbuild/protobuf/wire';
 import { NicoHeaders } from '@shared/constants';
 import { createLogger } from '../../util/Logger';
 import {
   type ChunkedMessage,
   ChunkedEntrySchema,
-  ChunkedMessageSchema
+  ChunkedMessageSchema,
+  PackedSegmentSchema
 } from './gen/dwango/nicolive/chat/service/edge/payload_pb';
 
 const log = createLogger('NdgrClient');
@@ -51,6 +52,49 @@ export class NdgrClient {
 
   private get stopped(): boolean {
     return this.ac.signal.aborted;
+  }
+
+  /**
+   * タイムシフト用: 番組の過去コメントを全件取得する。
+   *
+   * view API の backward (BackwardSegment.segment.uri) から Backward API を取得すると
+   * PackedSegment (ChunkedMessage の配列、長さプレフィックス無しの単体メッセージ) が返る。
+   * PackedSegment.next.uri を辿ると更に古い区間が取れる。
+   * 1ページ毎に onBatch を呼ぶ (新しい区間 → 古い区間の順)。
+   */
+  async fetchArchive(onBatch: (messages: ChunkedMessage[]) => void): Promise<void> {
+    const sep = this.viewUri.includes('?') ? '&' : '?';
+    let at = 'now';
+    let uri: string | undefined;
+    // at=now は next.at だけ返すので、次の at で backward が流れてくるまで辿る
+    for (let i = 0; i < 3 && !uri && !this.stopped; i++) {
+      let next: string | null = null;
+      for await (const entry of this.streamProto(`${this.viewUri}${sep}at=${at}`, ChunkedEntrySchema)) {
+        const e = entry.entry;
+        if (e.case === 'backward') {
+          uri = e.value.segment?.uri;
+          break;
+        }
+        if (e.case === 'next') {
+          next = e.value.at.toString();
+          break;
+        }
+      }
+      if (!next) break;
+      at = next;
+    }
+    if (!uri) throw new Error('NDGR: 過去コメントの取得先が見つかりませんでした');
+
+    while (uri && !this.stopped) {
+      const res = await fetch(uri, {
+        headers: { 'User-Agent': NicoHeaders.USER_AGENT },
+        signal: this.ac.signal
+      });
+      if (!res.ok) throw new Error(`NDGR backward HTTP ${res.status}`);
+      const packed = fromBinary(PackedSegmentSchema, new Uint8Array(await res.arrayBuffer()));
+      onBatch(packed.messages);
+      uri = packed.next?.uri;
+    }
   }
 
   private async viewLoop(): Promise<void> {

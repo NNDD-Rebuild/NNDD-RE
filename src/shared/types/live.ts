@@ -49,6 +49,8 @@ export type LiveEvent =
   | { type: 'state'; state: LiveConnectionState; message?: string }
   | { type: 'stream'; uri: string; quality: string; availableQualities: string[] }
   | { type: 'comments'; comments: NNDDREComment[] }
+  /** タイムシフト: 過去コメントの取得分 (新しい区間から順に届く)。done=true で全件取得完了 */
+  | { type: 'archiveComments'; comments: NNDDREComment[]; done: boolean }
   | { type: 'notice'; notice: LiveNotice }
   | { type: 'statistics'; statistics: LiveStatistics }
   /** 運営コメント (画面上部に固定表示するもの)。null で消去 */
@@ -57,4 +59,6 @@ export type LiveEvent =
 /** LIVE_START の戻り値 */
 export interface LiveStartResult {
   program: LiveProgramInfo;
+  /** タイムシフト視聴か */
+  isTimeshift: boolean;
 }

@@ -6,7 +6,7 @@ import type { Session } from 'electron';
 import { IpcChannel } from '@shared/types';
 import { LibraryManager } from '../db/LibraryManager';
 import { LivePlayerManager } from '../player/LivePlayerManager';
-import { normalizeLiveId } from '../nicovideo/live/LiveWatchPage';
+import { activateTimeshift, normalizeLiveId } from '../nicovideo/live/LiveWatchPage';
 import { getConfigStore } from '../config/ConfigStore';
 import {
   createLogger,
@@ -1169,6 +1169,9 @@ export function registerIpcHandlers(
   });
   ipcMain.handle(IpcChannel.LIVE_START, (e, programId: string) =>
     LivePlayerManager.get().startSession(e.sender, String(programId))
+  );
+  ipcMain.handle(IpcChannel.LIVE_TIMESHIFT_ACTIVATE, (_e, programId: string) =>
+    activateTimeshift(String(programId))
   );
   ipcMain.handle(IpcChannel.LIVE_STOP, (e) => {
     LivePlayerManager.get().stopSession(e.sender.id);

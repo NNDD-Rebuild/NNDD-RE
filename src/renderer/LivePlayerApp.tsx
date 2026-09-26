@@ -27,6 +27,10 @@ const LIST_LIMIT = 500;
 const LATE_COMMENT_WINDOW_MS = 10_000;
 /** niconicomments の流れコメントは vpos の 1 秒前に右端から出現する */
 const NAKA_LEAD_MS = 1000;
+/** タイムシフト予約・視聴開始が必要なときに main から返るエラーコード (LiveWatchPage.ts) */
+const TIMESHIFT_ACTIVATION_REQUIRED = '[TIMESHIFT_ACTIVATION_REQUIRED]';
+/** タイムシフト時、コメントリストに表示する再生位置までの件数 */
+const ARCHIVE_LIST_COUNT = 200;
 
 const QUALITY_LABELS: Record<string, string> = {
   abr: '自動',
@@ -82,6 +86,11 @@ export default function LivePlayerApp(): JSX.Element {
   const programRef = useRef<LiveProgramInfo | null>(null);
   const autoScrollRef = useRef(true);
   const rowSeq = useRef(0);
+  const isTimeshiftRef = useRef(false);
+  /** タイムシフトの過去コメント (vpos 昇順) */
+  const archiveRef = useRef<NNDDREComment[]>([]);
+  const archiveFlushTimer = useRef<number | null>(null);
+  const archiveListIndex = useRef(-1);
   /**
    * 今映っている映像の vpos (1/100秒)。
    * HLS に EXT-X-PROGRAM-DATE-TIME があれば playingDate、無ければ現在時刻からライブ遅延を引いて推定し、
@@ -89,8 +98,14 @@ export default function LivePlayerApp(): JSX.Element {
    */
   const currentVposRef = useRef((): number => {
     const base = programRef.current?.vposBaseTimeMs ?? 0;
-    if (!base) return 0;
     const hls = hlsRef.current;
+    if (isTimeshiftRef.current) {
+      // タイムシフトは VOD なので再生位置 = 番組開始からの経過 (PROGRAM-DATE-TIME があればそれを優先)
+      const pd = hls?.playingDate?.getTime();
+      if (pd && base) return (pd - base) / 10;
+      return (videoRef.current?.currentTime ?? 0) * 100;
+    }
+    if (!base) return 0;
     const playingMs = hls?.playingDate?.getTime() ?? Date.now() - (hls?.latency ?? 0) * 1000;
     return (playingMs - base) / 10;
   });
@@ -109,6 +124,14 @@ export default function LivePlayerApp(): JSX.Element {
   const [showComments, setShowComments] = useState(true);
   const [volume, setVolume] = useConfig<number>('player.volume', 1);
   const [muted, setMuted] = useState(false);
+  const [isTimeshift, setIsTimeshift] = useState(false);
+  const [activationRequired, setActivationRequired] = useState(false);
+  const [activating, setActivating] = useState(false);
+  /** LIVE_START のやり直し用 (タイムシフト視聴開始後に再接続する) */
+  const [startSeq, setStartSeq] = useState(0);
+  const [archiveLoading, setArchiveLoading] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
 
   const appendRows = useCallback((added: ListRow[]) => {
     setRows((prev) => {
@@ -147,6 +170,20 @@ export default function LivePlayerApp(): JSX.Element {
           );
           break;
         }
+        case 'archiveComments': {
+          if (ev.comments.length > 0) archiveRef.current = archiveRef.current.concat(ev.comments);
+          if (ev.done) setArchiveLoading(false);
+          // ページ毎に届くので、まとめてからエンジンへ渡す (setComments は毎回作り直しになる)
+          if (archiveFlushTimer.current !== null) window.clearTimeout(archiveFlushTimer.current);
+          archiveFlushTimer.current = window.setTimeout(() => {
+            archiveFlushTimer.current = null;
+            const sorted = [...archiveRef.current].sort((a, b) => a.vposMs - b.vposMs);
+            archiveRef.current = sorted;
+            archiveListIndex.current = -1;
+            rendererRef.current?.setComments(sorted);
+          }, ev.done ? 0 : 500);
+          break;
+        }
         case 'notice':
           appendRows([{ kind: 'notice', key: `n${rowSeq.current++}`, notice: ev.notice }]);
           break;
@@ -169,24 +206,49 @@ export default function LivePlayerApp(): JSX.Element {
       return;
     }
     let cancelled = false;
+    setActivationRequired(false);
     window.nndd
       .invoke<LiveStartResult>(IpcChannel.LIVE_START, programId)
       .then((r) => {
         if (cancelled) return;
         programRef.current = r.program;
+        isTimeshiftRef.current = r.isTimeshift;
+        setIsTimeshift(r.isTimeshift);
+        if (r.isTimeshift) setArchiveLoading(true);
         setProgram(r.program);
         document.title = `${r.program.title} - NNDD-RE Live`;
       })
       .catch((e) => {
         if (cancelled) return;
+        const text = errorText(e);
         setState('error');
-        setStateMessage(errorText(e));
+        if (text.startsWith(TIMESHIFT_ACTIVATION_REQUIRED)) {
+          setActivationRequired(true);
+          setStateMessage(text.slice(TIMESHIFT_ACTIVATION_REQUIRED.length).trim());
+        } else {
+          setStateMessage(text);
+        }
       });
     return () => {
       cancelled = true;
       void window.nndd.invoke(IpcChannel.LIVE_STOP).catch(() => {});
     };
-  }, [programId]);
+  }, [programId, startSeq]);
+
+  /** タイムシフトの予約 → 視聴開始 (ユーザーがボタンで確認した後に呼ぶ) */
+  const activateTimeshift = async (): Promise<void> => {
+    setActivating(true);
+    try {
+      await window.nndd.invoke(IpcChannel.LIVE_TIMESHIFT_ACTIVATE, programId);
+      setState('connecting');
+      setStateMessage('');
+      setStartSeq((n) => n + 1);
+    } catch (e) {
+      setStateMessage(errorText(e));
+    } finally {
+      setActivating(false);
+    }
+  };
 
   // ---- HLS 再生 ----
   useEffect(() => {
@@ -197,7 +259,7 @@ export default function LivePlayerApp(): JSX.Element {
       void video.play().catch(() => {});
       return;
     }
-    const hls = new Hls({ lowLatencyMode: true, enableWorker: true });
+    const hls = new Hls({ lowLatencyMode: !isTimeshiftRef.current, enableWorker: true });
     hlsRef.current = hls;
     let lastMediaRecovery = 0;
     hls.on(Hls.Events.ERROR, (_ev, data) => {
@@ -258,8 +320,11 @@ export default function LivePlayerApp(): JSX.Element {
     resize();
     const ro = new ResizeObserver(resize);
     ro.observe(container);
+    const onSeek = (): void => renderer.onSeek();
+    video.addEventListener('seeked', onSeek);
     return () => {
       ro.disconnect();
+      video.removeEventListener('seeked', onSeek);
       if (resizeTimer !== null) window.clearTimeout(resizeTimer);
       renderer.stop();
       rendererRef.current = null;
@@ -272,9 +337,37 @@ export default function LivePlayerApp(): JSX.Element {
 
   // ---- 経過時間表示 ----
   useEffect(() => {
-    const t = window.setInterval(() => setNow(Date.now()), 1000);
+    const t = window.setInterval(() => {
+      setNow(Date.now());
+      if (isTimeshiftRef.current) updateArchiveList();
+    }, 1000);
     return () => window.clearInterval(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  /** タイムシフト: コメントリストを再生位置までの直近 ARCHIVE_LIST_COUNT 件にする */
+  const updateArchiveList = (): void => {
+    const list = archiveRef.current;
+    const nowMs = currentVposRef.current() * 10;
+    // vposMs <= nowMs を満たす件数を二分探索
+    let lo = 0;
+    let hi = list.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (list[mid].vposMs <= nowMs) lo = mid + 1;
+      else hi = mid;
+    }
+    if (lo === archiveListIndex.current) return;
+    archiveListIndex.current = lo;
+    const from = Math.max(0, lo - ARCHIVE_LIST_COUNT);
+    setRows(
+      list.slice(from, lo).map((c) => ({
+        kind: 'comment',
+        key: `a${c.vposMs}-${c.no}-${c.userId}`,
+        comment: c
+      }))
+    );
+  };
 
   // ---- コメントリストの自動スクロール ----
   useEffect(() => {
@@ -315,7 +408,7 @@ export default function LivePlayerApp(): JSX.Element {
     else void el.requestFullscreen();
   };
 
-  const elapsed = program ? formatElapsed(now - program.beginTimeMs) : '';
+  const elapsed = program && !isTimeshift ? formatElapsed(now - program.beginTimeMs) : '';
   const stateColor =
     state === 'watching' ? 'bg-red-600' : state === 'error' ? 'bg-yellow-700' : 'bg-neutral-600';
 
@@ -324,7 +417,7 @@ export default function LivePlayerApp(): JSX.Element {
       {/* ヘッダー */}
       <div className="flex items-center gap-3 px-3 py-1.5 bg-neutral-900 border-b border-neutral-800 text-sm">
         <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${stateColor}`}>
-          {state === 'watching' ? 'LIVE' : STATE_LABELS[state]}
+          {state === 'watching' ? (isTimeshift ? 'タイムシフト' : 'LIVE') : STATE_LABELS[state]}
         </span>
         <div className="flex-1 min-w-0">
           <div className="truncate font-bold" title={program?.title}>
@@ -351,6 +444,8 @@ export default function LivePlayerApp(): JSX.Element {
               className="absolute inset-0 w-full h-full object-contain"
               onPlay={() => setPaused(false)}
               onPause={() => setPaused(true)}
+              onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+              onDurationChange={(e) => setDuration(e.currentTarget.duration)}
               onClick={togglePlay}
             />
             <div ref={overlayRef} className="absolute inset-0 pointer-events-none" />
@@ -367,8 +462,22 @@ export default function LivePlayerApp(): JSX.Element {
             )}
             {(state === 'error' || state === 'ended' || (!streamUri && state !== 'watching')) && (
               <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="bg-black/70 px-4 py-3 rounded text-sm text-center max-w-md">
-                  {stateMessage || STATE_LABELS[state]}
+                <div className="bg-black/70 px-4 py-3 rounded text-sm text-center max-w-md pointer-events-auto">
+                  <div>{stateMessage || STATE_LABELS[state]}</div>
+                  {activationRequired && (
+                    <>
+                      <div className="mt-2 text-xs text-neutral-300">
+                        視聴を開始すると視聴期限のカウントが始まります (取り消せません)。
+                      </div>
+                      <button
+                        onClick={() => void activateTimeshift()}
+                        disabled={activating}
+                        className="mt-3 px-3 py-1 rounded bg-red-700 hover:bg-red-600 disabled:opacity-50"
+                      >
+                        {activating ? '処理中...' : 'タイムシフトを予約して視聴開始'}
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -379,13 +488,34 @@ export default function LivePlayerApp(): JSX.Element {
             <button onClick={togglePlay} className="w-8 hover:text-neutral-300" title="再生/一時停止">
               {paused ? '▶' : '❚❚'}
             </button>
-            <button
-              onClick={seekToLive}
-              className="px-2 py-0.5 rounded text-xs bg-red-700 hover:bg-red-600"
-              title="最新の位置へ"
-            >
-              最新
-            </button>
+            {isTimeshift ? (
+              <>
+                <span className="text-xs tabular-nums text-neutral-300">
+                  {formatElapsed(currentTime * 1000)} / {formatElapsed((duration || 0) * 1000)}
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={duration || 0}
+                  step={1}
+                  value={currentTime}
+                  onChange={(e) => {
+                    const v = videoRef.current;
+                    if (v) v.currentTime = Number(e.target.value);
+                  }}
+                  className="flex-1 min-w-0"
+                />
+                {archiveLoading && <span className="text-xs text-neutral-400">コメント取得中…</span>}
+              </>
+            ) : (
+              <button
+                onClick={seekToLive}
+                className="px-2 py-0.5 rounded text-xs bg-red-700 hover:bg-red-600"
+                title="最新の位置へ"
+              >
+                最新
+              </button>
+            )}
             <button onClick={() => setMuted((m) => !m)} className="w-6" title="ミュート">
               {muted || volume === 0 ? '🔇' : '🔊'}
             </button>
@@ -398,7 +528,7 @@ export default function LivePlayerApp(): JSX.Element {
               onChange={(e) => void setVolume(Number(e.target.value))}
               className="w-24"
             />
-            <div className="flex-1" />
+            {!isTimeshift && <div className="flex-1" />}
             <label className="flex items-center gap-1 text-xs cursor-pointer">
               <input
                 type="checkbox"

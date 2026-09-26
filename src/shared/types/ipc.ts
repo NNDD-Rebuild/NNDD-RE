@@ -191,6 +191,8 @@ export const IpcChannel = {
   LIVE_START: 'nndd:live:start',
   /** 視聴終了 */
   LIVE_STOP: 'nndd:live:stop',
+  /** タイムシフトの予約 → 視聴開始 (programId)。ユーザー確認後にのみ呼ぶ */
+  LIVE_TIMESHIFT_ACTIVATE: 'nndd:live:timeshiftActivate',
   /** 画質変更 (quality) */
   LIVE_CHANGE_QUALITY: 'nndd:live:changeQuality',
   /** main → 生放送プレイヤーへのイベント通知 (LiveEvent) */
