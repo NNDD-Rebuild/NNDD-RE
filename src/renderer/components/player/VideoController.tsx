@@ -3,6 +3,12 @@ import type { DomandStreamCandidate } from '@shared/types';
 import { useConfig } from '@renderer/hooks/useConfig';
 import { ControlBarSelect } from './ControlBarSelect';
 
+/**
+ * 生放送の画質選択欄。選択肢が多く、ネイティブ select は一番長い選択肢の幅になって
+ * シークバーを圧迫するため、幅を抑えて文字も一段小さくする
+ */
+const LIVE_QUALITY_SELECT_CLASS = '!text-xs max-w-[4.5rem]';
+
 const PLAYBACK_RATE_OPTIONS = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0] as const;
 
 // Linuxのみカスタムドロップダウンに置き換える。ネイティブ<select>は全画面時に
@@ -30,6 +36,29 @@ interface Props {
   audioOnly?: boolean;
   /** ローカル再生中か (true の場合のみシークバーホバー時のサムネイルプレビューを有効化) */
   isLocal?: boolean;
+  /**
+   * 生放送 (放送中) 用の表示。指定すると時間表示を「LIVE / -m:ss」にし、「最新」ボタンを出す。
+   * chasePlay=true (追っかけ再生) ならシークバーを video.seekable の範囲で表示する
+   */
+  live?: {
+    chasePlay: boolean;
+    onSeekToLive: () => void;
+    /**
+     * 通常のライブ再生位置 (秒)。HLS はバッファの余裕を取るため最新セグメントの少し手前を再生するので、
+     * 遅れ表示はシーク可能範囲の末尾ではなくこの位置を基準にする (hls.js の liveSyncPosition)
+     */
+    getLiveSyncPosition?: () => number | null;
+  };
+  /** 再生速度の選択を隠す (生放送用) */
+  hideRateSelect?: boolean;
+  /** ミニプレイヤー (Picture-in-Picture) ボタンを隠す (生放送用) */
+  hidePip?: boolean;
+  /** 時間表示の後ろに出す補足 (例: コメント取得中) */
+  statusText?: string;
+  /** 全画面ボタンの前に追加するボタン等 */
+  extraButtons?: React.ReactNode;
+  /** 画質の表示名 (省略時は解像度から作る) */
+  formatQualityLabel?: (q: DomandStreamCandidate) => string;
 }
 
 /**
@@ -59,7 +88,13 @@ export function VideoController({
   currentQualityId,
   onQualityChange,
   audioOnly,
-  isLocal
+  isLocal,
+  live,
+  hideRateSelect,
+  hidePip,
+  statusText,
+  extraButtons,
+  formatQualityLabel
 }: Props): JSX.Element {
   const [uiSize] = useConfig<'small' | 'normal' | 'large'>('player.controlUiSize', 'small');
   const zoomFactor = uiSize === 'large' ? 1.5 : uiSize === 'normal' ? 1.3 : 1;
@@ -68,6 +103,11 @@ export function VideoController({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [bufferedEnd, setBufferedEnd] = useState(0);
+  /** 生放送: シーク可能範囲 (video.seekable)。live 指定時はシークバーをこの範囲で描く */
+  const [seekStart, setSeekStart] = useState(0);
+  const [seekEnd, setSeekEnd] = useState(0);
+  const isLiveRef = useRef(Boolean(live));
+  isLiveRef.current = Boolean(live);
   const seekingRef = useRef(false);
   const seekBarRef = useRef<HTMLDivElement>(null);
   const previewVideoRef = useRef<HTMLVideoElement>(null);
@@ -94,6 +134,10 @@ export function VideoController({
     if (!video) return;
     const onTime = (): void => {
       if (!seekingRef.current) setCurrentTime(video.currentTime);
+      if (isLiveRef.current && video.seekable.length > 0) {
+        setSeekStart(video.seekable.start(0));
+        setSeekEnd(video.seekable.end(video.seekable.length - 1));
+      }
     };
     const onDur = (): void => {
       setDuration(video.duration);
@@ -327,6 +371,13 @@ export function VideoController({
 
   const displayInPip = docPipSupported && onToggleDocPip ? !!docPipActive : inPip;
 
+  // シークバーの範囲: 通常は 0〜duration、生放送 (追っかけ再生) はシーク可能範囲
+  const barStart = live ? seekStart : 0;
+  const barLen = live ? Math.max(0, seekEnd - seekStart) : duration;
+  const showBar = live ? live.chasePlay && barLen > 0 : isFinite(duration) && duration > 0;
+  const qualityLabel = (q: DomandStreamCandidate): string =>
+    formatQualityLabel ? formatQualityLabel(q) : q.height ? `${q.height}p` : (q.id.match(/(\d+p)$/)?.[1] ?? q.id);
+
   return (
     <div
       className="flex items-center gap-2 px-2 py-1 bg-nndd-panel border-t border-nndd-border text-xs select-none"
@@ -344,7 +395,7 @@ export function VideoController({
         {playing ? '❚❚' : '▶'}
       </Btn>
 
-      {isFinite(duration) && duration > 0 ? (
+      {showBar ? (
         <div
           ref={seekBarRef}
           className="flex-1 relative h-5 cursor-pointer flex items-center group"
@@ -352,14 +403,14 @@ export function VideoController({
             seekingRef.current = true;
             (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
             const pct = getPointerPct(e, seekBarRef.current!);
-            setCurrentTime(pct * duration);
+            setCurrentTime(barStart + pct * barLen);
             updatePreviewHover(e);
           }}
           onPointerMove={(e) => {
             updatePreviewHover(e);
             if (!seekingRef.current) return;
             const pct = getPointerPct(e, seekBarRef.current!);
-            setCurrentTime(pct * duration);
+            setCurrentTime(barStart + pct * barLen);
           }}
           onPointerUp={(e) => {
             if (!seekingRef.current) return;
@@ -370,7 +421,7 @@ export function VideoController({
               return;
             }
             const pct = getPointerPct(e, seekBarRef.current!);
-            const v = pct * duration;
+            const v = barStart + pct * barLen;
             seek(v);
             setCurrentTime(v);
             if (video) {
@@ -390,18 +441,18 @@ export function VideoController({
             {/* バッファインジケーター */}
             <div
               className="absolute inset-y-0 left-0 bg-nndd-subtext/50 rounded-full"
-              style={{ width: `${Math.min(100, (bufferedEnd / duration) * 100)}%` }}
+              style={{ width: `${Math.min(100, ((bufferedEnd - barStart) / barLen) * 100)}%` }}
             />
             {/* 再生済みバー */}
             <div
               className="absolute inset-y-0 left-0 bg-nndd-accent rounded-full"
-              style={{ width: `${Math.min(100, (currentTime / duration) * 100)}%` }}
+              style={{ width: `${Math.min(100, ((currentTime - barStart) / barLen) * 100)}%` }}
             />
           </div>
           {/* サムネイルつまみ */}
           <div
             className="absolute w-3 h-3 bg-nndd-text rounded-full shadow pointer-events-none -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity"
-            style={{ left: `${Math.min(100, (currentTime / duration) * 100)}%` }}
+            style={{ left: `${Math.min(100, ((currentTime - barStart) / barLen) * 100)}%` }}
           />
           {/* ホバー時サムネイルプレビュー (ローカル再生のみ)。
               canvas は常時マウントし表示/非表示は opacity で切替える
@@ -420,6 +471,9 @@ export function VideoController({
             </div>
           </div>
         </div>
+      ) : live ? (
+        /* 生放送 (追っかけ再生なし): シークできないのでバーは出さない */
+        <div className="flex-1" />
       ) : (
         /* ストリーミング中: durationが不定のため進捗バーで代替 */
         <div className="flex-1 h-2 bg-nndd-border rounded overflow-hidden">
@@ -430,9 +484,24 @@ export function VideoController({
         </div>
       )}
 
-      <span className="font-mono">
-        {fmt(currentTime)} / {isFinite(duration) && duration > 0 ? fmt(duration) : '...'}
-      </span>
+      {live ? (
+        <>
+          <span className="font-mono">
+            {(() => {
+              const edge = live.getLiveSyncPosition?.() ?? seekEnd;
+              return edge - currentTime > 5 ? `-${fmt(edge - currentTime)}` : 'LIVE';
+            })()}
+          </span>
+          <Btn onClick={live.onSeekToLive} title="最新の位置へ">
+            最新
+          </Btn>
+        </>
+      ) : (
+        <span className="font-mono">
+          {fmt(currentTime)} / {isFinite(duration) && duration > 0 ? fmt(duration) : '...'}
+        </span>
+      )}
+      {statusText && <span className="text-nndd-subtext whitespace-nowrap">{statusText}</span>}
 
       {(canSkipPrev != null || canSkipNext != null) && (
         <>
@@ -474,27 +543,32 @@ export function VideoController({
             value={currentQualityId ?? ''}
             options={availableQualities.map((q) => ({
               value: q.id,
-              label: q.height ? `${q.height}p` : (q.id.match(/(\d+p)$/)?.[1] ?? q.id)
+              label: qualityLabel(q)
             }))}
             onChange={onQualityChange}
             title="画質"
+            className={live ? LIVE_QUALITY_SELECT_CLASS : undefined}
           />
         ) : (
           <select
             value={currentQualityId ?? ''}
             onChange={(e) => onQualityChange(e.target.value)}
-            className="bg-nndd-border text-white text-sm rounded px-1 py-0.5 cursor-pointer"
+            className={[
+              'bg-nndd-border text-white text-sm rounded px-1 py-0.5 cursor-pointer',
+              live ? LIVE_QUALITY_SELECT_CLASS : ''
+            ].join(' ')}
+            title="画質"
           >
             {availableQualities.map((q) => (
               <option key={q.id} value={q.id}>
-                {q.height ? `${q.height}p` : (q.id.match(/(\d+p)$/)?.[1] ?? q.id)}
+                {qualityLabel(q)}
               </option>
             ))}
           </select>
         )
       )}
 
-      {isLinux ? (
+      {hideRateSelect ? null : isLinux ? (
         <ControlBarSelect
           value={String(rate)}
           options={PLAYBACK_RATE_OPTIONS.map((r) => ({
@@ -527,7 +601,7 @@ export function VideoController({
         </Btn>
       )}
 
-      {!audioOnly && pipSupported && (
+      {!audioOnly && pipSupported && !hidePip && (
         <Btn
           onClick={togglePip}
           title={docPipSupported && onToggleDocPip ? 'ミニプレイヤー (コメント表示対応)' : 'ミニプレイヤー (Picture-in-Picture)'}
@@ -535,6 +609,8 @@ export function VideoController({
           {displayInPip ? '🗗' : '🗖'}
         </Btn>
       )}
+
+      {extraButtons}
 
       {onToggleFullscreen && (
         <Btn onClick={onToggleFullscreen} title="フルスクリーン">

@@ -1,0 +1,10 @@
+# ニコニコ生放送コメント (NDGR) の protobuf 定義から TypeScript を生成する
+# 実行: npm run gen:proto
+version: v2
+inputs:
+  - directory: proto/nicolive
+plugins:
+  - local: protoc-gen-es
+    out: src/main/nicovideo/live/gen
+    opt: target=ts
+clean: true

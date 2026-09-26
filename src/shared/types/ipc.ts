@@ -181,6 +181,46 @@ export const IpcChannel = {
   // 接続診断
   DIAG_RUN: 'nndd:diag:run',
 
+  // 生放送 視聴フロー調査 PoC (デバッグ設定から実行)
+  LIVE_POC_RUN: 'nndd:live:pocRun',
+
+  // 生放送
+  /** 生放送プレイヤーウィンドウを開く (programId) */
+  LIVE_OPEN_PLAYER: 'nndd:live:openPlayer',
+  /** 生放送プレイヤーから視聴開始を要求 (programId) → LiveStartResult */
+  LIVE_START: 'nndd:live:start',
+  /** 視聴終了 */
+  LIVE_STOP: 'nndd:live:stop',
+  /** 再生位置 (vposMs) の周辺のコメントを取得 → LiveCommentRange | null。コメントは LIVE_EVENT で届く */
+  LIVE_FETCH_COMMENTS_AROUND: 'nndd:live:fetchCommentsAround',
+  /** タイムシフトの予約 → 視聴開始 (programId)。ユーザー確認後にのみ呼ぶ */
+  LIVE_TIMESHIFT_ACTIVATE: 'nndd:live:timeshiftActivate',
+  /** 画質変更 (quality) */
+  LIVE_CHANGE_QUALITY: 'nndd:live:changeQuality',
+  /** フォロー中の番組一覧 ({ status: 'onair' | 'reserved', offset }) → LiveProgramListResult */
+  LIVE_LIST_FOLLOWING: 'nndd:live:listFollowing',
+  /** 番組検索 (LiveSearchParams) → LiveProgramListResult */
+  LIVE_SEARCH: 'nndd:live:search',
+  /** 生放送ランキング (LiveRankingParams) → LiveRankingResult */
+  LIVE_RANKING: 'nndd:live:ranking',
+  /** カテゴリ別の放送中番組 (LiveRecentParams) → LiveProgramListResult */
+  LIVE_RECENT: 'nndd:live:recent',
+  /** タイムシフト予約一覧 → LiveProgramListResult */
+  LIVE_LIST_TIMESHIFT_RESERVATIONS: 'nndd:live:listTimeshiftReservations',
+  /** 生放送のコメントウィンドウ (フロート) を開く / 閉じる (プレイヤーから invoke) */
+  LIVE_COMMENT_WINDOW_OPEN: 'nndd:live:commentWindow:open',
+  LIVE_COMMENT_WINDOW_CLOSE: 'nndd:live:commentWindow:close',
+  /** プレイヤー → コメントウィンドウ (LiveCommentWindowMessage、main が中継) */
+  LIVE_COMMENT_WINDOW_PUSH: 'nndd:live:commentWindow:push',
+  /** main → プレイヤー (LiveCommentWindowEvent) */
+  LIVE_COMMENT_WINDOW_EVENT: 'nndd:live:commentWindow:event',
+  /** コメントウィンドウ → main: 準備完了 / シーク要求 (vposMs) / 最前面表示の切替 (boolean) */
+  LIVE_COMMENT_WINDOW_READY: 'nndd:live:commentWindow:ready',
+  LIVE_COMMENT_WINDOW_SEEK: 'nndd:live:commentWindow:seek',
+  LIVE_COMMENT_WINDOW_SET_ON_TOP: 'nndd:live:commentWindow:setOnTop',
+  /** main → 生放送プレイヤーへのイベント通知 (LiveEvent) */
+  LIVE_EVENT: 'nndd:live:event',
+
   // HTTPサーバー制御
   HTTPD_START: 'nndd:httpd:start',
   HTTPD_STOP: 'nndd:httpd:stop',
@@ -269,6 +309,8 @@ export const IpcChannel = {
   NAV_SERIES: 'nndd:nav:series',
   /** タグ文字列を指定して検索タブでタグ検索を実行する */
   NAV_SEARCH_TAG: 'nndd:nav:searchTag',
+  /** キーワード (タグ) を指定して生放送タブで番組検索を実行する */
+  NAV_LIVE_SEARCH: 'nndd:nav:liveSearch',
   /** ユーザー情報を指定してフォロー中タブでそのユーザーの投稿動画に絞り込む(フォロー有無問わず) */
   NAV_FOLLOW_USER: 'nndd:nav:followUser',
 

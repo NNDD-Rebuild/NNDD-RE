@@ -1,13 +1,16 @@
 import { createLogger } from '../util/Logger';
 import { NNDD_RE_CMD_SCHEME } from '../../shared/constants/paths';
 import type { CmdApi } from '../ipc/registerIpc';
+import { LivePlayerManager } from '../player/LivePlayerManager';
+import { normalizeLiveId } from '../nicovideo/live/LiveWatchPage';
 
 const log = createLogger('CmdProtocol');
 
 export type CmdAction =
   | { action: 'play'; videoId: string }
   | { action: 'download'; videoId: string }
-  | { action: 'mylist'; mylistId: string };
+  | { action: 'mylist'; mylistId: string }
+  | { action: 'live'; programId: string };
 
 /** `nndd-re-cmd://play/sm12345` 等をパースする。形式不正・未知アクションは null */
 export function parseCmdUrl(url: string): CmdAction | null {
@@ -26,6 +29,8 @@ export function parseCmdUrl(url: string): CmdAction | null {
       return { action: 'download', videoId: id };
     case 'mylist':
       return { action: 'mylist', mylistId: id };
+    case 'live':
+      return { action: 'live', programId: id };
     default:
       return null;
   }
@@ -59,5 +64,11 @@ export function handleCmdUrl(url: string, api: CmdApi): void {
     case 'mylist':
       api.navigateMylist(parsed.mylistId);
       break;
+    case 'live': {
+      const id = normalizeLiveId(parsed.programId);
+      if (id) LivePlayerManager.get().open(id);
+      else log.warn('invalid live id:', parsed.programId);
+      break;
+    }
   }
 }

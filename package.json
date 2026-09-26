@@ -27,9 +27,11 @@
     "tc:ipc": "tsc --noEmit -p tsconfig.node.json 2>&1 | findstr registerIpc",
     "tc:video": "tsc --noEmit -p tsconfig.node.json 2>&1 | findstr VIDEO_OPEN_PLAYER",
     "tc:both": "tsc --noEmit -p tsconfig.node.json 2>&1 | findstr \"VIDEO_OPEN_PLAYER registerIpc\"",
-    "tc:both:short": "tsc --noEmit -p tsconfig.node.json 2>&1 | findstr \"VIDEO_OPEN_PLAYER registerIpc\" | more +0"
+    "tc:both:short": "tsc --noEmit -p tsconfig.node.json 2>&1 | findstr \"VIDEO_OPEN_PLAYER registerIpc\" | more +0",
+    "gen:proto": "buf generate"
   },
   "dependencies": {
+    "@bufbuild/protobuf": "^2.15.0",
     "@tanstack/react-virtual": "^3.14.9",
     "@xhayper/discord-rpc": "^1.3.4",
     "@xpadev-net/niconicomments": "^0.3.0",
@@ -48,6 +50,8 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@bufbuild/buf": "^1.73.0",
+    "@bufbuild/protoc-gen-es": "^2.15.0",
     "@electron-toolkit/preload": "^3.0.2",
     "@electron-toolkit/utils": "^4.0.0",
     "@types/better-sqlite3": "^7.6.11",

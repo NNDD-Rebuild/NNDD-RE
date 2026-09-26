@@ -9,6 +9,7 @@ export type MainTab =
   | 'ranking'
   | 'search'
   | 'follow'
+  | 'live'
   | 'mylist'
   | 'download'
   | 'library'
@@ -20,6 +21,7 @@ export const MAIN_TABS: { id: MainTab; label: string }[] = [
   { id: 'ranking', label: 'ランキング' },
   { id: 'search', label: '検索' },
   { id: 'follow', label: 'フォロー中' },
+  { id: 'live', label: '生放送' },
   { id: 'mylist', label: 'マイリスト' },
   { id: 'download', label: 'DLリスト' },
   { id: 'library', label: 'ライブラリ' },
@@ -49,6 +51,10 @@ interface AppState {
   /** プレイヤーからタグ検索を開く際のタグ文字列。SearchViewが処理後 null にクリア */
   pendingSearchTag: string | null;
   setPendingSearchTag: (tag: string | null) => void;
+
+  /** 生放送プレイヤーのタグから生放送タブで検索するキーワード */
+  pendingLiveSearch: string | null;
+  setPendingLiveSearch: (keyword: string | null) => void;
 
   /** プレイヤーから投稿者の動画一覧を開く際のユーザー情報。FollowViewが処理後 null にクリア */
   pendingFollowUser: { id: string; nickname: string; iconUrl: string } | null;
@@ -93,6 +99,8 @@ export const useAppStore = create<AppState>((set) => ({
   setPendingSeriesId: (id) => set({ pendingSeriesId: id }),
   pendingSearchTag: null,
   setPendingSearchTag: (tag) => set({ pendingSearchTag: tag }),
+  pendingLiveSearch: null,
+  setPendingLiveSearch: (keyword) => set({ pendingLiveSearch: keyword }),
   pendingFollowUser: null,
   setPendingFollowUser: (user) => set({ pendingFollowUser: user }),
   pendingChannelId: null,
