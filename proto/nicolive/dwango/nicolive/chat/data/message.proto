@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package dwango.nicolive.chat.data;
+import "dwango/nicolive/chat/data/atoms.proto";
+import "dwango/nicolive/chat/data/atoms/forwarded.proto";
+import "dwango/nicolive/chat/data/atoms/moderator.proto";
+import "dwango/nicolive/chat/data/atoms/notifications.proto";
+import "dwango/nicolive/chat/data/atoms/akashic.proto";
+import "dwango/nicolive/chat/data/atoms/features.proto";
+import "dwango/nicolive/chat/data/atoms/cruise.proto";
+import "dwango/nicolive/chat/data/atoms/creatorsupport.proto";
+
+
+
+message NicoliveMessage {
+
+  oneof data {
+    
+    Chat chat = 1;
+
+    
+    SimpleNotification simple_notification = 7;
+
+    
+    Gift gift = 8;
+
+    
+    Nicoad nicoad = 9;
+
+    GameUpdate game_update = 13;
+
+    
+    TagUpdated tag_updated = 17;
+
+    
+    atoms.ModeratorUpdated moderator_updated = 18;
+    
+    atoms.SSNGUpdated ssng_updated = 19;
+
+    
+    Chat overflowed_chat = 20;
+
+    
+
+    
+    atoms.ForwardedChat forwarded_chat = 22;
+
+    
+    atoms.SimpleNotificationV2 simple_notification_v2 = 23;
+
+    
+    atoms.AkashicMessageEvent akashic_message_event = 24;
+
+    
+    atoms.FeaturesUpdated features_updated = 25;
+
+    
+    atoms.CruiseRecentContents cruise_recent_contents = 26;
+  }
+
+  reserved 2 to 6, 10 to 12, 14 to 16;
+}
