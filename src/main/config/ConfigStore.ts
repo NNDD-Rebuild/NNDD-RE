@@ -325,6 +325,12 @@ export interface NnddConfig {
   /** Webhook通知 (Discord/Slack自動判定) */
   webhookNotify: WebhookNotifyConfig;
 
+  /** ニコニコ生放送 */
+  live: {
+    /** 別の番組を開くとき、新しいウィンドウで開くか (false なら既存の生放送ウィンドウで切り替える) */
+    allowMultipleWindows: boolean;
+  };
+
   /** 登録チャンネルの新着動画監視 (定期ポーリングしOS通知) */
   channelWatch: {
     enabled: boolean;
@@ -462,6 +468,9 @@ const DEFAULTS: NnddConfig = {
     webhookUrl: '',
     notifyOnDownloadComplete: true,
     notifyOnDownloadFail: true
+  },
+  live: {
+    allowMultipleWindows: false
   },
   channelWatch: {
     enabled: false,

@@ -35,6 +35,11 @@ export class LivePlayerManager {
   private readonly streamCookies = new WeakMap<Session, LiveStreamCookie[]>();
   /** webContents.id → 視聴セッション */
   private readonly sessions = new Map<number, LiveSession>();
+  /**
+   * 開いている生放送ウィンドウ → 表示中の番組。
+   * requestedId は開くときに指定された ID (co/ch の場合もある)、programId は解決後の lv ID
+   */
+  private readonly windows = new Map<BrowserWindow, { requestedId: string; programId?: string }>();
   private seq = 0;
 
   static get(): LivePlayerManager {
@@ -42,7 +47,47 @@ export class LivePlayerManager {
     return this.instance;
   }
 
+  /**
+   * 生放送プレイヤーを開く。
+   * - 同じ番組を表示中のウィンドウがあれば、それを前面に出すだけ
+   * - 設定 live.allowMultipleWindows が OFF なら、既存の生放送ウィンドウで番組を切り替える
+   */
   open(programId: string): void {
+    const same = [...this.windows].find(
+      ([, v]) => v.requestedId === programId || v.programId === programId
+    )?.[0];
+    if (same) {
+      this.focus(same);
+      return;
+    }
+    const allowMultiple = getConfigStore().get('live')?.allowMultipleWindows ?? false;
+    const reuse = allowMultiple ? undefined : [...this.windows.keys()][0];
+    if (reuse) {
+      // 読み込み直すと renderer が LIVE_START し直し、同じ webContents の旧セッションは startSession で止まる
+      this.windows.set(reuse, { requestedId: programId });
+      this.loadPage(reuse, programId);
+      this.focus(reuse);
+      return;
+    }
+    this.createWindow(programId);
+  }
+
+  private focus(win: BrowserWindow): void {
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+  }
+
+  private loadPage(win: BrowserWindow, programId: string): void {
+    const query = { programId };
+    if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+      void win.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/live-player.html?${new URLSearchParams(query)}`);
+    } else {
+      void win.loadFile(path.join(__dirname, '../renderer/live-player.html'), { query });
+    }
+  }
+
+  private createWindow(programId: string): void {
     const bgColor = getConfigStore().get('ui').theme === 'light' ? '#f0f0f0' : '#000000';
     const win = new BrowserWindow({
       width: 1280,
@@ -75,13 +120,9 @@ export class LivePlayerManager {
       else if (level === 2) log.warn(text);
     });
     win.on('ready-to-show', () => win.show());
-
-    const query = { programId };
-    if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-      void win.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/live-player.html?${new URLSearchParams(query)}`);
-    } else {
-      void win.loadFile(path.join(__dirname, '../renderer/live-player.html'), { query });
-    }
+    this.windows.set(win, { requestedId: programId });
+    win.on('closed', () => this.windows.delete(win));
+    this.loadPage(win, programId);
   }
 
   /** 生放送プレイヤー (renderer) からの視聴開始要求 */
@@ -99,7 +140,12 @@ export class LivePlayerManager {
     const id = sender.id;
     sender.once('destroyed', () => this.stopSession(id));
     try {
-      return await session.start();
+      const result = await session.start();
+      // co/ch で開いた場合も、解決後の lv ID で同一番組判定できるよう記録する
+      const win = BrowserWindow.fromWebContents(sender);
+      const entry = win ? this.windows.get(win) : undefined;
+      if (entry) entry.programId = result.program.programId;
+      return result;
     } catch (e) {
       this.stopSession(id);
       throw e;

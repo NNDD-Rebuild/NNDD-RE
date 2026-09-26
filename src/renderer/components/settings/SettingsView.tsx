@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAppStore } from '@renderer/store/useAppStore';
 import { GeneralSettings } from './GeneralSettings';
 import { PlayerSettings } from './PlayerSettings';
+import { LiveSettings } from './LiveSettings';
 import { LibrarySettings } from './LibrarySettings';
 import { NicoSettings } from './NicoSettings';
 import { ConnectionDiagnostics } from './ConnectionDiagnostics';
@@ -31,6 +32,7 @@ export type SubTab =
   | 'library'
   | 'schedule'
   | 'player'
+  | 'live'
   | 'ng'
   | 'tools'
   | 'connection'
@@ -45,6 +47,7 @@ const SUBTABS: { id: SubTab; label: string }[] = [
   { id: 'library', label: 'DLリスト・ライブラリ' },
   { id: 'schedule', label: 'スケジュール' },
   { id: 'player', label: 'プレイヤー' },
+  { id: 'live', label: '生放送' },
   { id: 'ng', label: 'NGコメント' },
   { id: 'tools', label: '外部ツール' },
   { id: 'connection', label: '接続診断' },
@@ -112,6 +115,7 @@ export function SettingsView(): JSX.Element {
         {active === 'library' && <LibrarySettings />}
         {active === 'schedule' && <ScheduleSettings />}
         {active === 'player' && <PlayerSettings />}
+        {active === 'live' && <LiveSettings />}
         {active === 'ng' && <NgCommentSettings />}
         {active === 'tools' && <ExternalToolsSettings />}
         {active === 'connection' && <ConnectionDiagnostics />}
