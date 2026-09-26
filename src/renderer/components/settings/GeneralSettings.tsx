@@ -70,7 +70,6 @@ export function GeneralSettings({ onDeveloperModeChange }: GeneralSettingsProps)
   // Discord Rich Presence
   const [discordEnabled, setDiscordEnabled] = useConfig<boolean>('discordRpc.enabled', false);
   const [discordShowTitle, setDiscordShowTitle] = useConfig<boolean>('discordRpc.showTitle', true);
-  const [discordShowElapsed, setDiscordShowElapsed] = useConfig<boolean>('discordRpc.showElapsed', true);
   const [discordShowThumbnail, setDiscordShowThumbnail] = useConfig<boolean>('discordRpc.showThumbnail', true);
   const [discordShowGithubButton, setDiscordShowGithubButton] = useConfig<boolean>('discordRpc.showGithubButton', true);
 
@@ -681,14 +680,6 @@ export function GeneralSettings({ onDeveloperModeChange }: GeneralSettingsProps)
               onChange={(e) => setDiscordShowTitle(e.target.checked)}
             />
             動画タイトルを表示
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer select-none text-sm">
-            <input
-              type="checkbox"
-              checked={discordShowElapsed}
-              onChange={(e) => setDiscordShowElapsed(e.target.checked)}
-            />
-            経過時間を表示
           </label>
           <label className="flex items-center gap-2 cursor-pointer select-none text-sm">
             <input

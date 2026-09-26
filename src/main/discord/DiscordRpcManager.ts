@@ -20,6 +20,8 @@ class DiscordRpcManagerImpl {
   private client: Client | null = null;
   private connectedClientId = '';
   private connecting: Promise<boolean> | null = null;
+  /** 設定変更時に再送するため、最後に送ったPresence情報を保持する */
+  private lastInfo: DiscordActivityInfo | null = null;
 
   private async ensureConnected(clientId: string): Promise<boolean> {
     if (this.client?.isConnected && this.connectedClientId === clientId) {
@@ -64,15 +66,15 @@ class DiscordRpcManagerImpl {
   }
 
   async setActivity(info: DiscordActivityInfo): Promise<void> {
+    this.lastInfo = info;
     const cfg = getConfigStore().store.discordRpc;
     if (!cfg.enabled || !DISCORD_CLIENT_ID) return;
     const ok = await this.ensureConnected(DISCORD_CLIENT_ID);
     if (!ok || !this.client) return;
 
-    const endTimestamp =
-      cfg.showElapsed && info.durationSec
-        ? info.startedAtMs + info.durationSec * 1000
-        : undefined;
+    const endTimestamp = info.durationSec
+      ? info.startedAtMs + info.durationSec * 1000
+      : undefined;
 
     const buttons: { label: string; url: string }[] = [];
     if (VIDEO_ID_PATTERN.test(info.videoId)) {
@@ -86,7 +88,7 @@ class DiscordRpcManagerImpl {
       await this.client.user?.setActivity({
         details: cfg.showTitle ? info.title.slice(0, 128) : 'NNDD-REで視聴中',
         state: 'NNDD-REで視聴中',
-        startTimestamp: cfg.showElapsed ? info.startedAtMs : undefined,
+        startTimestamp: info.startedAtMs,
         endTimestamp,
         largeImageKey: cfg.showThumbnail ? info.thumbnailUrl : undefined,
         largeImageText: cfg.showThumbnail ? info.title.slice(0, 128) : undefined,
@@ -99,6 +101,7 @@ class DiscordRpcManagerImpl {
   }
 
   async clearActivity(): Promise<void> {
+    this.lastInfo = null;
     if (!this.client?.isConnected) return;
     try {
       await this.client.user?.clearActivity();
@@ -107,11 +110,13 @@ class DiscordRpcManagerImpl {
     }
   }
 
-  /** 設定変更時に呼ぶ。無効化された場合は切断する */
+  /** 設定変更時に呼ぶ。無効化された場合は切断し、それ以外は再生中のPresenceを新しい設定で送り直す */
   async onConfigChanged(): Promise<void> {
     if (!getConfigStore().store.discordRpc.enabled) {
       await this.disconnect();
+      return;
     }
+    if (this.lastInfo) await this.setActivity(this.lastInfo);
   }
 
   status(): { connected: boolean } {

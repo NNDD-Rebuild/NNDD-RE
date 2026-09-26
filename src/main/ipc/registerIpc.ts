@@ -914,7 +914,7 @@ export function registerIpcHandlers(
     if (key === 'logLevel') {
       setLogLevel(value as 'standard' | 'verbose');
     }
-    if (key === 'discordRpc.enabled' || key === 'discordRpc.clientId') {
+    if (key.startsWith('discordRpc.')) {
       void getDiscordRpcManager().onConfigChanged();
     }
     if (key === 'libraryRoot') {

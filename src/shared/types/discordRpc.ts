@@ -6,8 +6,6 @@ export interface DiscordRpcConfig {
   clientId: string;
   /** 動画タイトルを表示するか (OFF時は「NNDD-REで視聴中」のみ表示) */
   showTitle: boolean;
-  /** 経過時間を表示するか */
-  showElapsed: boolean;
   /** サムネイル画像を表示するか */
   showThumbnail: boolean;
   /** NNDD-REのGitHubリポジトリへのリンクボタンを表示するか */

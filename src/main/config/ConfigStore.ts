@@ -454,7 +454,6 @@ const DEFAULTS: NnddConfig = {
     enabled: false,
     clientId: '',
     showTitle: true,
-    showElapsed: true,
     showThumbnail: true,
     showGithubButton: true
   },

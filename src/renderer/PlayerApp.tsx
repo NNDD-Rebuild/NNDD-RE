@@ -1095,6 +1095,9 @@ export default function PlayerApp(): JSX.Element {
       });
     };
     video.addEventListener('play', sendActivity);
+    // ローカル再生は VideoPlayer マウント直後に play() されるため、リスナー登録前に
+    // play イベントが発火済みのことがある。既に再生中なら即送信する
+    if (!video.paused) sendActivity();
     return () => video.removeEventListener('play', sendActivity);
   }, [video, src]);
 
