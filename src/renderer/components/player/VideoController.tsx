@@ -3,6 +3,12 @@ import type { DomandStreamCandidate } from '@shared/types';
 import { useConfig } from '@renderer/hooks/useConfig';
 import { ControlBarSelect } from './ControlBarSelect';
 
+/**
+ * 生放送の画質選択欄。選択肢が多く、ネイティブ select は一番長い選択肢の幅になって
+ * シークバーを圧迫するため、幅を抑えて文字も一段小さくする
+ */
+const LIVE_QUALITY_SELECT_CLASS = '!text-xs max-w-[4.5rem]';
+
 const PLAYBACK_RATE_OPTIONS = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0] as const;
 
 // Linuxのみカスタムドロップダウンに置き換える。ネイティブ<select>は全画面時に
@@ -34,7 +40,15 @@ interface Props {
    * 生放送 (放送中) 用の表示。指定すると時間表示を「LIVE / -m:ss」にし、「最新」ボタンを出す。
    * chasePlay=true (追っかけ再生) ならシークバーを video.seekable の範囲で表示する
    */
-  live?: { chasePlay: boolean; onSeekToLive: () => void };
+  live?: {
+    chasePlay: boolean;
+    onSeekToLive: () => void;
+    /**
+     * 通常のライブ再生位置 (秒)。HLS はバッファの余裕を取るため最新セグメントの少し手前を再生するので、
+     * 遅れ表示はシーク可能範囲の末尾ではなくこの位置を基準にする (hls.js の liveSyncPosition)
+     */
+    getLiveSyncPosition?: () => number | null;
+  };
   /** 再生速度の選択を隠す (生放送用) */
   hideRateSelect?: boolean;
   /** ミニプレイヤー (Picture-in-Picture) ボタンを隠す (生放送用) */
@@ -473,7 +487,10 @@ export function VideoController({
       {live ? (
         <>
           <span className="font-mono">
-            {seekEnd - currentTime > 5 ? `-${fmt(seekEnd - currentTime)}` : 'LIVE'}
+            {(() => {
+              const edge = live.getLiveSyncPosition?.() ?? seekEnd;
+              return edge - currentTime > 5 ? `-${fmt(edge - currentTime)}` : 'LIVE';
+            })()}
           </span>
           <Btn onClick={live.onSeekToLive} title="最新の位置へ">
             最新
@@ -530,12 +547,17 @@ export function VideoController({
             }))}
             onChange={onQualityChange}
             title="画質"
+            className={live ? LIVE_QUALITY_SELECT_CLASS : undefined}
           />
         ) : (
           <select
             value={currentQualityId ?? ''}
             onChange={(e) => onQualityChange(e.target.value)}
-            className="bg-nndd-border text-white text-sm rounded px-1 py-0.5 cursor-pointer"
+            className={[
+              'bg-nndd-border text-white text-sm rounded px-1 py-0.5 cursor-pointer',
+              live ? LIVE_QUALITY_SELECT_CLASS : ''
+            ].join(' ')}
+            title="画質"
           >
             {availableQualities.map((q) => (
               <option key={q.id} value={q.id}>
