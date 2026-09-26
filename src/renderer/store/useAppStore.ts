@@ -52,6 +52,10 @@ interface AppState {
   pendingSearchTag: string | null;
   setPendingSearchTag: (tag: string | null) => void;
 
+  /** 生放送プレイヤーのタグから生放送タブで検索するキーワード */
+  pendingLiveSearch: string | null;
+  setPendingLiveSearch: (keyword: string | null) => void;
+
   /** プレイヤーから投稿者の動画一覧を開く際のユーザー情報。FollowViewが処理後 null にクリア */
   pendingFollowUser: { id: string; nickname: string; iconUrl: string } | null;
   setPendingFollowUser: (user: { id: string; nickname: string; iconUrl: string } | null) => void;
@@ -95,6 +99,8 @@ export const useAppStore = create<AppState>((set) => ({
   setPendingSeriesId: (id) => set({ pendingSeriesId: id }),
   pendingSearchTag: null,
   setPendingSearchTag: (tag) => set({ pendingSearchTag: tag }),
+  pendingLiveSearch: null,
+  setPendingLiveSearch: (keyword) => set({ pendingLiveSearch: keyword }),
   pendingFollowUser: null,
   setPendingFollowUser: (user) => set({ pendingFollowUser: user }),
   pendingChannelId: null,

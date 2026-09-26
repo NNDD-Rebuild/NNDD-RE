@@ -8,7 +8,8 @@ import type {
   LiveRecentParams,
   LiveSearchParams
 } from '@shared/types';
-import { IpcChannel } from '@shared/types';
+import { IpcChannel, LIVE_SEARCH_PAGE_SIZE } from '@shared/types';
+import { useAppStore } from '@renderer/store/useAppStore';
 
 type SubTab = 'followOnair' | 'followReserved' | 'ranking' | 'recent' | 'search' | 'timeshift';
 type RankingKind = 'official' | 'user';
@@ -163,6 +164,9 @@ export function LiveView(): JSX.Element {
   const [sort, setSort] = useState(SORTS[0].value);
   /** 実行済みの検索条件 (「もっと見る」で同じ条件を使う) */
   const [searched, setSearched] = useState<Omit<LiveSearchParams, 'offset'> | null>(null);
+  /** 検索結果のページ (1 始まり、1 ページ LIVE_SEARCH_PAGE_SIZE 件) */
+  const [searchPage, setSearchPage] = useState(1);
+  const listScrollRef = useRef<HTMLDivElement>(null);
   const [ranking, setRanking] = useState<LiveRankingResult | null>(null);
   const [rankingKind, setRankingKind] = useState<RankingKind>('official');
   const [rankingType, setRankingType] = useState<LiveRankingParams['type']>('onair');
@@ -237,6 +241,7 @@ export function LiveView(): JSX.Element {
   // サブタブ切替時に読み込む (検索タブは検索実行時のみ)
   useEffect(() => {
     if (subTab === 'search') {
+      setSearchPage(1);
       void load('search', searched, false, 0);
     } else {
       void load(subTab, null, false, 0);
@@ -254,8 +259,8 @@ export function LiveView(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [recentCategory, recentSort]);
 
-  const runSearch = (): void => {
-    const word = keyword.trim();
+  const runSearch = (wordArg?: string): void => {
+    const word = (wordArg ?? keyword).trim();
     if (!word) return;
     const [s, o] = sort.split(':');
     const cond = {
@@ -265,8 +270,30 @@ export function LiveView(): JSX.Element {
       order: o as LiveSearchParams['order']
     };
     setSearched(cond);
+    setSearchPage(1);
     void load('search', cond, false, 0);
   };
+
+  /** 検索結果のページ移動 (動画の検索画面と同じ ◀ 前 / 次 ▶) */
+  const goSearchPage = (page: number): void => {
+    if (!searched || page < 1) return;
+    setSearchPage(page);
+    void load('search', searched, false, (page - 1) * LIVE_SEARCH_PAGE_SIZE);
+    listScrollRef.current?.scrollTo({ top: 0 });
+  };
+  const searchTotalPages = total > 0 ? Math.ceil(total / LIVE_SEARCH_PAGE_SIZE) : 0;
+
+  // 生放送プレイヤーのタグから来た検索 (放送中の番組をキーワード検索する)
+  const pendingLiveSearch = useAppStore((s) => s.pendingLiveSearch);
+  const setPendingLiveSearch = useAppStore((s) => s.setPendingLiveSearch);
+  useEffect(() => {
+    if (!pendingLiveSearch) return;
+    setPendingLiveSearch(null);
+    setSubTab('search');
+    setKeyword(pendingLiveSearch);
+    runSearch(pendingLiveSearch);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingLiveSearch]);
 
   const onOpen = (id: string): void => {
     setOpenError('');
@@ -275,7 +302,8 @@ export function LiveView(): JSX.Element {
 
   const isRanking = subTab === 'ranking';
   const shown = isRanking ? (ranking?.[rankingKind] ?? []) : programs;
-  const canLoadMore = !isRanking && subTab !== 'timeshift' && programs.length < total && !loading;
+  const canLoadMore =
+    !isRanking && subTab !== 'timeshift' && subTab !== 'search' && programs.length < total && !loading;
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -445,8 +473,40 @@ export function LiveView(): JSX.Element {
         </div>
       )}
 
+      {/* 検索結果の件数 + ページ移動 (動画の検索画面と同じ固定バー) */}
+      {subTab === 'search' && searched && (programs.length > 0 || loading) && (
+        <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-nndd-border bg-nndd-panel text-xs">
+          <span className="text-nndd-subtext">
+            {total > 0
+              ? `${total.toLocaleString()} 件中 ${(searchPage - 1) * LIVE_SEARCH_PAGE_SIZE + 1}–${Math.min(searchPage * LIVE_SEARCH_PAGE_SIZE, total)} 件表示`
+              : loading
+                ? '検索中…'
+                : ''}
+          </span>
+          <div className="flex items-center gap-1 ml-auto">
+            <button
+              onClick={() => goSearchPage(searchPage - 1)}
+              disabled={loading || searchPage <= 1}
+              className="px-2 py-0.5 bg-nndd-border rounded hover:bg-nndd-accent disabled:opacity-40"
+            >
+              ◀ 前
+            </button>
+            <span className="text-nndd-subtext px-2">
+              {searchPage} / {searchTotalPages || 1}
+            </span>
+            <button
+              onClick={() => goSearchPage(searchPage + 1)}
+              disabled={loading || searchPage >= searchTotalPages}
+              className="px-2 py-0.5 bg-nndd-border rounded hover:bg-nndd-accent disabled:opacity-40"
+            >
+              次 ▶
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 一覧 */}
-      <div className="flex-1 min-h-0 overflow-y-auto p-3">
+      <div ref={listScrollRef} className="flex-1 min-h-0 overflow-y-auto p-3">
         {error && <div className="mb-2 text-xs text-red-500">{error}</div>}
         {!loading && !error && shown.length === 0 && (
           <div className="text-xs text-nndd-subtext">
@@ -467,7 +527,7 @@ export function LiveView(): JSX.Element {
         {canLoadMore && (
           <div className="mt-3 text-center">
             <button
-              onClick={() => void load(subTab, subTab === 'search' ? searched : null, true, programs.length)}
+              onClick={() => void load(subTab, null, true, programs.length)}
               className="px-4 py-1 text-xs rounded border border-nndd-border hover:bg-nndd-border"
             >
               もっと見る ({programs.length} / {total})

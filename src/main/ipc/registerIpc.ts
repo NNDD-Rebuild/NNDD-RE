@@ -1718,6 +1718,16 @@ export function registerIpcHandlers(
     }
   });
 
+  // 生放送プレイヤー → メインウィンドウの生放送タブで番組検索
+  ipcMain.handle(IpcChannel.NAV_LIVE_SEARCH, (_e, keyword: string) => {
+    const mainWin = mainWindowGetter?.();
+    if (mainWin && !mainWin.isDestroyed()) {
+      mainWin.show();
+      mainWin.focus();
+      mainWin.webContents.send(IpcChannel.NAV_LIVE_SEARCH, String(keyword ?? ''));
+    }
+  });
+
   // プレイヤーウィンドウ → メインウィンドウへのフォローユーザーナビゲーション
   ipcMain.handle(
     IpcChannel.NAV_FOLLOW_USER,

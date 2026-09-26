@@ -90,6 +90,18 @@ export default function App(): JSX.Element {
     return off;
   }, [setActiveTab, setPendingSearchTag]);
 
+  // 生放送プレイヤーからのタグ検索 (生放送タブで番組検索)
+  useEffect(() => {
+    const off = window.electron.ipcRenderer.on(
+      IpcChannel.NAV_LIVE_SEARCH,
+      (_e, keyword: string) => {
+        setActiveTab('live');
+        useAppStore.getState().setPendingLiveSearch(keyword);
+      }
+    );
+    return off;
+  }, [setActiveTab]);
+
   // プレイヤーからのフォローユーザーナビゲーション
   useEffect(() => {
     const off = window.electron.ipcRenderer.on(

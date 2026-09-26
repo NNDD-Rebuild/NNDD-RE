@@ -28,6 +28,25 @@ export interface LiveProgramInfo {
   chasePlayEnabled: boolean;
   /** watchページ取得時点のコメント数 */
   commentCount: number;
+  /** 番組説明 (HTML) */
+  description: string;
+  tags: string[];
+  /** 放送者 (ユーザー / チャンネル) */
+  supplier: LiveSupplier | null;
+  /** タイムシフト予約数 (分かる場合のみ) */
+  timeshiftReservationCount?: number;
+}
+
+export interface LiveSupplier {
+  /** user / channel 等 */
+  type: string;
+  /** ユーザーID またはチャンネルID */
+  id: string;
+  name: string;
+  iconUrl: string;
+  pageUrl: string;
+  /** ユーザーレベル (ユーザー番組のみ) */
+  level?: number;
 }
 
 export interface LiveStatistics {
@@ -104,6 +123,9 @@ export interface LiveProgramListResult {
   programs: LiveProgramSummary[];
   total: number;
 }
+
+/** 番組検索の1ページの件数 */
+export const LIVE_SEARCH_PAGE_SIZE = 100;
 
 /** 番組検索の条件 */
 export interface LiveSearchParams {

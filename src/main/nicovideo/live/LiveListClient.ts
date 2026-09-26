@@ -1,3 +1,4 @@
+import { LIVE_SEARCH_PAGE_SIZE } from '@shared/types';
 import type {
   LiveProgramListResult,
   LiveProgramSummary,
@@ -21,7 +22,10 @@ const LIVE_HEADERS = {
   Referer: `${LIVE_ORIGIN}/`
 };
 
-const SEARCH_LIMIT = 40;
+/** 番組検索 API の1回の取得件数 (20 を超えると invalid limit エラーになる) */
+const SEARCH_LIMIT = 20;
+/** 番組検索の1ページの件数 (SEARCH_LIMIT の倍数) */
+const SEARCH_PAGE_SIZE = LIVE_SEARCH_PAGE_SIZE;
 
 const num = (v: unknown): number | undefined => (typeof v === 'number' ? v : undefined);
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
@@ -70,20 +74,28 @@ export async function fetchFollowingPrograms(
 
 /** 番組検索 (api.cas.nicovideo.jp) */
 export async function searchPrograms(params: LiveSearchParams): Promise<LiveProgramListResult> {
-  const q = new URLSearchParams({
-    searchWord: params.keyword,
-    searchTargets: 'keyword',
-    liveStatus: params.liveStatus,
-    sort: params.sort,
-    order: params.order,
-    limit: String(SEARCH_LIMIT),
-    offset: String(params.offset)
-  });
-  const json = await NicoContext.get().http.getJson<{ meta?: { totalCount?: number }; data?: any[] }>(
-    `https://api.cas.nicovideo.jp/v2/search/programs.json?${q}`,
-    { headers: LIVE_HEADERS }
+  // API は 1 回 20 件までなので、1 ページ分 (SEARCH_PAGE_SIZE 件) を並行して取得してつなげる
+  const offsets = Array.from({ length: SEARCH_PAGE_SIZE / SEARCH_LIMIT }, (_, i) => params.offset + i * SEARCH_LIMIT);
+  const responses = await Promise.all(
+    offsets.map((offset, i) =>
+      fetchSearchPage(params, offset).catch((e) => {
+        // 先頭が失敗したらエラー、2 回目以降は件数の末尾を超えた等として空扱い
+        if (i === 0) throw e;
+        return { meta: undefined, data: [] };
+      })
+    )
   );
-  const programs = (json.data ?? []).map(
+  const total = num(responses[0].meta?.totalCount);
+  const seen = new Set<string>();
+  const data = responses
+    .flatMap((r) => r.data ?? [])
+    .filter((p) => {
+      const id = str(p?.id);
+      if (!id || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  const programs = data.map(
     (p): LiveProgramSummary => ({
       programId: str(p.id),
       title: str(p.title),
@@ -105,7 +117,25 @@ export async function searchPrograms(params: LiveSearchParams): Promise<LiveProg
       timeshiftPlayable: undefined
     })
   );
-  return { programs, total: num(json.meta?.totalCount) ?? programs.length };
+  return { programs, total: total ?? programs.length };
+}
+
+type SearchResponse = { meta?: { totalCount?: number }; data?: any[] };
+
+function fetchSearchPage(params: LiveSearchParams, offset: number): Promise<SearchResponse> {
+  const q = new URLSearchParams({
+    searchWord: params.keyword,
+    searchTargets: 'keyword',
+    liveStatus: params.liveStatus,
+    sort: params.sort,
+    order: params.order,
+    limit: String(SEARCH_LIMIT),
+    offset: String(offset)
+  });
+  return NicoContext.get().http.getJson<SearchResponse>(
+    `https://api.cas.nicovideo.jp/v2/search/programs.json?${q}`,
+    { headers: LIVE_HEADERS }
+  );
 }
 
 /** 秒・ミリ秒どちらで来ても ms に揃える (embedded-data の beginTime は秒) */

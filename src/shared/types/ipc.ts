@@ -309,6 +309,8 @@ export const IpcChannel = {
   NAV_SERIES: 'nndd:nav:series',
   /** タグ文字列を指定して検索タブでタグ検索を実行する */
   NAV_SEARCH_TAG: 'nndd:nav:searchTag',
+  /** キーワード (タグ) を指定して生放送タブで番組検索を実行する */
+  NAV_LIVE_SEARCH: 'nndd:nav:liveSearch',
   /** ユーザー情報を指定してフォロー中タブでそのユーザーの投稿動画に絞り込む(フォロー有無問わず) */
   NAV_FOLLOW_USER: 'nndd:nav:followUser',
 
