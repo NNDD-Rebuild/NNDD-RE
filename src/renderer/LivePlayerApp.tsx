@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import type {
   LiveCommentRange,
+  LiveCommentWindowEvent,
+  LiveCommentWindowMessage,
   LiveConnectionState,
   LiveEvent,
   LiveNotice,
@@ -14,6 +16,11 @@ import { CommentPosition, IpcChannel } from '@shared/types';
 import { CommentRenderer, DEFAULT_RENDER_CONFIG } from './components/player/CommentRenderer';
 import { useConfig } from './hooks/useConfig';
 import { LiveCommentList, type LiveListItem } from './components/live/LiveCommentList';
+
+/** 生放送プレイヤー → コメントウィンドウ (main が中継) */
+function pushToCommentWindow(msg: LiveCommentWindowMessage): void {
+  window.nndd.send(IpcChannel.LIVE_COMMENT_WINDOW_PUSH, msg);
+}
 
 /** コメントリストの並び替え・再描画をまとめる間隔 (ms) */
 const LIST_FLUSH_MS = 300;
@@ -110,6 +117,23 @@ export default function LivePlayerApp(): JSX.Element {
   const listItemsRef = useRef<LiveListItem[]>([]);
   const listKeysRef = useRef(new Set<string>());
   const listFlushTimer = useRef<number | null>(null);
+  /** コメントウィンドウ (フロート) が開いて snapshot 送信済みか / 未送信の追加分 */
+  const commentWindowOpenRef = useRef(false);
+  const pendingPushRef = useRef<LiveListItem[]>([]);
+  const statisticsRef = useRef<LiveStatistics | null>(null);
+  /** コメントウィンドウからのシーク要求用 (イベント購読の effect から最新の関数を呼ぶ) */
+  const seekToVposRef = useRef<(vposMs: number) => void>(() => {});
+  /** コメントウィンドウへ全件 (snapshot) を送る */
+  const sendSnapshotRef = useRef((): void => {
+    pendingPushRef.current = [];
+    pushToCommentWindow({
+      type: 'snapshot',
+      items: listItemsRef.current,
+      program: programRef.current,
+      statistics: statisticsRef.current,
+      canSeek: isTimeshiftRef.current || chasePlayRef.current
+    });
+  });
   const commentFetchModeRef = useRef<LiveStartResult['commentFetchMode']>('all');
   /** 周辺取得モード: 取得済みの範囲 (vpos ms) と取得中フラグ */
   const loadedRangesRef = useRef<LiveCommentRange[]>([]);
@@ -151,6 +175,12 @@ export default function LivePlayerApp(): JSX.Element {
   const [showComments, setShowComments] = useState(true);
   const [volume, setVolume] = useConfig<number>('player.volume', 1);
   const [muted, setMuted] = useState(false);
+  /** コメントリストの表示場所 (side: 動画の横 / window: 別ウィンドウ)。初期値は設定から */
+  const [defaultCommentDisplay, , commentDisplayLoading] = useConfig<'side' | 'window'>(
+    'live.commentListDisplay',
+    'side'
+  );
+  const [commentDisplay, setCommentDisplay] = useState<'side' | 'window' | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [isTimeshift, setIsTimeshift] = useState(false);
@@ -174,12 +204,18 @@ export default function LivePlayerApp(): JSX.Element {
       if (listKeysRef.current.has(it.key)) continue;
       listKeysRef.current.add(it.key);
       listItemsRef.current.push(it);
+      pendingPushRef.current.push(it);
     }
     if (listFlushTimer.current !== null) return;
     listFlushTimer.current = window.setTimeout(() => {
       listFlushTimer.current = null;
       listItemsRef.current.sort((a, b) => a.vposMs - b.vposMs);
       setListItems([...listItemsRef.current]);
+      // コメントウィンドウへは追加分だけ送る
+      if (commentWindowOpenRef.current && pendingPushRef.current.length > 0) {
+        pushToCommentWindow({ type: 'append', items: pendingPushRef.current });
+      }
+      pendingPushRef.current = [];
     }, LIST_FLUSH_MS);
   }, []);
 
@@ -252,6 +288,8 @@ export default function LivePlayerApp(): JSX.Element {
         }
         case 'statistics':
           setStatistics(ev.statistics);
+          statisticsRef.current = ev.statistics;
+          if (commentWindowOpenRef.current) pushToCommentWindow({ type: 'statistics', statistics: ev.statistics });
           break;
         case 'operatorComment':
           setOperatorComment(ev.notice);
@@ -285,6 +323,8 @@ export default function LivePlayerApp(): JSX.Element {
         setArchiveLoading(r.commentFetchMode === 'all');
         setProgram(r.program);
         document.title = `${r.program.title} - NNDD-RE Live`;
+        // 番組情報より先にコメントウィンドウが開いていたら、番組情報込みで送り直す
+        if (commentWindowOpenRef.current) sendSnapshotRef.current();
       })
       .catch((e) => {
         if (cancelled) return;
@@ -489,8 +529,45 @@ export default function LivePlayerApp(): JSX.Element {
         else hi = mid;
       }
       setListIndex(lo);
+      if (commentWindowOpenRef.current) pushToCommentWindow({ type: 'position', vposMs: nowMs });
     }, 500);
     return () => window.clearInterval(t);
+  }, []);
+
+  // ---- コメントウィンドウ (フロート) ----
+  // 設定の既定値を読み込めたら表示場所を決める
+  useEffect(() => {
+    if (!commentDisplayLoading && commentDisplay === null) setCommentDisplay(defaultCommentDisplay);
+  }, [commentDisplayLoading, defaultCommentDisplay, commentDisplay]);
+
+  useEffect(() => {
+    if (commentDisplay === 'window') {
+      void window.nndd.invoke(IpcChannel.LIVE_COMMENT_WINDOW_OPEN).catch(() => {});
+    } else if (commentDisplay === 'side') {
+      commentWindowOpenRef.current = false;
+      void window.nndd.invoke(IpcChannel.LIVE_COMMENT_WINDOW_CLOSE).catch(() => {});
+    }
+  }, [commentDisplay]);
+
+  useEffect(() => {
+    const off = window.nndd.on(IpcChannel.LIVE_COMMENT_WINDOW_EVENT, (...args: unknown[]) => {
+      const ev = args[0] as LiveCommentWindowEvent;
+      switch (ev.type) {
+        case 'ready':
+          // コメントウィンドウの準備ができたら全件を送り、以降は差分を送る
+          commentWindowOpenRef.current = true;
+          sendSnapshotRef.current();
+          break;
+        case 'seek':
+          seekToVposRef.current(ev.vposMs);
+          break;
+        case 'closed':
+          commentWindowOpenRef.current = false;
+          setCommentDisplay('side');
+          break;
+      }
+    });
+    return off;
   }, []);
 
   /** コメントリストから指定時刻へシークする (タイムシフト・追っかけ再生のみ) */
@@ -503,6 +580,7 @@ export default function LivePlayerApp(): JSX.Element {
     }
     v.currentTime = target;
   };
+  seekToVposRef.current = seekToVpos;
 
   const togglePlay = (): void => {
     const video = videoRef.current;
@@ -720,6 +798,13 @@ export default function LivePlayerApp(): JSX.Element {
                 ))}
               </select>
             )}
+            <button
+              onClick={() => setCommentDisplay((d) => (d === 'window' ? 'side' : 'window'))}
+              className="px-1.5 py-0.5 rounded text-xs border border-neutral-700 hover:bg-neutral-800"
+              title="コメントリストを動画の横 / 別ウィンドウに切り替え"
+            >
+              {commentDisplay === 'window' ? 'コメ欄: 別窓' : 'コメ欄: 横'}
+            </button>
             <button onClick={toggleFullscreen} className="w-6" title="全画面">
               ⛶
             </button>
@@ -731,7 +816,7 @@ export default function LivePlayerApp(): JSX.Element {
           items={listItems}
           currentIndex={listIndex}
           onSeek={isTimeshift || chasePlay ? seekToVpos : undefined}
-          className={`${isFullscreen ? 'hidden' : ''} w-80 shrink-0 bg-neutral-950 border-l border-neutral-800`}
+          className={`${isFullscreen || commentDisplay === 'window' ? 'hidden' : ''} w-80 shrink-0 bg-neutral-950 border-l border-neutral-800`}
         />
       </div>
     </div>

@@ -329,6 +329,12 @@ export interface NnddConfig {
   live: {
     /** 別の番組を開くとき、新しいウィンドウで開くか (false なら既存の生放送ウィンドウで切り替える) */
     allowMultipleWindows: boolean;
+    /** コメントリストの表示場所 (side: 動画の横 / window: 別ウィンドウ) */
+    commentListDisplay: 'side' | 'window';
+    /** コメントウィンドウを最前面に表示するか */
+    commentWindowOnTop: boolean;
+    /** コメントウィンドウの位置・サイズ (前回閉じたとき) */
+    commentWindowBounds?: { x: number; y: number; width: number; height: number };
   };
 
   /** 登録チャンネルの新着動画監視 (定期ポーリングしOS通知) */
@@ -470,7 +476,9 @@ const DEFAULTS: NnddConfig = {
     notifyOnDownloadFail: true
   },
   live: {
-    allowMultipleWindows: false
+    allowMultipleWindows: false,
+    commentListDisplay: 'side',
+    commentWindowOnTop: true
   },
   channelWatch: {
     enabled: false,

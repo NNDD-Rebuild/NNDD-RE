@@ -6,6 +6,7 @@ import type { Session } from 'electron';
 import { IpcChannel } from '@shared/types';
 import { LibraryManager } from '../db/LibraryManager';
 import { LivePlayerManager } from '../player/LivePlayerManager';
+import { LiveCommentWindowManager } from '../player/LiveCommentWindowManager';
 import { activateTimeshift, normalizeLiveId } from '../nicovideo/live/LiveWatchPage';
 import {
   fetchFollowingPrograms,
@@ -14,7 +15,12 @@ import {
   fetchTimeshiftReservations,
   searchPrograms
 } from '../nicovideo/live/LiveListClient';
-import type { LiveRankingParams, LiveRecentParams, LiveSearchParams } from '@shared/types';
+import type {
+  LiveCommentWindowMessage,
+  LiveRankingParams,
+  LiveRecentParams,
+  LiveSearchParams
+} from '@shared/types';
 import { getConfigStore } from '../config/ConfigStore';
 import {
   createLogger,
@@ -1195,6 +1201,21 @@ export function registerIpcHandlers(
   });
   ipcMain.handle(IpcChannel.LIVE_FETCH_COMMENTS_AROUND, (e, vposMs: number) =>
     LivePlayerManager.get().fetchCommentsAround(e.sender.id, Number(vposMs) || 0)
+  );
+  // 生放送のコメントウィンドウ (フロート)
+  ipcMain.handle(IpcChannel.LIVE_COMMENT_WINDOW_OPEN, (e) => LiveCommentWindowManager.get().open(e.sender));
+  ipcMain.handle(IpcChannel.LIVE_COMMENT_WINDOW_CLOSE, (e) => LiveCommentWindowManager.get().close(e.sender.id));
+  ipcMain.on(IpcChannel.LIVE_COMMENT_WINDOW_PUSH, (e, msg: LiveCommentWindowMessage) =>
+    LiveCommentWindowManager.get().push(e.sender.id, msg)
+  );
+  ipcMain.on(IpcChannel.LIVE_COMMENT_WINDOW_READY, (e) =>
+    LiveCommentWindowManager.get().fromCommentWindow(e.sender.id, { type: 'ready' })
+  );
+  ipcMain.on(IpcChannel.LIVE_COMMENT_WINDOW_SEEK, (e, vposMs: number) =>
+    LiveCommentWindowManager.get().fromCommentWindow(e.sender.id, { type: 'seek', vposMs: Number(vposMs) || 0 })
+  );
+  ipcMain.on(IpcChannel.LIVE_COMMENT_WINDOW_SET_ON_TOP, (e, onTop: boolean) =>
+    LiveCommentWindowManager.get().setOnTop(e.sender.id, Boolean(onTop))
   );
   ipcMain.handle(IpcChannel.LIVE_CHANGE_QUALITY, (e, quality: string) => {
     LivePlayerManager.get().changeQuality(e.sender.id, String(quality));

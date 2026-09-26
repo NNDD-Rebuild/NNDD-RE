@@ -1,15 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { observeElementRect, useVirtualizer } from '@tanstack/react-virtual';
-import type { LiveNotice, NNDDREComment } from '@shared/types';
+import type { LiveListItem } from '@shared/types';
 
-/** コメントリストの1行 (コメント or 運営コメント・通知等)。vposMs 昇順で並べる */
-export interface LiveListItem {
-  key: string;
-  /** 番組の vpos 基準時刻からの経過 (ms) */
-  vposMs: number;
-  comment?: NNDDREComment;
-  notice?: LiveNotice;
-}
+export type { LiveListItem };
 
 const ROW_HEIGHT = 22;
 

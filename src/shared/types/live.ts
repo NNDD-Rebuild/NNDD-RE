@@ -145,3 +145,35 @@ export interface LiveRankingParams {
   /** closed のときの対象日 (YYYYMMDD)。省略時は当日 */
   date?: string;
 }
+
+/** コメントリストの1行 (コメント or 運営コメント・通知等)。vposMs 昇順で並べる */
+export interface LiveListItem {
+  key: string;
+  /** 番組の vpos 基準時刻からの経過 (ms) */
+  vposMs: number;
+  comment?: NNDDREComment;
+  notice?: LiveNotice;
+}
+
+/** 生放送プレイヤー → (main 経由) → コメントウィンドウ */
+export type LiveCommentWindowMessage =
+  /** 開いた直後の全件。以降は append で差分を送る */
+  | {
+      type: 'snapshot';
+      items: LiveListItem[];
+      program: LiveProgramInfo | null;
+      statistics: LiveStatistics | null;
+      canSeek: boolean;
+    }
+  | { type: 'append'; items: LiveListItem[] }
+  /** 今映っている位置 (番組の vpos 基準、ms) */
+  | { type: 'position'; vposMs: number }
+  | { type: 'statistics'; statistics: LiveStatistics };
+
+/** コメントウィンドウ・main → 生放送プレイヤー */
+export type LiveCommentWindowEvent =
+  /** コメントウィンドウの準備完了 (snapshot を送ってほしい) */
+  | { type: 'ready' }
+  | { type: 'seek'; vposMs: number }
+  /** コメントウィンドウが閉じられた */
+  | { type: 'closed' };

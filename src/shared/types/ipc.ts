@@ -207,6 +207,17 @@ export const IpcChannel = {
   LIVE_RECENT: 'nndd:live:recent',
   /** タイムシフト予約一覧 → LiveProgramListResult */
   LIVE_LIST_TIMESHIFT_RESERVATIONS: 'nndd:live:listTimeshiftReservations',
+  /** 生放送のコメントウィンドウ (フロート) を開く / 閉じる (プレイヤーから invoke) */
+  LIVE_COMMENT_WINDOW_OPEN: 'nndd:live:commentWindow:open',
+  LIVE_COMMENT_WINDOW_CLOSE: 'nndd:live:commentWindow:close',
+  /** プレイヤー → コメントウィンドウ (LiveCommentWindowMessage、main が中継) */
+  LIVE_COMMENT_WINDOW_PUSH: 'nndd:live:commentWindow:push',
+  /** main → プレイヤー (LiveCommentWindowEvent) */
+  LIVE_COMMENT_WINDOW_EVENT: 'nndd:live:commentWindow:event',
+  /** コメントウィンドウ → main: 準備完了 / シーク要求 (vposMs) / 最前面表示の切替 (boolean) */
+  LIVE_COMMENT_WINDOW_READY: 'nndd:live:commentWindow:ready',
+  LIVE_COMMENT_WINDOW_SEEK: 'nndd:live:commentWindow:seek',
+  LIVE_COMMENT_WINDOW_SET_ON_TOP: 'nndd:live:commentWindow:setOnTop',
   /** main → 生放送プレイヤーへのイベント通知 (LiveEvent) */
   LIVE_EVENT: 'nndd:live:event',
 
