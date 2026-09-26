@@ -189,7 +189,9 @@ async function runApiProbe(urls: string[], p: (line: string) => void): Promise<v
       try {
         p(`[probe] shape: ${truncate(JSON.stringify(describeShape(JSON.parse(text))), 4000)}`);
       } catch {
-        // HTML の場合は embedded-data (data-props) を解析する
+        // HTML の場合はページが読み込むスクリプト (API の呼び出し方の調査用) と embedded-data を出す
+        const scripts = [...new Set(text.match(/https:\/\/nicolive\.cdn\.nimg\.jp\/relive\/[^"']+\.js/g) ?? [])];
+        if (scripts.length > 0) p(`[probe] scripts: ${scripts.join(' , ')}`);
         const m = text.match(/id="embedded-data"\s+data-props="([^"]*)"/);
         if (m) {
           // site はサイト内リンク集で巨大なので除く
