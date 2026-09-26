@@ -1,4 +1,4 @@
-import type { LiveProgramInfo } from '@shared/types';
+import type { LiveProgramInfo, LiveSupplier } from '@shared/types';
 import { NicoContext } from '../NicoContext';
 
 export const LIVE_ORIGIN = 'https://live.nicovideo.jp';
@@ -48,6 +48,19 @@ export function normalizeLiveId(input: string): string | null {
   return m ? m[1] : null;
 }
 
+/** embedded-data の program.supplier → LiveSupplier */
+function toSupplier(s: any): LiveSupplier | null {
+  if (!s || typeof s !== 'object' || !s.name) return null;
+  return {
+    type: String(s.supplierType ?? ''),
+    id: String(s.programProviderId ?? ''),
+    name: String(s.name),
+    iconUrl: String(s.icons?.uri150x150 ?? s.icons?.uri50x50 ?? ''),
+    pageUrl: String(s.pageUrl ?? ''),
+    level: typeof s.level === 'number' ? s.level : undefined
+  };
+}
+
 /** 秒 (unix) → ms。値が無ければ 0 */
 const secToMs = (v: unknown): number => (typeof v === 'number' ? v * 1000 : 0);
 
@@ -81,7 +94,16 @@ export async function fetchLiveWatchPage(id: string): Promise<LiveWatchPageInfo>
         ''
     ),
     chasePlayEnabled: Boolean(program.isChasePlayEnabled),
-    commentCount: typeof program.statistics?.commentCount === 'number' ? program.statistics.commentCount : 0
+    commentCount: typeof program.statistics?.commentCount === 'number' ? program.statistics.commentCount : 0,
+    description: String(program.description ?? ''),
+    tags: Array.isArray(program.tag?.list)
+      ? program.tag.list.map((t: any) => String(t?.text ?? '')).filter(Boolean)
+      : [],
+    supplier: toSupplier(program.supplier),
+    timeshiftReservationCount:
+      typeof program.statistics?.timeshiftReservationCount === 'number'
+        ? program.statistics.timeshiftReservationCount
+        : undefined
   };
 
   return {

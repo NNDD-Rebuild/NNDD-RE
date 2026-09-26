@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import type {
   LiveCommentRange,
@@ -6,16 +6,26 @@ import type {
   LiveCommentWindowMessage,
   LiveConnectionState,
   LiveEvent,
+  LiveListItem,
   LiveNotice,
   LiveProgramInfo,
   LiveStartResult,
   LiveStatistics,
+  NgListItem,
   NNDDREComment
 } from '@shared/types';
 import { CommentPosition, IpcChannel } from '@shared/types';
 import { CommentRenderer, DEFAULT_RENDER_CONFIG } from './components/player/CommentRenderer';
 import { useConfig } from './hooks/useConfig';
-import { LiveCommentList, type LiveListItem } from './components/live/LiveCommentList';
+import { VideoController } from './components/player/VideoController';
+import { CommentList } from './components/player/CommentList';
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
+import {
+  descriptionLinkUrl,
+  openDescriptionUrl,
+  sanitizeDescription
+} from './components/player/VideoInfoView';
+import { ContextMenuPopup, MenuItem } from './components/common/VideoCard';
 
 /** 生放送プレイヤー → コメントウィンドウ (main が中継) */
 function pushToCommentWindow(msg: LiveCommentWindowMessage): void {
@@ -34,9 +44,14 @@ const AROUND_NEED_BEFORE_MS = 30_000;
 const AROUND_NEED_AFTER_MS = 60_000;
 /**
  * 届いた時点で表示位置を過ぎているコメントを「今」に寄せる許容幅 (ms)。
- * これより古いもの (接続直後に読む直前区間等) は元の位置のまま = 画面には流さない。
+ * これより古いものは元の位置のまま = 画面には流さない。
  */
 const LATE_COMMENT_WINDOW_MS = 10_000;
+/**
+ * 「今」に寄せる対象は、投稿からこの時間 (ms) 以内に届いたコメント (= リアルタイムの生コメント) だけ。
+ * 接続直後にコメントサーバーからまとめて届く直前区間の分まで寄せると、開いた瞬間に一斉に流れてしまう
+ */
+const REALTIME_ARRIVAL_MS = 5_000;
 /** niconicomments の流れコメントは vpos の 1 秒前に右端から出現する */
 const NAKA_LEAD_MS = 1000;
 /** 過去コメントと生コメントの重複判定キー (vpos は描画用に調整する前の値) */
@@ -55,6 +70,10 @@ function alignNaka(c: NNDDREComment): NNDDREComment {
 
 /** タイムシフト予約・視聴開始が必要なときに main から返るエラーコード (LiveWatchPage.ts) */
 const TIMESHIFT_ACTIVATION_REQUIRED = '[TIMESHIFT_ACTIVATION_REQUIRED]';
+/** サイドパネル幅 (通常プレイヤー PlayerApp と同じ範囲) */
+const SIDEBAR_MIN = 180;
+const SIDEBAR_MAX = 700;
+const SIDEBAR_DEFAULT = 320;
 
 const QUALITY_LABELS: Record<string, string> = {
   abr: '自動',
@@ -103,6 +122,8 @@ export default function LivePlayerApp(): JSX.Element {
   const rendererRef = useRef<CommentRenderer | null>(null);
   const programRef = useRef<LiveProgramInfo | null>(null);
   const noticeSeq = useRef(0);
+  /** 生コメントの投稿→受信の最小の遅れ (ms)。PC とサーバーの時計のずれの推定に使う */
+  const minArrivalDelayRef = useRef(Infinity);
   const rootRef = useRef<HTMLDivElement>(null);
   const controlsHideTimer = useRef<number | null>(null);
   const isTimeshiftRef = useRef(false);
@@ -165,16 +186,20 @@ export default function LivePlayerApp(): JSX.Element {
   const [statistics, setStatistics] = useState<LiveStatistics | null>(null);
   const [operatorComment, setOperatorComment] = useState<LiveNotice | null>(null);
   const [listItems, setListItems] = useState<LiveListItem[]>([]);
-  /** 再生位置までに含まれるリスト行の件数 */
-  const [listIndex, setListIndex] = useState(0);
+  /** 今映っている位置 (番組の vpos 基準、ms)。コメントリストの現在位置表示に使う */
+  const [positionMs, setPositionMs] = useState(0);
+  /** video 要素 (VideoController に渡す) */
+  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
+  const [ngList, setNgList] = useState<NgListItem[]>([]);
+  const [sideTab, setSideTab] = useState<'info' | 'comments' | 'notices'>('comments');
+  /** サイドパネルの幅 (通常プレイヤーと共通の設定 player.sidebarWidth) */
+  const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT);
+  const [isSidebarDragging, setIsSidebarDragging] = useState(false);
   const [quality, setQuality] = useState('abr');
   const [qualities, setQualities] = useState<string[]>([]);
   const [streamUri, setStreamUri] = useState('');
-  const [paused, setPaused] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [showComments, setShowComments] = useState(true);
-  const [volume, setVolume] = useConfig<number>('player.volume', 1);
-  const [muted, setMuted] = useState(false);
   /** コメントリストの表示場所 (side: 動画の横 / window: 別ウィンドウ)。初期値は設定から */
   const [defaultCommentDisplay, , commentDisplayLoading] = useConfig<'side' | 'window'>(
     'live.commentListDisplay',
@@ -189,11 +214,7 @@ export default function LivePlayerApp(): JSX.Element {
   /** LIVE_START のやり直し用 (タイムシフト視聴開始後に再接続する) */
   const [startSeq, setStartSeq] = useState(0);
   const [archiveLoading, setArchiveLoading] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
   const [chasePlay, setChasePlay] = useState(false);
-  /** 追っかけ再生時のシーク可能範囲 (秒) */
-  const [seekRange, setSeekRange] = useState<{ start: number; end: number } | null>(null);
 
   /**
    * コメントリストへ行を追加する。過去コメントと生コメントは同じキーになるので重複は自然に除かれる。
@@ -238,10 +259,18 @@ export default function LivePlayerApp(): JSX.Element {
           // 「既に流れ始めていたはずの位置」= 画面の途中から出現する。
           // 既に出現済みのはずのものは、出現時刻 (vpos - 1秒) が今になるよう寄せて右端から流す
           const nowMs = currentVposRef.current() * 10;
+          const arrivedAtMs = Date.now();
+          // 投稿→受信の遅れ。PC の時計がずれていても判定できるよう、これまでの最小の遅れを基準にする
+          for (const c of ev.comments) {
+            if (c.date > 0) minArrivalDelayRef.current = Math.min(minArrivalDelayRef.current, arrivedAtMs - c.date * 1000);
+          }
           const adjusted = ev.comments.map(alignNaka).map((c) => {
+            // 投稿から時間が経って届いたもの (直前区間のまとめ読み等) は元の時刻のまま
+            const realtime =
+              c.date > 0 && arrivedAtMs - c.date * 1000 - minArrivalDelayRef.current <= REALTIME_ARRIVAL_MS;
             // 出現時刻が今になる vpos (流れコメントは 1 秒前に出現するので +1 秒)
             const appearMs = nowMs + (c.positionCommand === CommentPosition.NAKA ? NAKA_LEAD_MS : 0);
-            return c.vposMs < appearMs && appearMs - c.vposMs <= LATE_COMMENT_WINDOW_MS
+            return realtime && c.vposMs < appearMs && appearMs - c.vposMs <= LATE_COMMENT_WINDOW_MS
               ? { ...c, vposMs: Math.ceil(appearMs) }
               : c;
           });
@@ -391,14 +420,6 @@ export default function LivePlayerApp(): JSX.Element {
     };
   }, [streamUri]);
 
-  // ---- 音量 ----
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    video.volume = Math.max(0, Math.min(1, volume));
-    video.muted = muted;
-  }, [volume, muted]);
-
   // ---- コメント描画 ----
   useEffect(() => {
     const container = overlayRef.current;
@@ -462,10 +483,6 @@ export default function LivePlayerApp(): JSX.Element {
   useEffect(() => {
     const t = window.setInterval(() => {
       setNow(Date.now());
-      const v = videoRef.current;
-      if (chasePlayRef.current && v && v.seekable.length > 0) {
-        setSeekRange({ start: v.seekable.start(0), end: v.seekable.end(v.seekable.length - 1) });
-      }
     }, 1000);
     return () => window.clearInterval(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -518,17 +535,9 @@ export default function LivePlayerApp(): JSX.Element {
   // ---- コメントリストの再生位置 ----
   useEffect(() => {
     const t = window.setInterval(() => {
-      const list = listItemsRef.current;
       const nowMs = currentVposRef.current() * 10;
-      // vposMs <= nowMs を満たす件数を二分探索
-      let lo = 0;
-      let hi = list.length;
-      while (lo < hi) {
-        const mid = (lo + hi) >> 1;
-        if (list[mid].vposMs <= nowMs) lo = mid + 1;
-        else hi = mid;
-      }
-      setListIndex(lo);
+      // 小さな変化では再描画しない (コメントリストの現在位置は 0.5 秒単位で十分)
+      setPositionMs((prev) => (Math.abs(prev - nowMs) >= 400 ? nowMs : prev));
       if (commentWindowOpenRef.current) pushToCommentWindow({ type: 'position', vposMs: nowMs });
     }, 500);
     return () => window.clearInterval(t);
@@ -597,6 +606,89 @@ export default function LivePlayerApp(): JSX.Element {
     if (video?.paused) void video.play().catch(() => {});
   };
 
+  // ---- テーマ・NGリスト・サイドパネル幅 (通常プレイヤーと共通の設定) ----
+  useEffect(() => {
+    window.nndd
+      .invoke<'dark' | 'light'>(IpcChannel.CONFIG_GET, 'ui.theme')
+      .then((v) => {
+        if (v === 'light') document.documentElement.classList.add('light');
+      })
+      .catch(() => {});
+    window.nndd
+      .invoke<NgListItem[]>(IpcChannel.NG_LIST_COMMENT)
+      .then(setNgList)
+      .catch(() => {});
+    window.nndd
+      .invoke<number>(IpcChannel.CONFIG_GET, 'player.sidebarWidth')
+      .then((w) => {
+        if (w && w > 0) setSidebarWidth(w);
+      })
+      .catch(() => {});
+  }, []);
+
+  // NG リストは画面のコメント描画にも反映する
+  useEffect(() => {
+    rendererRef.current?.setConfig({ ngList });
+  }, [ngList]);
+
+  const handleAddNg = useCallback(async (item: NgListItem): Promise<void> => {
+    await window.nndd.invoke(IpcChannel.NG_ADD_COMMENT, item);
+    setNgList((prev) =>
+      prev.some((x) => x.type === item.type && x.value === item.value) ? prev : [...prev, item]
+    );
+  }, []);
+
+  const handleRemoveNg = useCallback(async (item: NgListItem): Promise<void> => {
+    await window.nndd.invoke(IpcChannel.NG_REMOVE_COMMENT, item);
+    setNgList((prev) => prev.filter((x) => !(x.type === item.type && x.value === item.value)));
+  }, []);
+
+  /** サイドパネル境界のドラッグで幅を変える (PlayerApp と同じ挙動、幅は設定に保存) */
+  const onSidebarDividerMouseDown = (e: React.MouseEvent): void => {
+    const startX = e.clientX;
+    const startW = sidebarWidth;
+    setIsSidebarDragging(true);
+    e.preventDefault();
+    const widthAt = (x: number): number => Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, startW + (startX - x)));
+    const onMove = (ev: MouseEvent): void => setSidebarWidth(widthAt(ev.clientX));
+    const onUp = (ev: MouseEvent): void => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      setIsSidebarDragging(false);
+      void window.nndd
+        .invoke(IpcChannel.CONFIG_SET, 'player.sidebarWidth', widthAt(ev.clientX))
+        .catch(() => {});
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  };
+
+  const canSeek = isTimeshift || chasePlay;
+
+  useKeyboardShortcuts({
+    togglePlay,
+    toggleMute: () => {
+      const v = videoRef.current;
+      if (v) v.muted = !v.muted;
+    },
+    toggleFullscreen: () => toggleFullscreen(),
+    toggleComments: () => setShowComments((v) => !v),
+    seek: canSeek
+      ? (delta) => {
+          const v = videoRef.current;
+          if (v) seekToVpos(currentVposRef.current() * 10 + delta * 1000);
+        }
+      : undefined,
+    volumeUp: () => {
+      const v = videoRef.current;
+      if (v) v.volume = Math.min(1, v.volume + 0.05);
+    },
+    volumeDown: () => {
+      const v = videoRef.current;
+      if (v) v.volume = Math.max(0, v.volume - 0.05);
+    }
+  });
+
   const changeQuality = (q: string): void => {
     setQuality(q);
     void window.nndd.invoke(IpcChannel.LIVE_CHANGE_QUALITY, q).catch(() => {});
@@ -620,205 +712,343 @@ export default function LivePlayerApp(): JSX.Element {
   };
 
   const elapsed = program && !isTimeshift ? formatElapsed(now - program.beginTimeMs) : '';
-  const stateColor =
-    state === 'watching' ? 'bg-red-600' : state === 'error' ? 'bg-yellow-700' : 'bg-neutral-600';
+  const stateLabel = state === 'watching' ? (isTimeshift ? 'タイムシフト' : 'LIVE') : STATE_LABELS[state];
+  const listComments = useMemo<NNDDREComment[]>(
+    () => listItems.flatMap((i) => (i.comment ? [i.comment] : [])),
+    [listItems]
+  );
+  const listNotices = useMemo(() => listItems.filter((i) => i.notice), [listItems]);
+  const showSideComments = commentDisplay !== 'window';
 
   return (
     <div
       ref={rootRef}
       onMouseMove={onPointerActivity}
-      className="flex flex-col h-screen bg-black text-white select-none"
+      className="flex h-screen bg-black text-nndd-text"
     >
-      {/* ヘッダー */}
+      {/* ドラッグ中のカーソルちらつき防止オーバーレイ */}
+      {isSidebarDragging && <div className="fixed inset-0 z-50 cursor-col-resize" />}
+
+      {/* 映像 + 操作バー */}
       <div
-        className={`${isFullscreen ? 'hidden' : 'flex'} items-center gap-3 px-3 py-1.5 bg-neutral-900 border-b border-neutral-800 text-sm`}
+        className={[
+          'flex-1 flex flex-col min-h-0 min-w-0 relative',
+          isFullscreen && !controlsVisible ? 'cursor-none' : ''
+        ].join(' ')}
       >
-        <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${stateColor}`}>
-          {state === 'watching' ? (isTimeshift ? 'タイムシフト' : 'LIVE') : STATE_LABELS[state]}
-        </span>
-        <div className="flex-1 min-w-0">
-          <div className="truncate font-bold" title={program?.title}>
-            {program?.title ?? programId}
-          </div>
-          {program?.supplierName && (
-            <div className="truncate text-xs text-neutral-400">{program.supplierName}</div>
+        <div className="flex-1 relative min-h-0" onDoubleClick={toggleFullscreen}>
+          <video
+            ref={(el) => {
+              (videoRef as React.MutableRefObject<HTMLVideoElement | null>).current = el;
+              setVideoEl(el);
+            }}
+            className="absolute inset-0 w-full h-full object-contain"
+          />
+          <div ref={overlayRef} className="absolute inset-0 pointer-events-none" />
+          {operatorComment && (
+            <div className="absolute top-0 inset-x-0 bg-black/70 text-white text-center text-sm py-1 px-2">
+              {operatorComment.link ? (
+                <a href={operatorComment.link} target="_blank" rel="noreferrer" className="underline">
+                  {operatorComment.text}
+                </a>
+              ) : (
+                operatorComment.text
+              )}
+            </div>
           )}
-        </div>
-        {elapsed && <span className="text-xs text-neutral-300 tabular-nums">{elapsed}</span>}
-        {statistics && (
-          <span className="text-xs text-neutral-300 tabular-nums">
-            来場 {statistics.viewers.toLocaleString()} / コメ {statistics.comments.toLocaleString()}
-          </span>
-        )}
-      </div>
-
-      <div className="flex flex-1 min-h-0">
-        {/* 映像 + コメント */}
-        <div className="relative flex flex-col flex-1 min-w-0">
-          <div className="relative flex-1 min-h-0 bg-black" onDoubleClick={toggleFullscreen}>
-            <video
-              ref={videoRef}
-              className="absolute inset-0 w-full h-full object-contain"
-              onPlay={() => setPaused(false)}
-              onPause={() => setPaused(true)}
-              onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
-              onDurationChange={(e) => setDuration(e.currentTarget.duration)}
-            />
-            <div ref={overlayRef} className="absolute inset-0 pointer-events-none" />
-            {operatorComment && (
-              <div className="absolute top-0 inset-x-0 bg-black/70 text-center text-sm py-1 px-2 pointer-events-auto">
-                {operatorComment.link ? (
-                  <a href={operatorComment.link} target="_blank" rel="noreferrer" className="underline">
-                    {operatorComment.text}
-                  </a>
-                ) : (
-                  operatorComment.text
-                )}
-              </div>
-            )}
-            {(state === 'error' || state === 'ended' || (!streamUri && state !== 'watching')) && (
-              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                <div className="bg-black/70 px-4 py-3 rounded text-sm text-center max-w-md pointer-events-auto">
-                  <div>{stateMessage || STATE_LABELS[state]}</div>
-                  {activationRequired && (
-                    <>
-                      <div className="mt-2 text-xs text-neutral-300">
-                        視聴を開始すると視聴期限のカウントが始まります (取り消せません)。
-                      </div>
-                      <button
-                        onClick={() => void activateTimeshift()}
-                        disabled={activating}
-                        className="mt-3 px-3 py-1 rounded bg-red-700 hover:bg-red-600 disabled:opacity-50"
-                      >
-                        {activating ? '処理中...' : 'タイムシフトを予約して視聴開始'}
-                      </button>
-                    </>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* コントロールバー (全画面中は映像に重ね、操作時のみ表示) */}
-          <div
-            className={[
-              'flex items-center gap-2 px-3 py-1.5 text-sm',
-              isFullscreen
-                ? `absolute bottom-0 inset-x-0 bg-black/70 transition-opacity ${controlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`
-                : 'bg-neutral-900 border-t border-neutral-800'
-            ].join(' ')}
-          >
-            <button onClick={togglePlay} className="w-8 hover:text-neutral-300" title="再生/一時停止">
-              {paused ? '▶' : '❚❚'}
-            </button>
-            {isTimeshift ? (
-              <>
-                <span className="text-xs tabular-nums text-neutral-300">
-                  {formatElapsed(currentTime * 1000)} / {formatElapsed((duration || 0) * 1000)}
-                </span>
-                <input
-                  type="range"
-                  min={0}
-                  max={duration || 0}
-                  step={1}
-                  value={currentTime}
-                  onChange={(e) => {
-                    const v = videoRef.current;
-                    if (v) v.currentTime = Number(e.target.value);
-                  }}
-                  className="flex-1 min-w-0"
-                />
-                {archiveLoading && <span className="text-xs text-neutral-400">コメント取得中…</span>}
-              </>
-            ) : (
-              <>
-                {chasePlay && seekRange && (
+          {(state === 'error' || state === 'ended' || (!streamUri && state !== 'watching')) && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="bg-black/70 text-white px-4 py-3 rounded text-sm text-center max-w-md pointer-events-auto">
+                <div>{stateMessage || STATE_LABELS[state]}</div>
+                {activationRequired && (
                   <>
-                    <input
-                      type="range"
-                      min={seekRange.start}
-                      max={seekRange.end}
-                      step={1}
-                      value={Math.min(Math.max(currentTime, seekRange.start), seekRange.end)}
-                      onChange={(e) => {
-                        const v = videoRef.current;
-                        if (v) v.currentTime = Number(e.target.value);
-                      }}
-                      className="flex-1 min-w-0"
-                      title="追っかけ再生"
-                    />
-                    <span className="text-xs tabular-nums text-neutral-300">
-                      {seekRange.end - currentTime > 5
-                        ? `-${formatElapsed((seekRange.end - currentTime) * 1000)}`
-                        : 'LIVE'}
-                    </span>
-                    {archiveLoading && <span className="text-xs text-neutral-400">コメント取得中…</span>}
+                    <div className="mt-2 text-xs text-neutral-300">
+                      視聴を開始すると視聴期限のカウントが始まります (取り消せません)。
+                    </div>
+                    <button
+                      onClick={() => void activateTimeshift()}
+                      disabled={activating}
+                      className="mt-3 px-3 py-1 rounded bg-nndd-accent text-white hover:opacity-80 disabled:opacity-50"
+                    >
+                      {activating ? '処理中...' : 'タイムシフトを予約して視聴開始'}
+                    </button>
                   </>
                 )}
-                <button
-                  onClick={seekToLive}
-                  className="px-2 py-0.5 rounded text-xs bg-red-700 hover:bg-red-600"
-                  title="最新の位置へ"
-                >
-                  最新
-                </button>
-              </>
-            )}
-            <button onClick={() => setMuted((m) => !m)} className="w-6" title="ミュート">
-              {muted || volume === 0 ? '🔇' : '🔊'}
-            </button>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.01}
-              value={volume}
-              onChange={(e) => void setVolume(Number(e.target.value))}
-              className="w-24"
-            />
-            {!isTimeshift && !(chasePlay && seekRange) && <div className="flex-1" />}
-            <label className="flex items-center gap-1 text-xs cursor-pointer">
-              <input
-                type="checkbox"
-                checked={showComments}
-                onChange={(e) => setShowComments(e.target.checked)}
-              />
-              コメント
-            </label>
-            {qualities.length > 0 && (
-              <select
-                value={quality}
-                onChange={(e) => changeQuality(e.target.value)}
-                className="bg-neutral-800 border border-neutral-700 rounded text-xs px-1 py-0.5"
-              >
-                {qualities.map((q) => (
-                  <option key={q} value={q}>
-                    {QUALITY_LABELS[q] ?? q}
-                  </option>
-                ))}
-              </select>
-            )}
-            <button
-              onClick={() => setCommentDisplay((d) => (d === 'window' ? 'side' : 'window'))}
-              className="px-1.5 py-0.5 rounded text-xs border border-neutral-700 hover:bg-neutral-800"
-              title="コメントリストを動画の横 / 別ウィンドウに切り替え"
-            >
-              {commentDisplay === 'window' ? 'コメ欄: 別窓' : 'コメ欄: 横'}
-            </button>
-            <button onClick={toggleFullscreen} className="w-6" title="全画面">
-              ⛶
-            </button>
-          </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* コメントリスト */}
-        <LiveCommentList
-          items={listItems}
-          currentIndex={listIndex}
-          onSeek={isTimeshift || chasePlay ? seekToVpos : undefined}
-          className={`${isFullscreen || commentDisplay === 'window' ? 'hidden' : ''} w-80 shrink-0 bg-neutral-950 border-l border-neutral-800`}
+        {/* 操作バー (全画面中は映像に重ね、操作時のみ表示) */}
+        <div
+          className={[
+            'transition-opacity duration-200',
+            isFullscreen ? 'absolute left-0 right-0 bottom-0 z-10' : 'static',
+            !isFullscreen || controlsVisible ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+          ].join(' ')}
+        >
+          <VideoController
+            video={videoEl}
+            showComments={showComments}
+            onToggleComments={() => setShowComments((v) => !v)}
+            onToggleFullscreen={toggleFullscreen}
+            availableQualities={qualities.map((q, i) => ({
+              id: q,
+              isAvailable: true,
+              qualityLevel: qualities.length - i
+            }))}
+            currentQualityId={quality}
+            onQualityChange={changeQuality}
+            formatQualityLabel={(q) => QUALITY_LABELS[q.id] ?? q.id}
+            live={isTimeshift ? undefined : { chasePlay, onSeekToLive: seekToLive }}
+            hideRateSelect={!isTimeshift}
+            hidePip
+            statusText={archiveLoading ? 'コメント取得中…' : undefined}
+            extraButtons={
+              <button
+                onClick={() => setCommentDisplay((d) => (d === 'window' ? 'side' : 'window'))}
+                className="px-2 py-0.5 bg-nndd-border hover:bg-nndd-accent rounded"
+                title="コメントリストをサイドパネル / 別ウィンドウに切り替え"
+              >
+                {commentDisplay === 'window' ? '💬 別窓' : '💬 横'}
+              </button>
+            }
+          />
+        </div>
+      </div>
+
+      {/* サイドパネル (全画面中は隠すだけで unmount しない) */}
+      <div className={isFullscreen ? 'hidden' : 'contents'}>
+        <div
+          className="w-1 shrink-0 bg-nndd-border hover:bg-nndd-accent/70 active:bg-nndd-accent cursor-col-resize transition-colors"
+          onMouseDown={onSidebarDividerMouseDown}
+          style={{ userSelect: 'none' }}
+          title="ドラッグでサイズ変更"
         />
+        <aside className="shrink-0 bg-nndd-bg overflow-hidden flex flex-col" style={{ width: sidebarWidth }}>
+          <div className="flex shrink-0 border-b border-nndd-border overflow-x-auto">
+            <TabButton label="番組情報" active={sideTab === 'info'} onClick={() => setSideTab('info')} />
+            {showSideComments && (
+              <TabButton
+                label={`コメントリスト${listComments.length > 0 ? ` (${listComments.length.toLocaleString()})` : ''}`}
+                active={sideTab === 'comments'}
+                onClick={() => setSideTab('comments')}
+              />
+            )}
+            {showSideComments && (
+              <TabButton
+                label={`お知らせ${listNotices.length > 0 ? ` (${listNotices.length.toLocaleString()})` : ''}`}
+                active={sideTab === 'notices'}
+                onClick={() => setSideTab('notices')}
+              />
+            )}
+          </div>
+          <div className="flex-1 min-h-0 overflow-hidden">
+            {sideTab === 'comments' && showSideComments ? (
+              <CommentList
+                comments={listComments}
+                ngList={ngList}
+                onSeek={canSeek ? (sec) => seekToVpos(sec * 1000) : undefined}
+                currentTimeMs={positionMs}
+                onAddNg={handleAddNg}
+                onRemoveNg={handleRemoveNg}
+              />
+            ) : sideTab === 'notices' && showSideComments ? (
+              <div className="h-full overflow-auto text-xs">
+                {listNotices.length === 0 ? (
+                  <div className="flex items-center justify-center h-full text-nndd-subtext text-sm">お知らせなし</div>
+                ) : (
+                  listNotices.map((n) => (
+                    <div key={n.key} className="flex gap-2 px-2 py-1 border-b border-nndd-border/30">
+                      <span className="shrink-0 font-mono text-nndd-subtext">{formatElapsed(n.vposMs)}</span>
+                      <span className="break-all">{n.notice!.text}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            ) : (
+              <ProgramInfo
+                program={program}
+                stateLabel={stateLabel}
+                elapsed={elapsed}
+                statistics={statistics}
+                programId={programId}
+              />
+            )}
+          </div>
+        </aside>
       </div>
     </div>
+  );
+}
+
+/** サイドパネル「番組情報」タブ (通常プレイヤーの「動画情報」タブと同じ構成) */
+function ProgramInfo({
+  program,
+  stateLabel,
+  elapsed,
+  statistics,
+  programId
+}: {
+  program: LiveProgramInfo | null;
+  stateLabel: string;
+  elapsed: string;
+  statistics: LiveStatistics | null;
+  programId: string;
+}): JSX.Element {
+  const [openVideoLinkInPlayer] = useConfig<boolean>('player.openVideoLinkInPlayer', false);
+  const [ownerCtxMenu, setOwnerCtxMenu] = useState<{ x: number; y: number } | null>(null);
+
+  if (!program) {
+    return <div className="p-4 text-nndd-subtext text-sm">番組情報を読み込み中…</div>;
+  }
+
+  const begin = program.beginTimeMs ? new Date(program.beginTimeMs) : null;
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  const liveUrl = `https://live.nicovideo.jp/watch/${program.programId || programId}`;
+  const supplier = program.supplier;
+  const isUser = supplier?.type === 'user' && Boolean(supplier.id);
+
+  const handleDescClick = (e: React.MouseEvent<HTMLDivElement>): void => {
+    const url = descriptionLinkUrl(e);
+    if (!url) return;
+    e.preventDefault();
+    // 生放送の番組リンクは生放送プレイヤーで開く
+    const lv = url.match(/live\d*\.nicovideo\.jp\/watch\/(lv\d+)/);
+    if (lv) void window.nndd.invoke(IpcChannel.LIVE_OPEN_PLAYER, lv[1]);
+    else openDescriptionUrl(url, openVideoLinkInPlayer);
+  };
+
+  return (
+    <div className="overflow-auto h-full p-3 text-sm text-nndd-text">
+      <h1 className="text-base font-bold mb-1">{program.title}</h1>
+      <div className="text-xs text-nndd-subtext mb-1">
+        <span className="px-1.5 py-0.5 mr-1 rounded bg-nndd-accent text-white font-bold">{stateLabel}</span>
+        {begin && `開始: ${begin.getFullYear()}/${pad(begin.getMonth() + 1)}/${pad(begin.getDate())} ${pad(begin.getHours())}:${pad(begin.getMinutes())}`}
+        {elapsed && ` ・ 経過 ${elapsed}`}
+        {statistics && ` ・ 来場 ${statistics.viewers.toLocaleString()} ・ コメ ${statistics.comments.toLocaleString()}`}
+        {program.timeshiftReservationCount !== undefined &&
+          ` ・ TS予約 ${program.timeshiftReservationCount.toLocaleString()}`}
+      </div>
+      <div className="text-xs mb-3">
+        <button
+          onClick={() => window.nndd.invoke(IpcChannel.SYS_OPEN_PATH, liveUrl)}
+          className="text-nndd-accent underline hover:opacity-80"
+          title={liveUrl}
+        >
+          {program.programId || programId} →ニコニコ生放送で見る
+        </button>
+      </div>
+
+      {supplier && (
+        <div className="flex items-center gap-2 mb-3">
+          {supplier.iconUrl && (
+            <img
+              src={supplier.iconUrl}
+              alt=""
+              className="w-8 h-8 rounded-full"
+              referrerPolicy="no-referrer"
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+              }}
+            />
+          )}
+          <button
+            onClick={() => {
+              if (isUser) {
+                void window.nndd.invoke(IpcChannel.NAV_FOLLOW_USER, {
+                  userId: supplier.id,
+                  nickname: supplier.name,
+                  iconUrl: supplier.iconUrl
+                });
+              } else if (supplier.pageUrl) {
+                void window.nndd.invoke(IpcChannel.SYS_OPEN_PATH, supplier.pageUrl);
+              }
+            }}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              if (supplier.pageUrl) setOwnerCtxMenu({ x: e.clientX, y: e.clientY });
+            }}
+            className="text-sm hover:text-nndd-accent hover:underline text-left"
+            title={
+              isUser
+                ? 'クリック: フォロー中タブでこの放送者の動画を表示 (右クリックでメニュー)'
+                : 'クリック: ページを開く'
+            }
+          >
+            {supplier.name}
+          </button>
+          {supplier.level !== undefined && (
+            <span className="text-xs text-nndd-subtext">Lv.{supplier.level}</span>
+          )}
+          {ownerCtxMenu && (
+            <ContextMenuPopup x={ownerCtxMenu.x} y={ownerCtxMenu.y} onClose={() => setOwnerCtxMenu(null)}>
+              <MenuItem
+                onClick={() => {
+                  void window.nndd.invoke(IpcChannel.SYS_OPEN_PATH, supplier.pageUrl);
+                  setOwnerCtxMenu(null);
+                }}
+              >
+                🌐 {isUser ? 'ユーザーページを開く' : 'ページを開く'}
+              </MenuItem>
+            </ContextMenuPopup>
+          )}
+        </div>
+      )}
+
+      {program.tags.length > 0 && (
+        <div className="mb-3">
+          <div className="text-xs text-nndd-subtext mb-1">タグ (ダブルクリックで生放送を検索)</div>
+          <div className="flex flex-wrap gap-1">
+            {program.tags.map((t) => (
+              // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
+              <span
+                key={t}
+                className="px-2 py-0.5 bg-nndd-border rounded text-xs cursor-pointer hover:bg-nndd-accent hover:text-white transition-colors"
+                onDoubleClick={() => window.nndd.invoke(IpcChannel.NAV_LIVE_SEARCH, t)}
+              >
+                {t}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {program.description && (
+        <div className="mt-2">
+          <div className="text-xs text-nndd-subtext mb-1">説明</div>
+          {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
+          <div
+            className="text-sm leading-relaxed break-words whitespace-pre-wrap"
+            dangerouslySetInnerHTML={{ __html: sanitizeDescription(program.description) }}
+            onClick={handleDescClick}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TabButton({
+  label,
+  active,
+  onClick
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+}): JSX.Element {
+  return (
+    <button
+      onClick={onClick}
+      className={[
+        'shrink-0 text-xs py-1.5 px-3 border-b-2 transition-colors whitespace-nowrap',
+        active
+          ? 'border-nndd-accent text-nndd-text font-bold'
+          : 'border-transparent text-nndd-subtext hover:text-nndd-text'
+      ].join(' ')}
+    >
+      {label}
+    </button>
   );
 }

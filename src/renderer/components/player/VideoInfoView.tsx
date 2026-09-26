@@ -575,27 +575,10 @@ function InfoContent({ watch, ichibaHtmlPath }: { watch: WatchPageInfo | null; i
   }
 
   const handleDescClick = (e: React.MouseEvent<HTMLDivElement>): void => {
-    const target = e.target as HTMLElement;
-    const url = target.dataset.url || target.closest('[data-url]')?.getAttribute('data-url');
+    const url = descriptionLinkUrl(e);
     if (url) {
       e.preventDefault();
-      // mylist URL → アプリ内マイリストタブで開く
-      const mylistMatch =
-        url.match(/nicovideo\.jp\/my\/mylist\/(\d+)/) ??
-        url.match(/nicovideo\.jp\/mylist\/(\d+)/);
-      const seriesMatch = url.match(/nicovideo\.jp\/series\/(\d+)/);
-      const videoMatch = openVideoLinkInPlayer
-        ? url.match(/nicovideo\.jp\/watch\/((?:sm|nm|so|ss)\d+)/)
-        : null;
-      if (mylistMatch) {
-        window.nndd.invoke(IpcChannel.NAV_MYLIST, mylistMatch[1]);
-      } else if (seriesMatch) {
-        window.nndd.invoke(IpcChannel.NAV_SERIES, seriesMatch[1]);
-      } else if (videoMatch) {
-        window.nndd.invoke(window.nndd.channels.VIDEO_OPEN_PLAYER, { videoId: videoMatch[1] });
-      } else {
-        window.nndd.invoke(window.nndd.channels.SYS_OPEN_PATH, url);
-      }
+      openDescriptionUrl(url, openVideoLinkInPlayer);
     }
   };
 
@@ -724,9 +707,38 @@ function InfoContent({ watch, ichibaHtmlPath }: { watch: WatchPageInfo | null; i
   );
 }
 
+/** 説明文 (sanitizeDescription 済み) のクリック位置からリンク URL を取り出す */
+export function descriptionLinkUrl(e: React.MouseEvent<HTMLElement>): string | null {
+  const target = e.target as HTMLElement;
+  return target.dataset.url || target.closest('[data-url]')?.getAttribute('data-url') || null;
+}
+
+/**
+ * 説明文中のリンクを開く。マイリスト・シリーズはアプリ内のタブ、
+ * 動画は設定 player.openVideoLinkInPlayer が ON ならプレイヤー、それ以外は外部ブラウザで開く
+ */
+export function openDescriptionUrl(url: string, openVideoLinkInPlayer: boolean): void {
+  const mylistMatch =
+    url.match(/nicovideo\.jp\/my\/mylist\/(\d+)/) ??
+    url.match(/nicovideo\.jp\/mylist\/(\d+)/);
+  const seriesMatch = url.match(/nicovideo\.jp\/series\/(\d+)/);
+  const videoMatch = openVideoLinkInPlayer
+    ? url.match(/nicovideo\.jp\/watch\/((?:sm|nm|so|ss)\d+)/)
+    : null;
+  if (mylistMatch) {
+    window.nndd.invoke(IpcChannel.NAV_MYLIST, mylistMatch[1]);
+  } else if (seriesMatch) {
+    window.nndd.invoke(IpcChannel.NAV_SERIES, seriesMatch[1]);
+  } else if (videoMatch) {
+    window.nndd.invoke(window.nndd.channels.VIDEO_OPEN_PLAYER, { videoId: videoMatch[1] });
+  } else {
+    window.nndd.invoke(window.nndd.channels.SYS_OPEN_PATH, url);
+  }
+}
+
 const LINK_CLASS = 'style="color:#e94e1b;text-decoration:underline;cursor:pointer;pointer-events:auto"';
 
-function sanitizeDescription(html: string): string {
+export function sanitizeDescription(html: string): string {
   // 1. 危険タグ除去
   let s = html
     .replace(/<script[\s\S]*?<\/script>/gi, '')
