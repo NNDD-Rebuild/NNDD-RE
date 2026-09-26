@@ -95,6 +95,8 @@ export default function LivePlayerApp(): JSX.Element {
   const programRef = useRef<LiveProgramInfo | null>(null);
   const autoScrollRef = useRef(true);
   const rowSeq = useRef(0);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const controlsHideTimer = useRef<number | null>(null);
   const isTimeshiftRef = useRef(false);
   /** タイムシフトの過去コメント (vpos 昇順) */
   const archiveRef = useRef<NNDDREComment[]>([]);
@@ -133,6 +135,8 @@ export default function LivePlayerApp(): JSX.Element {
   const [showComments, setShowComments] = useState(true);
   const [volume, setVolume] = useConfig<number>('player.volume', 1);
   const [muted, setMuted] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [controlsVisible, setControlsVisible] = useState(true);
   const [isTimeshift, setIsTimeshift] = useState(false);
   const [activationRequired, setActivationRequired] = useState(false);
   const [activating, setActivating] = useState(false);
@@ -346,6 +350,21 @@ export default function LivePlayerApp(): JSX.Element {
     rendererRef.current?.setConfig({ enabled: showComments });
   }, [showComments]);
 
+  // ---- 全画面状態の追跡 ----
+  useEffect(() => {
+    const onChange = (): void => {
+      const full = Boolean(document.fullscreenElement);
+      setIsFullscreen(full);
+      setControlsVisible(true);
+      if (!full && controlsHideTimer.current !== null) {
+        window.clearTimeout(controlsHideTimer.current);
+        controlsHideTimer.current = null;
+      }
+    };
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
   // ---- 経過時間表示 ----
   useEffect(() => {
     const t = window.setInterval(() => {
@@ -412,11 +431,21 @@ export default function LivePlayerApp(): JSX.Element {
     void window.nndd.invoke(IpcChannel.LIVE_CHANGE_QUALITY, q).catch(() => {});
   };
 
+  /**
+   * 全画面はウィンドウ全体 (ルート要素) に対して行い、ヘッダー・コメントリストを隠す。
+   * 映像部分だけを全画面にすると、解除後にレイアウトが崩れて映像しか残らないことがあるため
+   */
   const toggleFullscreen = (): void => {
-    const el = videoRef.current?.parentElement;
-    if (!el) return;
-    if (document.fullscreenElement) void document.exitFullscreen();
-    else void el.requestFullscreen();
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+    else void rootRef.current?.requestFullscreen().catch(() => {});
+  };
+
+  /** 全画面中、マウス操作があったときだけ操作バーを表示する */
+  const onPointerActivity = (): void => {
+    if (!isFullscreen) return;
+    setControlsVisible(true);
+    if (controlsHideTimer.current !== null) window.clearTimeout(controlsHideTimer.current);
+    controlsHideTimer.current = window.setTimeout(() => setControlsVisible(false), 3000);
   };
 
   const elapsed = program && !isTimeshift ? formatElapsed(now - program.beginTimeMs) : '';
@@ -424,9 +453,15 @@ export default function LivePlayerApp(): JSX.Element {
     state === 'watching' ? 'bg-red-600' : state === 'error' ? 'bg-yellow-700' : 'bg-neutral-600';
 
   return (
-    <div className="flex flex-col h-screen bg-black text-white select-none">
+    <div
+      ref={rootRef}
+      onMouseMove={onPointerActivity}
+      className="flex flex-col h-screen bg-black text-white select-none"
+    >
       {/* ヘッダー */}
-      <div className="flex items-center gap-3 px-3 py-1.5 bg-neutral-900 border-b border-neutral-800 text-sm">
+      <div
+        className={`${isFullscreen ? 'hidden' : 'flex'} items-center gap-3 px-3 py-1.5 bg-neutral-900 border-b border-neutral-800 text-sm`}
+      >
         <span className={`px-1.5 py-0.5 rounded text-xs font-bold ${stateColor}`}>
           {state === 'watching' ? (isTimeshift ? 'タイムシフト' : 'LIVE') : STATE_LABELS[state]}
         </span>
@@ -448,7 +483,7 @@ export default function LivePlayerApp(): JSX.Element {
 
       <div className="flex flex-1 min-h-0">
         {/* 映像 + コメント */}
-        <div className="flex flex-col flex-1 min-w-0">
+        <div className="relative flex flex-col flex-1 min-w-0">
           <div className="relative flex-1 min-h-0 bg-black" onDoubleClick={toggleFullscreen}>
             <video
               ref={videoRef}
@@ -494,8 +529,15 @@ export default function LivePlayerApp(): JSX.Element {
             )}
           </div>
 
-          {/* コントロールバー */}
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-neutral-900 border-t border-neutral-800 text-sm">
+          {/* コントロールバー (全画面中は映像に重ね、操作時のみ表示) */}
+          <div
+            className={[
+              'flex items-center gap-2 px-3 py-1.5 text-sm',
+              isFullscreen
+                ? `absolute bottom-0 inset-x-0 bg-black/70 transition-opacity ${controlsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'}`
+                : 'bg-neutral-900 border-t border-neutral-800'
+            ].join(' ')}
+          >
             <button onClick={togglePlay} className="w-8 hover:text-neutral-300" title="再生/一時停止">
               {paused ? '▶' : '❚❚'}
             </button>
@@ -571,7 +613,7 @@ export default function LivePlayerApp(): JSX.Element {
         <div
           ref={listRef}
           onScroll={onListScroll}
-          className="w-80 shrink-0 overflow-y-auto bg-neutral-950 border-l border-neutral-800 text-xs select-text"
+          className={`${isFullscreen ? 'hidden' : ''} w-80 shrink-0 overflow-y-auto bg-neutral-950 border-l border-neutral-800 text-xs select-text`}
         >
           {rows.map((r) =>
             r.kind === 'comment' ? (
