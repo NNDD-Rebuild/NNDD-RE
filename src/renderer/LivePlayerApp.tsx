@@ -200,7 +200,7 @@ export default function LivePlayerApp(): JSX.Element {
   const [streamUri, setStreamUri] = useState('');
   const [now, setNow] = useState(Date.now());
   const [showComments, setShowComments] = useState(true);
-  /** コメントリストの表示場所 (side: 動画の横 / window: 別ウィンドウ)。初期値は設定から */
+  /** コメントリストの表示方式 (side: タブ表示 / window: 浮動ウィンドウ)。初期値は設定から */
   const [defaultCommentDisplay, , commentDisplayLoading] = useConfig<'side' | 'window'>(
     'live.commentListDisplay',
     'side'
@@ -808,9 +808,9 @@ export default function LivePlayerApp(): JSX.Element {
               <button
                 onClick={() => setCommentDisplay((d) => (d === 'window' ? 'side' : 'window'))}
                 className="px-2 py-0.5 bg-nndd-border hover:bg-nndd-accent rounded"
-                title="コメントリストをサイドパネル / 別ウィンドウに切り替え"
+                title="コメントリストの表示方式 (タブ表示 / 浮動ウィンドウ) を切り替え"
               >
-                {commentDisplay === 'window' ? '💬 別窓' : '💬 横'}
+                {commentDisplay === 'window' ? '💬 浮動' : '💬 タブ'}
               </button>
             }
           />

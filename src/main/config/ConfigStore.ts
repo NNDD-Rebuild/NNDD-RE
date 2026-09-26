@@ -329,7 +329,7 @@ export interface NnddConfig {
   live: {
     /** 別の番組を開くとき、新しいウィンドウで開くか (false なら既存の生放送ウィンドウで切り替える) */
     allowMultipleWindows: boolean;
-    /** コメントリストの表示場所 (side: 動画の横 / window: 別ウィンドウ) */
+    /** コメントリストの表示方式 (side: タブ表示 / window: 浮動ウィンドウ) */
     commentListDisplay: 'side' | 'window';
     /** コメントウィンドウを最前面に表示するか */
     commentWindowOnTop: boolean;

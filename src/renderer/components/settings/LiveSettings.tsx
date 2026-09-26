@@ -38,28 +38,33 @@ export function LiveSettings(): JSX.Element {
       <div className="mb-5">
         <div className="text-sm font-bold mb-2 border-b border-nndd-border pb-1">コメントリスト</div>
         <div className="pl-3 space-y-2">
-          <div className="text-sm">プレイヤーを開いたときの表示場所</div>
-          <div className="flex flex-col gap-1 ml-3">
+          <div className="text-sm">表示方式</div>
+          {/* 動画プレイヤーの設定 (PlayerSettings の表示方式) と同じ表記 */}
+          <div className="flex flex-col gap-2 text-xs ml-3">
             {(
               [
-                ['side', '動画の横'],
-                ['window', '別ウィンドウ (コメントビューア風の表)']
+                ['side', 'タブ表示', 'サイドパネル内のタブとして表示'],
+                ['window', '浮動ウィンドウ', '別ウィンドウで表示。ドラッグで移動可能']
               ] as const
-            ).map(([value, label]) => (
-              <label key={value} className="flex items-center gap-2 cursor-pointer select-none text-sm">
+            ).map(([value, label, desc]) => (
+              <label key={value} className="flex items-start gap-2 cursor-pointer select-none">
                 <input
                   type="radio"
                   name="live-comment-display"
                   checked={commentDisplay === value}
                   disabled={commentDisplayLoading}
                   onChange={() => void setCommentDisplay(value)}
+                  className="mt-0.5"
                 />
-                {label}
+                <span>
+                  {label}
+                  <span className="block text-nndd-subtext">{desc}</span>
+                </span>
               </label>
             ))}
           </div>
           <p className="text-xs text-nndd-subtext ml-3">
-            プレイヤーの「コメ欄」ボタンで、視聴中にも切り替えられます。
+            プレイヤーの操作バーの「💬 タブ / 💬 浮動」ボタンで、視聴中にも切り替えられます。
           </p>
           <label className="flex items-center gap-2 cursor-pointer select-none text-sm">
             <input
