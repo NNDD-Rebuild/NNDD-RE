@@ -20,7 +20,8 @@ interface ColWidths {
 }
 
 const DEFAULT_COL_WIDTHS: ColWidths = {
-  vposMs: 40,
+  // 1時間以上の位置 (h:mm:ss) も収まる幅
+  vposMs: 52,
   text: 160,
   userId: 72,
   date: 90,
@@ -54,10 +55,13 @@ const ROW_HEIGHT = 20; // px (py-0.5 × 2 + text-xs)
 const OVERSCAN = 20;   // 上下バッファ行数
 
 // ── ユーティリティ ───────────────────────────────────────
+/** 動画位置を表示用に整形する (1時間以上は h:mm:ss、操作バーの表示と揃える) */
 function formatVpos(ms: number): string {
-  const totalSec = Math.floor(ms / 1000);
-  const min = Math.floor(totalSec / 60);
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(totalSec / 3600);
+  const min = Math.floor((totalSec % 3600) / 60);
   const sec = totalSec % 60;
+  if (h > 0) return `${h}:${min.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
   return `${min}:${sec.toString().padStart(2, '0')}`;
 }
 
