@@ -76,6 +76,8 @@ export type LiveEvent =
   | { type: 'archiveComments'; comments: NNDDREComment[]; done: boolean }
   | { type: 'notice'; notice: LiveNotice }
   | { type: 'statistics'; statistics: LiveStatistics }
+  /** 追っかけ再生を使えなかったため通常のライブ視聴に切り替えた */
+  | { type: 'chasePlayUnavailable' }
   /** 運営コメント (画面上部に固定表示するもの)。null で消去 */
   | { type: 'operatorComment'; notice: LiveNotice | null };
 

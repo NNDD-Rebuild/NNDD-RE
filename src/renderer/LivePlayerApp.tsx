@@ -331,6 +331,11 @@ export default function LivePlayerApp(): JSX.Element {
           ]);
           break;
         }
+        case 'chasePlayUnavailable':
+          // 追っかけ再生の映像が無かった番組: シークバーを出さない通常のライブ表示にする
+          chasePlayRef.current = false;
+          setChasePlay(false);
+          break;
         case 'statistics':
           setStatistics(ev.statistics);
           statisticsRef.current = ev.statistics;

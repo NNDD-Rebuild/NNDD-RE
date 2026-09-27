@@ -26,6 +26,7 @@ MineAP氏作の NNDD（Adobe AIR/ActionScript）を **Electron + TypeScript + Re
 - [ランキング](/NNDD-RE/ranking/) — ジャンル別ランキング表示
 - [検索](/NNDD-RE/search/) — キーワード・タグ検索、保存検索
 - [フォロー中](/NNDD-RE/follow/) — フォロー中ユーザーの新着動画
+- [生放送](/NNDD-RE/live/) — 生放送・追っかけ再生・タイムシフトの視聴、番組の検索・ランキング
 - [マイリスト](/NNDD-RE/mylist/) — マイリスト・チャンネル・シリーズ・自作プレイリスト
 - [DLリスト](/NNDD-RE/download/) — ダウンロードキューの管理
 - [ライブラリ](/NNDD-RE/library/) — ダウンロード済み動画のローカル管理
