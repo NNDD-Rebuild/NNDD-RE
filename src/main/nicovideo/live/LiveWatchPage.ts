@@ -9,6 +9,8 @@ export interface LiveWatchPageInfo {
   /** 視聴WebSocketのURL。空なら視聴不可 (タイムシフト未予約・会員限定等) */
   webSocketUrl: string;
   isLoggedIn: boolean;
+  /** 会員種別 (premium / standard 等、未ログインは non) */
+  accountType: string;
   /** タイムシフト公開状態 (programTimeshift.publication.status: Before / Open 等)。無ければ空 */
   timeshiftPublication: string;
 }
@@ -110,6 +112,7 @@ export async function fetchLiveWatchPage(id: string): Promise<LiveWatchPageInfo>
     program: info,
     webSocketUrl: String(props.site?.relive?.webSocketUrl ?? ''),
     isLoggedIn: Boolean(props.user?.isLoggedIn),
+    accountType: String(props.user?.accountType ?? ''),
     timeshiftPublication: String(props.programTimeshift?.publication?.status ?? '')
   };
 }

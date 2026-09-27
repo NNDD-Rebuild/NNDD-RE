@@ -87,7 +87,13 @@ export class LiveSession {
     if (!page.webSocketUrl) throw unavailableError(page);
     // タイムシフト視聴時は視聴WebSocketの URL が .../watch/{id}/timeshift になる
     this.isTimeshift = /\/timeshift(\?|$)/.test(page.webSocketUrl);
-    this.chasePlay = !this.isTimeshift && page.program.chasePlayEnabled;
+    // 追っかけ再生はプレミアム会員限定。program.isChasePlayEnabled は会員種別に関係なく true になるため、
+    // 一般会員・未ログインで chasePlay: true を送ると NO_PERMISSION / NO_STREAM_AVAILABLE で断られる
+    this.chasePlay = !this.isTimeshift && page.program.chasePlayEnabled && page.accountType === 'premium';
+    log.info(
+      `start ${this.programId}: status=${page.program.status} loggedIn=${page.isLoggedIn} account=${page.accountType} ` +
+        `timeshift=${this.isTimeshift} chasePlay=${this.chasePlay}`
+    );
     this.commentFetchMode = page.program.commentCount > FULL_ARCHIVE_LIMIT ? 'seek' : 'all';
     this.emit({ type: 'state', state: 'connecting' });
     void this.connect(page.webSocketUrl, false);
@@ -287,9 +293,9 @@ export class LiveSession {
       }
       case 'error':
         log.warn('ws error message:', JSON.stringify(d));
-        if (d.code === 'NO_STREAM_AVAILABLE' && this.chasePlay) {
-          // ページ上は追っかけ再生対応でも、実際には追っかけ再生の映像が無い番組がある
-          // (chasePlay: true でだけこのエラーになる)。通常のライブ視聴でつなぎ直す
+        if ((d.code === 'NO_STREAM_AVAILABLE' || d.code === 'NO_PERMISSION') && this.chasePlay) {
+          // 追っかけ再生を断られた (プレミアム会員でない場合、公式番組は NO_PERMISSION、
+          // チャンネル・ユーザー番組は NO_STREAM_AVAILABLE になる)。通常のライブ視聴でつなぎ直す
           void this.retryWithoutChasePlay();
           break;
         }
