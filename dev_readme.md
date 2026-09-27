@@ -201,7 +201,7 @@ live.nicovideo.jp/watch/lvXXX の #embedded-data (data-props)
 - **ランキング**: 専用 API は無く、`/ranking?type=onair|comingsoon|closed` (closed は `select_date=YYYYMMDD`) の embedded-data から読む
 - **カテゴリ別**: `/front/api/pages/recent/v1/programs?tab=…&offset=…&sortOrder=…`。`offset` は件数ではなくページ番号 (1ページ70件)
 - **コメント描画**: niconicomments の流れコメントは vpos の1秒前に右端から出現する。生放送コメントの vpos は投稿した瞬間なので、流れコメントは +1秒して渡す。遅れて届いたリアルタイムのコメントは出現位置を「今」に寄せる (接続直後にまとめて届く直前区間の分は寄せない)
-- **追っかけ再生はプレミアム会員限定**: watchページの `program.isChasePlayEnabled` は会員種別に関係なく `true` になる。一般会員・未ログインで `chasePlay: true` を送ると、公式番組は `NO_PERMISSION`、チャンネル・ユーザー番組は `NO_STREAM_AVAILABLE` で断られる (`chasePlay: false` なら視聴できる)。`LiveSession` は `user.accountType === 'premium'` のときだけ追っかけ再生で要求し、念のため上記エラー時は通常視聴でつなぎ直す
+- **追っかけ再生はプレミアム会員限定**: watchページの `program.isChasePlayEnabled` は会員種別に関係なく `true` になる。一般会員・未ログインで `chasePlay: true` を送ると、公式番組は `NO_PERMISSION`、チャンネル・ユーザー番組は `NO_STREAM_AVAILABLE` で断られる (`chasePlay: false` なら視聴できる)。`LiveSession` は `user.accountType === 'premium'` のときだけ追っかけ再生で要求し、念のため上記エラー時は通常視聴でつなぎ直す。同種の「フラグは会員種別を反映しない」問題は他機能にも起こりうる → 実装前に `nico-account-diff` スキルを参照
 - **遅れ表示**: hls.js はライブ時に最新セグメントより数セグメント手前を再生する。遅れはシーク可能範囲の末尾ではなく `hls.liveSyncPosition` を基準に計算する
 
 ### その他
