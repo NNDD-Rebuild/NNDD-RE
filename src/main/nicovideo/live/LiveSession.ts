@@ -166,6 +166,24 @@ export class LiveSession {
   }
 
   /** 切断時: watchページから新しいトークン付きURLを取り直して再接続する */
+  /** 追っかけ再生をやめて、通常のライブ視聴で接続し直す */
+  private async retryWithoutChasePlay(): Promise<void> {
+    log.info(`chasePlay unavailable, retry without chasePlay (${this.programId})`);
+    this.chasePlay = false;
+    this.emit({ type: 'chasePlayUnavailable' });
+    // cleanupConnection で this.ws を外してから閉じるので、close ハンドラの自動再接続は走らない
+    this.cleanupConnection();
+    try {
+      const page = await fetchLiveWatchPage(this.programId);
+      if (this.stopped) return;
+      if (!page.webSocketUrl) throw unavailableError(page);
+      await this.connect(page.webSocketUrl, false);
+    } catch (e) {
+      log.warn('retry without chasePlay failed:', e);
+      this.emit({ type: 'state', state: 'error', message: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   private async reconnect(): Promise<void> {
     if (this.reconnects >= MAX_RECONNECTS) {
       this.emit({ type: 'state', state: 'error', message: 'サーバーとの接続が切れました。' });
@@ -269,6 +287,12 @@ export class LiveSession {
       }
       case 'error':
         log.warn('ws error message:', JSON.stringify(d));
+        if (d.code === 'NO_STREAM_AVAILABLE' && this.chasePlay) {
+          // ページ上は追っかけ再生対応でも、実際には追っかけ再生の映像が無い番組がある
+          // (chasePlay: true でだけこのエラーになる)。通常のライブ視聴でつなぎ直す
+          void this.retryWithoutChasePlay();
+          break;
+        }
         this.emit({ type: 'state', state: 'error', message: `エラー: ${String(d.code ?? 'unknown')}` });
         break;
       default:
