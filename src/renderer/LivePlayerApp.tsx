@@ -5,6 +5,7 @@ import type {
   LiveCommentWindowEvent,
   LiveCommentWindowMessage,
   LiveCommentLayout,
+  LiveCommentLock,
   LiveConnectionState,
   LiveEnquete,
   LiveEvent,
@@ -28,7 +29,7 @@ import {
   sanitizeDescription
 } from './components/player/VideoInfoView';
 import { ContextMenuPopup, MenuItem } from './components/common/VideoCard';
-import { EnqueteOverlay } from './components/live/LiveOverlays';
+import { CommentLockChip, commentLockText, EnqueteOverlay } from './components/live/LiveOverlays';
 
 /** 生放送プレイヤー → コメントウィンドウ (main が中継) */
 function pushToCommentWindow(msg: LiveCommentWindowMessage): void {
@@ -205,6 +206,7 @@ export default function LivePlayerApp(): JSX.Element {
   const [statistics, setStatistics] = useState<LiveStatistics | null>(null);
   const [operatorComment, setOperatorComment] = useState<LiveNotice | null>(null);
   const [enquete, setEnquete] = useState<LiveEnquete | null>(null);
+  const [commentLock, setCommentLock] = useState<LiveCommentLock | null>(null);
   const [commentLayout, setCommentLayout] = useState<LiveCommentLayout>('normal');
   const [listItems, setListItems] = useState<LiveListItem[]>([]);
   /** 今映っている位置 (番組の vpos 基準、ms)。コメントリストの現在位置表示に使う */
@@ -348,6 +350,9 @@ export default function LivePlayerApp(): JSX.Element {
           break;
         case 'operatorComment':
           setOperatorComment(ev.notice);
+          break;
+        case 'commentLock':
+          setCommentLock(ev.lock);
           break;
         case 'commentLayout':
           setCommentLayout(ev.layout);
@@ -804,6 +809,7 @@ export default function LivePlayerApp(): JSX.Element {
               )}
             </div>
           )}
+          {commentLock && commentLock.status !== 'unrestricted' && <CommentLockChip lock={commentLock} />}
           {enquete && <EnqueteOverlay enquete={enquete} onClose={() => setEnquete(null)} />}
           {(state === 'error' || state === 'ended' || (!streamUri && state !== 'watching')) && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -930,6 +936,7 @@ export default function LivePlayerApp(): JSX.Element {
                 elapsed={elapsed}
                 statistics={statistics}
                 programId={programId}
+                commentLock={commentLock}
               />
             )}
           </div>
@@ -945,13 +952,15 @@ function ProgramInfo({
   stateLabel,
   elapsed,
   statistics,
-  programId
+  programId,
+  commentLock
 }: {
   program: LiveProgramInfo | null;
   stateLabel: string;
   elapsed: string;
   statistics: LiveStatistics | null;
   programId: string;
+  commentLock: LiveCommentLock | null;
 }): JSX.Element {
   const [openVideoLinkInPlayer] = useConfig<boolean>('player.openVideoLinkInPlayer', false);
   const [ownerCtxMenu, setOwnerCtxMenu] = useState<{ x: number; y: number } | null>(null);
@@ -967,6 +976,7 @@ function ProgramInfo({
   const isUser = supplier?.type === 'user' && Boolean(supplier.id);
   // コメントサーバーから届いた最新値を優先し、届くまでは視聴ページ取得時点の値
   const tsReservations = statistics?.timeshiftReservations ?? program.timeshiftReservationCount;
+  const lockText = commentLockText(commentLock);
 
   const handleDescClick = (e: React.MouseEvent<HTMLDivElement>): void => {
     const url = descriptionLinkUrl(e);
@@ -988,6 +998,7 @@ function ProgramInfo({
         {statistics && ` ・ 来場 ${statistics.viewers.toLocaleString()} ・ コメ ${statistics.comments.toLocaleString()}`}
         {tsReservations !== undefined && ` ・ TS予約 ${tsReservations.toLocaleString()}`}
       </div>
+      {lockText && <div className="text-xs text-nndd-subtext mb-1">🔒 {lockText}</div>}
       <div className="text-xs mb-3">
         <button
           onClick={() => window.nndd.invoke(IpcChannel.SYS_OPEN_PATH, liveUrl)}

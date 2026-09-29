@@ -68,7 +68,7 @@ export function CreatorSupportBar({ support }: { support: LiveCreatorSupport }):
   const name = support.rewardDisplayName || support.rewardName;
   return (
     <div
-      className="absolute right-2 top-2 w-52 max-w-[40%] rounded bg-black/70 text-white text-[10px] px-2 py-1 pointer-events-none"
+      className="absolute right-2 top-10 w-52 max-w-[40%] rounded bg-black/70 text-white text-[10px] px-2 py-1 pointer-events-none"
       title={`クリエイターサポート目標: ${name} (${support.currentPoint.toLocaleString()} / ${support.upperPoint.toLocaleString()} pt)`}
     >
       <div className="flex justify-between gap-2">
@@ -108,7 +108,7 @@ export function CommentLockChip({ lock }: { lock: LiveCommentLock }): JSX.Elemen
   if (!text) return null;
   return (
     <div
-      className="absolute left-2 top-2 max-w-[50%] rounded bg-black/70 text-white text-[10px] px-2 py-0.5 pointer-events-none"
+      className="absolute right-2 bottom-2 max-w-[50%] rounded bg-black/70 text-white text-[10px] px-2 py-0.5 pointer-events-none"
       title={text}
     >
       🔒 {text}
@@ -130,7 +130,7 @@ export function MoveOrderBanner({
   onClose: () => void;
 }): JSX.Element {
   return (
-    <div className="absolute inset-x-0 top-8 mx-auto w-96 max-w-[80%] rounded bg-nndd-accent/95 text-white text-xs shadow-lg px-3 py-2 pointer-events-auto">
+    <div className="absolute inset-x-0 top-10 mx-auto w-96 max-w-[80%] rounded bg-nndd-accent/95 text-white text-xs shadow-lg px-3 py-2 pointer-events-auto">
       <div className="font-bold mb-0.5">
         {order.kind === 'jump' ? '別の番組へ移動する指示が届きました' : '別のページへ移動する指示が届きました'}
       </div>
