@@ -204,6 +204,35 @@ live.nicovideo.jp/watch/lvXXX の #embedded-data (data-props)
 - **追っかけ再生はプレミアム会員限定**: watchページの `program.isChasePlayEnabled` は会員種別に関係なく `true` になる。一般会員・未ログインで `chasePlay: true` を送ると、公式番組は `NO_PERMISSION`、チャンネル・ユーザー番組は `NO_STREAM_AVAILABLE` で断られる (`chasePlay: false` なら視聴できる)。`LiveSession` は `user.accountType === 'premium'` のときだけ追っかけ再生で要求し、念のため上記エラー時は通常視聴でつなぎ直す。同種の「フラグは会員種別を反映しない」問題は他機能にも起こりうる → 実装前に `nico-account-diff` スキルを参照
 - **遅れ表示**: hls.js はライブ時に最新セグメントより数セグメント手前を再生する。遅れはシーク可能範囲の末尾ではなく `hls.liveSyncPosition` を基準に計算する
 
+#### 放送者の操作・番組状態の表示 (コメントサーバーの state / message)
+
+コメントサーバー (NDGR) からは、コメント以外に放送者の操作や番組の状態も届く。`LiveSession` が `LiveEvent` に変換して renderer へ送る。`NicoliveState` は変わった項目だけが入ってくる。
+
+- **アンケート** (`enquete`): 映像の左下に表示 (`LiveOverlays.tsx` の `EnqueteOverlay`)。投票中は選択肢、結果は得票率のバー。表示のみで投票はできない。開始と結果はお知らせタブにも残る
+- **コメント表示レイアウト** (`comment_mode`): `splitTop` はコメントを映像の上半分だけに流す、`background` はコメントを薄く (不透明度 0.4) 表示する。コメント描画領域 (`overlayRef`) のスタイルを切り替えるだけで、描画エンジンは ResizeObserver で追従する
+- **コメント投稿制限** (`comment_lock`): 制限中は映像の右下に表示し、番組情報タブにも出す。コメント投稿の UI はまだ無いので状態の表示のみ
+- **タグ更新** (`tag_updated`): 番組情報のタグを差し替える
+- **放送者の NG (SSNG)** (`ssng_updated`): ユーザー・ワード・コマンドの追加と削除。削除は id しか届かないので id をキーに renderer のメモリだけで持ち、番組ごとの一時的なものとして扱う (保存しない)。ユーザー自身の NG リストに足して、画面の描画とコメントリスト (浮動ウィンドウ含む) に適用する
+- **終了予定** (視聴 WebSocket の `schedule`): 番組情報タブに終了予定時刻と残り時間を出し、延長で値が変わったら追従する
+- **移動指示** (`move_order`): 別番組へのジャンプ / URL への移動。映像上部にバナーを出し、お知らせタブにも残す。設定 > 生放送の「放送者の移動指示に自動で従う」が ON のときだけ、待ち時間 (最短 5 秒) の後に自動で移動する (バナーの「中止」で止められる)
+- **クリエイターサポート** (`creator_support_goal_status`): 目標名・達成率・達成済みを小さなゲージで映像の右上に出す
+- **転送コメント** (`forwarded_chat`): 別番組から転送されたコメント。コメントリストで「転送」の表示を付ける。コラボは画面にも流し、クルーズはリストのみ
+- **タイムシフト予約数**: `state.statistics` の `timeshift_reservations`。番組情報とコメントウィンドウのヘッダーに出す
+
+#### タイムシフト予約と通知
+
+- 番組一覧の各カードに「TS予約」、タイムシフト予約一覧に「予約解除」のボタンがある。予約は `POST /api/v2/programs/{id}/timeshift/reservation` (視聴開始はしない)、解除は `DELETE /api/v2/timeshift/reservations?programIds=lv…` (いずれも live2.nicovideo.jp)。エラーコードは `LiveWatchPage.ts` の `TIMESHIFT_ERROR_MESSAGES` で日本語の文面にする
+- フォロー中の放送者の番組開始通知 (`LiveFollowNotifier.ts`): 設定 > 生放送 > 通知で ON にすると、フォロー中 (放送中) の一覧を指定間隔で取得し、前回なかった番組を OS 通知する。最初の取得と未ログイン中は通知しない。一覧は先頭ページ (`offset=0`) だけを見る。通知クリックで生放送プレイヤーを開く
+
+#### 実機で未確認の点
+
+実際のレスポンスで確かめられていないため、動作確認のときはログ (`LiveSession` / `LiveWatchPage` / `LiveListClient`) を見ること。
+
+- `schedule` の時刻の形式 (ISO 文字列 / 秒 / ミリ秒のどれでも読めるようにしてあるが、実データは未確認)
+- `move_order` と `ssng_updated` の中身 (生データをログに出している。SSNG の種別対応は USER → ユーザーID、COMMAND → コマンド、WORD → ワード)
+- タイムシフト予約の解除 API の応答形式、一般会員での予約件数制限などのエラーコード (`nico-account-diff` のとおり会員種別による差は未検証)
+- タイムシフト予約一覧の視聴期限・公開終了のキー名 (`timeshiftDeadlines` は候補を順に見るだけ。予約一覧の取得時に先頭1件の `timeshift` をログに出す)
+
 ### その他
 
 - **`NnddHttpServer`**: Express サーバー (内蔵, `/api/library`, `/api/mylist`, `POST /NNDDServer` 等)
