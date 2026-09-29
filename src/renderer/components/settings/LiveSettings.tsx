@@ -11,6 +11,10 @@ export function LiveSettings(): JSX.Element {
     'side'
   );
   const [onTop, setOnTop, onTopLoading] = useConfig<boolean>('live.commentWindowOnTop', true);
+  const [autoFollow, setAutoFollow, autoFollowLoading] = useConfig<boolean>(
+    'live.autoFollowMoveOrder',
+    false
+  );
 
   return (
     <div className="p-4 max-w-3xl">
@@ -31,6 +35,19 @@ export function LiveSettings(): JSX.Element {
           <p className="text-xs text-nndd-subtext mt-1 ml-6">
             OFF の場合、開いている生放送プレイヤーで番組を切り替えます。
             同じ番組は設定に関わらず 1 つのウィンドウでのみ開きます。
+          </p>
+          <label className="flex items-center gap-2 cursor-pointer select-none text-sm mt-3">
+            <input
+              type="checkbox"
+              checked={autoFollow}
+              disabled={autoFollowLoading}
+              onChange={(e) => void setAutoFollow(e.target.checked)}
+            />
+            放送者の移動指示に自動で従う
+          </label>
+          <p className="text-xs text-nndd-subtext mt-1 ml-6">
+            放送者が視聴者を別の番組へ誘導したとき、指定された待ち時間 (最短 5 秒) の後に自動で移動します。
+            OFF の場合は、移動を案内するバナーを表示するだけです。
           </p>
         </div>
       </div>

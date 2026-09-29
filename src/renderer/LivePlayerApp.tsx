@@ -11,6 +11,7 @@ import type {
   LiveEnquete,
   LiveEvent,
   LiveListItem,
+  LiveMoveOrder,
   LiveNotice,
   LiveProgramInfo,
   LiveStartResult,
@@ -30,7 +31,7 @@ import {
   sanitizeDescription
 } from './components/player/VideoInfoView';
 import { ContextMenuPopup, MenuItem } from './components/common/VideoCard';
-import { CommentLockChip, commentLockText, CreatorSupportBar, EnqueteOverlay } from './components/live/LiveOverlays';
+import { CommentLockChip, commentLockText, CreatorSupportBar, EnqueteOverlay, MoveOrderBanner } from './components/live/LiveOverlays';
 
 /** 生放送プレイヤー → コメントウィンドウ (main が中継) */
 function pushToCommentWindow(msg: LiveCommentWindowMessage): void {
@@ -213,6 +214,10 @@ export default function LivePlayerApp(): JSX.Element {
   const [statistics, setStatistics] = useState<LiveStatistics | null>(null);
   const [operatorComment, setOperatorComment] = useState<LiveNotice | null>(null);
   const [enquete, setEnquete] = useState<LiveEnquete | null>(null);
+  const [moveOrder, setMoveOrder] = useState<LiveMoveOrder | null>(null);
+  /** 自動移動する時刻 (unix ms)。自動移動しない場合は null */
+  const [moveDeadline, setMoveDeadline] = useState<number | null>(null);
+  const [autoFollowMoveOrder, , autoFollowLoading] = useConfig<boolean>('live.autoFollowMoveOrder', false);
   const [creatorSupport, setCreatorSupport] = useState<LiveCreatorSupport | null>(null);
   const [commentLock, setCommentLock] = useState<LiveCommentLock | null>(null);
   const [commentLayout, setCommentLayout] = useState<LiveCommentLayout>('normal');
@@ -370,6 +375,23 @@ export default function LivePlayerApp(): JSX.Element {
           const list = [...ssngMapRef.current.values()];
           setSsngList(list);
           if (commentWindowOpenRef.current) pushToCommentWindow({ type: 'ssng', ssngList: list });
+          break;
+        }
+        case 'moveOrder': {
+          setMoveOrder(ev.order);
+          const base = programRef.current?.vposBaseTimeMs ?? 0;
+          const at = Date.now();
+          addListItems([
+            {
+              key: `n${noticeSeq.current++}`,
+              vposMs: base ? at - base : 0,
+              notice: {
+                kind: 'notification',
+                at,
+                text: `${ev.order.message || '放送者から移動の指示がありました'} (移動先: ${ev.order.target})`
+              }
+            }
+          ]);
           break;
         }
         case 'creatorSupport':
@@ -743,6 +765,27 @@ export default function LivePlayerApp(): JSX.Element {
     window.addEventListener('mouseup', onUp);
   };
 
+  /** 移動指示に従う。番組ならこのプレイヤーで開き、それ以外の URL は外部ブラウザで開く */
+  const followMoveOrder = useCallback((order: LiveMoveOrder): void => {
+    setMoveOrder(null);
+    setMoveDeadline(null);
+    const lv = order.target.match(/(?:^|\/watch\/)((?:lv|co|ch)\d+)\b/);
+    if (lv) void window.nndd.invoke(IpcChannel.LIVE_OPEN_PLAYER, lv[1]).catch(() => {});
+    else if (/^https?:\/\//.test(order.target)) void window.nndd.invoke(IpcChannel.SYS_OPEN_PATH, order.target);
+  }, []);
+
+  // 自動で従う設定なら、指定の待ち時間 (最短 5 秒。中止できるように) の後に移動する
+  useEffect(() => {
+    if (!moveOrder || autoFollowLoading || !autoFollowMoveOrder) {
+      setMoveDeadline(null);
+      return;
+    }
+    const wait = Math.max(moveOrder.waitMs, 5000);
+    setMoveDeadline(Date.now() + wait);
+    const timer = window.setTimeout(() => followMoveOrder(moveOrder), wait);
+    return () => window.clearTimeout(timer);
+  }, [moveOrder, autoFollowMoveOrder, autoFollowLoading, followMoveOrder]);
+
   const canSeek = isTimeshift || chasePlay;
 
   useKeyboardShortcuts({
@@ -851,6 +894,17 @@ export default function LivePlayerApp(): JSX.Element {
                 operatorComment.text
               )}
             </div>
+          )}
+          {moveOrder && (
+            <MoveOrderBanner
+              order={moveOrder}
+              secondsLeft={moveDeadline !== null ? Math.max(0, Math.ceil((moveDeadline - now) / 1000)) : null}
+              onOpen={() => followMoveOrder(moveOrder)}
+              onClose={() => {
+                setMoveOrder(null);
+                setMoveDeadline(null);
+              }}
+            />
           )}
           {creatorSupport && <CreatorSupportBar support={creatorSupport} />}
           {commentLock && commentLock.status !== 'unrestricted' && <CommentLockChip lock={commentLock} />}

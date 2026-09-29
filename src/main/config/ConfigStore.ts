@@ -333,6 +333,8 @@ export interface NnddConfig {
     commentListDisplay: 'side' | 'window';
     /** コメントウィンドウを最前面に表示するか */
     commentWindowOnTop: boolean;
+    /** 放送者の移動指示 (別番組へジャンプ) に自動で従うか。false なら案内バナーを出すだけ */
+    autoFollowMoveOrder: boolean;
     /** コメントウィンドウの位置・サイズ (前回閉じたとき) */
     commentWindowBounds?: { x: number; y: number; width: number; height: number };
   };
@@ -478,7 +480,8 @@ const DEFAULTS: NnddConfig = {
   live: {
     allowMultipleWindows: false,
     commentListDisplay: 'side',
-    commentWindowOnTop: true
+    commentWindowOnTop: true,
+    autoFollowMoveOrder: false
   },
   channelWatch: {
     enabled: false,
