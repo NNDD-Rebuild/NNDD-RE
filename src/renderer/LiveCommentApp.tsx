@@ -136,6 +136,8 @@ export default function LiveCommentApp(): JSX.Element {
         {statistics && (
           <span className="shrink-0 tabular-nums">
             来場 {statistics.viewers.toLocaleString()} / コメ {statistics.comments.toLocaleString()}
+            {statistics.timeshiftReservations !== undefined &&
+              ` / TS予約 ${statistics.timeshiftReservations.toLocaleString()}`}
           </span>
         )}
         <label className="shrink-0 flex items-center gap-1 cursor-pointer select-none">

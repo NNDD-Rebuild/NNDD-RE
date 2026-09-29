@@ -4,6 +4,7 @@ import type {
   LiveNotice,
   LiveProgramInfo,
   LiveStartResult,
+  LiveStatistics,
   NNDDREComment
 } from '@shared/types';
 import { NicoHeaders } from '@shared/constants';
@@ -73,6 +74,8 @@ export class LiveSession {
   private aroundNdgr: NdgrClient | null = null;
   private viewUri: string | null = null;
   private commentFetchMode: LiveStartResult['commentFetchMode'] = 'all';
+  /** 最後に通知した統計。視聴 WebSocket とコメントサーバーで届く項目が違うので、合成して送る */
+  private statistics: LiveStatistics = { viewers: 0, comments: 0 };
 
   constructor(
     private readonly programId: string,
@@ -268,14 +271,11 @@ export class LiveSession {
         }
         break;
       case 'statistics':
-        this.emit({
-          type: 'statistics',
-          statistics: {
-            viewers: Number(d.viewers) || 0,
-            comments: Number(d.comments) || 0,
-            adPoints: Number(d.adPoints) || 0,
-            giftPoints: Number(d.giftPoints) || 0
-          }
+        this.updateStatistics({
+          viewers: Number(d.viewers) || 0,
+          comments: Number(d.comments) || 0,
+          adPoints: Number(d.adPoints) || 0,
+          giftPoints: Number(d.giftPoints) || 0
         });
         break;
       case 'disconnect': {
@@ -409,6 +409,17 @@ export class LiveSession {
       }
     } else if (p.case === 'state') {
       const s = p.value;
+      if (s.statistics) {
+        // 届いた項目だけ更新する (state は変更があった項目しか含まない)
+        const st = s.statistics;
+        const patch: Partial<LiveStatistics> = {};
+        if (st.viewers !== undefined) patch.viewers = Number(st.viewers);
+        if (st.comments !== undefined) patch.comments = Number(st.comments);
+        if (st.adPoints !== undefined) patch.adPoints = Number(st.adPoints);
+        if (st.giftPoints !== undefined) patch.giftPoints = Number(st.giftPoints);
+        if (st.timeshiftReservations !== undefined) patch.timeshiftReservations = Number(st.timeshiftReservations);
+        this.updateStatistics(patch);
+      }
       if (s.marquee) {
         const op = s.marquee.display?.operatorComment;
         const notice: LiveNotice | null = op
@@ -422,6 +433,12 @@ export class LiveSession {
         this.emit({ type: 'state', state: 'ended', message: '番組が終了しました。' });
       }
     }
+  }
+
+  /** 統計の一部を更新して、合成した値を通知する */
+  private updateStatistics(patch: Partial<LiveStatistics>): void {
+    this.statistics = { ...this.statistics, ...patch };
+    this.emit({ type: 'statistics', statistics: this.statistics });
   }
 
   private notice(kind: LiveNotice['kind'], text: string, at: number): void {

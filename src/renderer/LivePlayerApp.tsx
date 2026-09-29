@@ -937,6 +937,8 @@ function ProgramInfo({
   const liveUrl = `https://live.nicovideo.jp/watch/${program.programId || programId}`;
   const supplier = program.supplier;
   const isUser = supplier?.type === 'user' && Boolean(supplier.id);
+  // コメントサーバーから届いた最新値を優先し、届くまでは視聴ページ取得時点の値
+  const tsReservations = statistics?.timeshiftReservations ?? program.timeshiftReservationCount;
 
   const handleDescClick = (e: React.MouseEvent<HTMLDivElement>): void => {
     const url = descriptionLinkUrl(e);
@@ -956,8 +958,7 @@ function ProgramInfo({
         {begin && `開始: ${begin.getFullYear()}/${pad(begin.getMonth() + 1)}/${pad(begin.getDate())} ${pad(begin.getHours())}:${pad(begin.getMinutes())}`}
         {elapsed && ` ・ 経過 ${elapsed}`}
         {statistics && ` ・ 来場 ${statistics.viewers.toLocaleString()} ・ コメ ${statistics.comments.toLocaleString()}`}
-        {program.timeshiftReservationCount !== undefined &&
-          ` ・ TS予約 ${program.timeshiftReservationCount.toLocaleString()}`}
+        {tsReservations !== undefined && ` ・ TS予約 ${tsReservations.toLocaleString()}`}
       </div>
       <div className="text-xs mb-3">
         <button

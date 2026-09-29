@@ -1,4 +1,4 @@
-import type { NNDDREComment } from './comment';
+import type { NgListItem, NNDDREComment } from './comment';
 
 /**
  * ニコニコ生放送 関連の型。
@@ -54,6 +54,8 @@ export interface LiveStatistics {
   comments: number;
   adPoints?: number;
   giftPoints?: number;
+  /** タイムシフト予約数 (コメントサーバーの state で届く。届くまで undefined) */
+  timeshiftReservations?: number;
 }
 
 /** 生放送プレイヤーの接続状態 */
@@ -68,6 +70,66 @@ export interface LiveNotice {
   link?: string;
 }
 
+/** アンケート (NicoliveState.enquete)。Closed になったら LiveEvent 側で null を送る */
+export interface LiveEnquete {
+  question: string;
+  choices: Array<{
+    description: string;
+    /** 得票率 (千分率)。Result のときだけ入る */
+    perMille?: number;
+  }>;
+  /** poll: 投票中 / result: 結果表示 */
+  status: 'poll' | 'result';
+}
+
+/** 放送者が指定するコメントの表示レイアウト (NicoliveState.comment_mode) */
+export type LiveCommentLayout = 'normal' | 'splitTop' | 'background';
+
+/** コメント投稿の制限 (NicoliveState.comment_lock) */
+export interface LiveCommentLock {
+  /** unrestricted: 制限なし / locked: 投稿不可 / restricted: 条件付き (フォロー期間など) */
+  status: 'unrestricted' | 'locked' | 'restricted';
+  /** restricted のとき、投稿に必要な最低フォロー期間 (秒) */
+  minimumFollowSec?: number;
+}
+
+/** 放送者・モデレーターが登録した NG (SSNG) の追加/削除。削除は id だけ届くので id で管理する */
+export interface LiveSsngUpdate {
+  operation: 'add' | 'delete';
+  id: string;
+  /** add のとき、NG の内容 (種別が分からないものは入らない) */
+  item?: NgListItem;
+}
+
+/** 番組の開始・終了予定 (視聴 WebSocket の schedule)。延長されると終了予定が変わる */
+export interface LiveSchedule {
+  beginMs: number;
+  endMs: number;
+}
+
+/** 別番組への移動指示 (NicoliveState.move_order) */
+export interface LiveMoveOrder {
+  /** jump: 別番組へ移動 / redirect: URL へ移動 */
+  kind: 'jump' | 'redirect';
+  /** jump: 番組ID (lv...) / redirect: URL */
+  target: string;
+  message: string;
+  /** 移動までの待ち時間 (ms) */
+  waitMs: number;
+}
+
+/** クリエイターサポートの目標ゲージ (NicoliveState.creator_support_goal_status) */
+export interface LiveCreatorSupport {
+  rewardName: string;
+  rewardDisplayName: string;
+  /** 達成率 (0〜1) */
+  progressRatio: number;
+  currentPoint: number;
+  lowerPoint: number;
+  upperPoint: number;
+  isAchieved: boolean;
+}
+
 export type LiveEvent =
   | { type: 'state'; state: LiveConnectionState; message?: string }
   | { type: 'stream'; uri: string; quality: string; availableQualities: string[] }
@@ -79,7 +141,18 @@ export type LiveEvent =
   /** 追っかけ再生を使えなかったため通常のライブ視聴に切り替えた */
   | { type: 'chasePlayUnavailable' }
   /** 運営コメント (画面上部に固定表示するもの)。null で消去 */
-  | { type: 'operatorComment'; notice: LiveNotice | null };
+  | { type: 'operatorComment'; notice: LiveNotice | null }
+  /** アンケート。null で消去 */
+  | { type: 'enquete'; enquete: LiveEnquete | null }
+  | { type: 'commentLayout'; layout: LiveCommentLayout }
+  | { type: 'commentLock'; lock: LiveCommentLock }
+  /** 番組タグの更新 (全件) */
+  | { type: 'tags'; tags: string[] }
+  | { type: 'ssng'; update: LiveSsngUpdate }
+  | { type: 'schedule'; schedule: LiveSchedule }
+  | { type: 'moveOrder'; order: LiveMoveOrder }
+  /** クリエイターサポートの目標ゲージ。null で非表示 */
+  | { type: 'creatorSupport'; support: LiveCreatorSupport | null };
 
 /** LIVE_START の戻り値 */
 export interface LiveStartResult {
