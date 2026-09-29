@@ -7,6 +7,7 @@ import type {
   LiveCommentLayout,
   LiveCommentLock,
   LiveConnectionState,
+  LiveCreatorSupport,
   LiveEnquete,
   LiveEvent,
   LiveListItem,
@@ -29,7 +30,7 @@ import {
   sanitizeDescription
 } from './components/player/VideoInfoView';
 import { ContextMenuPopup, MenuItem } from './components/common/VideoCard';
-import { CommentLockChip, commentLockText, EnqueteOverlay } from './components/live/LiveOverlays';
+import { CommentLockChip, commentLockText, CreatorSupportBar, EnqueteOverlay } from './components/live/LiveOverlays';
 
 /** 生放送プレイヤー → コメントウィンドウ (main が中継) */
 function pushToCommentWindow(msg: LiveCommentWindowMessage): void {
@@ -206,6 +207,7 @@ export default function LivePlayerApp(): JSX.Element {
   const [statistics, setStatistics] = useState<LiveStatistics | null>(null);
   const [operatorComment, setOperatorComment] = useState<LiveNotice | null>(null);
   const [enquete, setEnquete] = useState<LiveEnquete | null>(null);
+  const [creatorSupport, setCreatorSupport] = useState<LiveCreatorSupport | null>(null);
   const [commentLock, setCommentLock] = useState<LiveCommentLock | null>(null);
   const [commentLayout, setCommentLayout] = useState<LiveCommentLayout>('normal');
   const [listItems, setListItems] = useState<LiveListItem[]>([]);
@@ -350,6 +352,9 @@ export default function LivePlayerApp(): JSX.Element {
           break;
         case 'operatorComment':
           setOperatorComment(ev.notice);
+          break;
+        case 'creatorSupport':
+          setCreatorSupport(ev.support);
           break;
         case 'commentLock':
           setCommentLock(ev.lock);
@@ -809,6 +814,7 @@ export default function LivePlayerApp(): JSX.Element {
               )}
             </div>
           )}
+          {creatorSupport && <CreatorSupportBar support={creatorSupport} />}
           {commentLock && commentLock.status !== 'unrestricted' && <CommentLockChip lock={commentLock} />}
           {enquete && <EnqueteOverlay enquete={enquete} onClose={() => setEnquete(null)} />}
           {(state === 'error' || state === 'ended' || (!streamUri && state !== 'watching')) && (
