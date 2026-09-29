@@ -22,6 +22,8 @@ class DiscordRpcManagerImpl {
   private connecting: Promise<boolean> | null = null;
   /** 設定変更時に再送するため、最後に送ったPresence情報を保持する */
   private lastInfo: DiscordActivityInfo | null = null;
+  /** 現在のPresenceを送ったプレイヤーウィンドウ (webContents.id)。複数ウィンドウで別ウィンドウの表示を消さないために使う */
+  private ownerId: number | null = null;
 
   private async ensureConnected(clientId: string): Promise<boolean> {
     if (this.client?.isConnected && this.connectedClientId === clientId) {
@@ -65,8 +67,9 @@ class DiscordRpcManagerImpl {
     }
   }
 
-  async setActivity(info: DiscordActivityInfo): Promise<void> {
+  async setActivity(info: DiscordActivityInfo, ownerId?: number): Promise<void> {
     this.lastInfo = info;
+    this.ownerId = ownerId ?? null;
     const cfg = getConfigStore().store.discordRpc;
     if (!cfg.enabled || !DISCORD_CLIENT_ID) return;
     const ok = await this.ensureConnected(DISCORD_CLIENT_ID);
@@ -100,8 +103,11 @@ class DiscordRpcManagerImpl {
     }
   }
 
-  async clearActivity(): Promise<void> {
+  /** ownerId 指定時は、そのウィンドウが送ったPresenceのときだけクリアする */
+  async clearActivity(ownerId?: number): Promise<void> {
+    if (ownerId !== undefined && this.ownerId !== null && this.ownerId !== ownerId) return;
     this.lastInfo = null;
+    this.ownerId = null;
     if (!this.client?.isConnected) return;
     try {
       await this.client.user?.clearActivity();

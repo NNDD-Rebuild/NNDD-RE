@@ -9,6 +9,7 @@ import { createLogger } from '../util/Logger';
 import { setupHlsSessionInterceptor } from './HlsSessionInterceptor';
 import { registerProtocolHandlerForSession } from './LocalVideoProtocol';
 import { findNicowariFiles, NICOWARI_MARK } from '../library/NicowariSwf';
+import { getDiscordRpcManager } from '../discord/DiscordRpcManager';
 
 const log = createLogger('PlayerManager');
 
@@ -183,7 +184,11 @@ export class PlayerManager {
     win.on('leave-full-screen', () => {
       win.webContents.send('nndd:player:window:fullscreen', false);
     });
+    // closed 後は webContents に触れないので、ID は先に控えておく
+    const webContentsId = win.webContents.id;
     win.on('closed', () => {
+      // レンダラー側の unmount は ×閉じ時に間に合わないことがあるため、Discord Presence はここでもクリアする
+      void getDiscordRpcManager().clearActivity(webContentsId);
       CommentWindowManager.get().close();
       this.windows.delete(win.id);
     });

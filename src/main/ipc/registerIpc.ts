@@ -1164,11 +1164,11 @@ export function registerIpcHandlers(
   ipcMain.handle(IpcChannel.DISCORD_RPC_STATUS, () => {
     return getDiscordRpcManager().status();
   });
-  ipcMain.on(IpcChannel.DISCORD_RPC_SET_ACTIVITY, (_e, info: DiscordActivityInfo) => {
-    void getDiscordRpcManager().setActivity(info);
+  ipcMain.on(IpcChannel.DISCORD_RPC_SET_ACTIVITY, (e, info: DiscordActivityInfo) => {
+    void getDiscordRpcManager().setActivity(info, e.sender.id);
   });
-  ipcMain.on(IpcChannel.DISCORD_RPC_CLEAR_ACTIVITY, () => {
-    void getDiscordRpcManager().clearActivity();
+  ipcMain.on(IpcChannel.DISCORD_RPC_CLEAR_ACTIVITY, (e) => {
+    void getDiscordRpcManager().clearActivity(e.sender.id);
   });
 
   // --- 接続診断 ---
