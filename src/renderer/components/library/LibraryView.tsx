@@ -200,13 +200,18 @@ export function LibraryView(): JSX.Element {
   const [moveError, setMoveError] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
 
+  // 再読み込みは表示中の一覧を残したまま裏で差し替える (「読み込み中…」表示にすると
+  // 一覧がアンマウントされスクロール位置が失われるため、それは初回ロード時だけ)。
+  // 連続で呼ばれた場合は最後に投げた要求の結果だけを反映する。
+  const reloadSeqRef = useRef(0);
   const reload = (): void => {
-    setLoading(true);
+    const seq = ++reloadSeqRef.current;
     Promise.all([
       window.nndd.invoke<NNDDREVideo[]>(window.nndd.channels.LIBRARY_LIST),
       window.nndd.invoke<string[]>(window.nndd.channels.LIBRARY_FOLDER_LIST)
     ])
       .then(([rows, dirs]) => {
+        if (seq !== reloadSeqRef.current) return;
         const fixed = rows.map((v) => ({
           ...v,
           modificationDate: new Date(v.modificationDate),
@@ -222,6 +227,17 @@ export function LibraryView(): JSX.Element {
   };
 
   useEffect(reload, []);
+
+  // タブ切替ではアンマウントせず状態 (選択フォルダ・検索語・スクロール位置等) を保持する。
+  // 非表示中にプレイヤー側で再生回数・お気に入り等が変わっている可能性があるため、
+  // ライブラリタブに戻ったときは裏で最新の一覧を取り直す。
+  const activeTab = useAppStore((s) => s.activeTab);
+  const wasActiveRef = useRef(activeTab === 'library');
+  useEffect(() => {
+    const isActive = activeTab === 'library';
+    if (isActive && !wasActiveRef.current) reload();
+    wasActiveRef.current = isActive;
+  }, [activeTab]);
 
   useEffect(() => {
     const off = window.nndd.on(

@@ -161,9 +161,7 @@ export default function App(): JSX.Element {
               activeTab === tab.id ? 'block' : 'hidden'
             ].join(' ')}
           >
-            {tab.id === 'library'
-              ? activeTab === tab.id && tabContent(tab.id)
-              : mountedTabs.has(tab.id) && tabContent(tab.id)}
+            {mountedTabs.has(tab.id) && tabContent(tab.id)}
           </div>
         ))}
       </div>
