@@ -118,6 +118,9 @@ export function VideoController({
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
   const [rate, setRate] = useState(1.0);
+  const [defaultRate] = useConfig<number>('player.playbackRate', 1.0);
+  const defaultRateRef = useRef(defaultRate);
+  defaultRateRef.current = defaultRate;
   const [inPip, setInPip] = useState(false);
   const docPipSupported = typeof window !== 'undefined' && 'documentPictureInPicture' in window;
   const pipSupported =
@@ -160,13 +163,16 @@ export function VideoController({
       setMuted(video.muted);
     };
     const onRate = (): void => setRate(video.playbackRate);
-    // 動画切替時 (同一 <video> 要素を使い回し src だけ差し替え) は毎回等倍に戻す。
-    // ブラウザの暗黙リセットは ratechange が発火せず UI (rate state) に反映されないため、
-    // loadedmetadata のタイミングで明示的に 1.0 を適用して実速度・UI 双方を揃える。
+    // 動画切替時 (同一 <video> 要素を使い回し src だけ差し替え) は毎回デフォルト再生速度
+    // (設定 > プレイヤー、生放送は等倍) に戻す。ブラウザの暗黙リセットは ratechange が
+    // 発火しないうえ、リセット後の値が既に目標値と同じだと代入しても ratechange が来ず
+    // UI (rate state) が前の動画の速度のまま残るため、rate state は直接揃える。
     const onLoadedMetaRate = (): void => {
-      if (video.playbackRate !== 1.0) {
-        video.playbackRate = 1.0;
+      const target = isLiveRef.current ? 1.0 : defaultRateRef.current;
+      if (video.playbackRate !== target) {
+        video.playbackRate = target;
       }
+      setRate(video.playbackRate);
       // 前の動画でシークバーを pointerdown したまま (ドラッグ中に別操作へ移る等で)
       // pointerup が届かず seekingRef.current=true が残留していると、動画切替後に
       // シークバー要素が duration 確定で再マウントされた際、ブラウザが取りこぼしていた
