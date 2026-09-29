@@ -3,12 +3,15 @@ import { getConfigStore } from '../../config/ConfigStore';
 import { LivePlayerManager } from '../../player/LivePlayerManager';
 import { createLogger } from '../../util/Logger';
 import { NicoContext } from '../NicoContext';
+import type { LiveProgramSummary } from '@shared/types';
 import { fetchFollowingPrograms } from './LiveListClient';
 
 const log = createLogger('LiveFollowNotifier');
 
 /** 1 回の確認で個別に通知する最大件数 (超えた分は 1 件にまとめる) */
 const MAX_INDIVIDUAL = 5;
+/** 放送中の一覧を取得するページ数の上限 (1 ページ目に収まらない分を 2 ページ目まで見る) */
+const MAX_PAGES = 2;
 /** 確認間隔の下限 (分) */
 const MIN_INTERVAL_MIN = 1;
 
@@ -42,6 +45,18 @@ export class LiveFollowNotifier {
     this.seen = null;
   }
 
+  /** 放送中のフォロー番組を先頭から MAX_PAGES ページ分取得する。どれかが失敗したら例外 (基準を更新しない) */
+  private async fetchOnAir(): Promise<LiveProgramSummary[]> {
+    const first = await fetchFollowingPrograms('onair', 0);
+    const programs = [...first.programs];
+    for (let page = 1; page < MAX_PAGES && programs.length < first.total; page++) {
+      const next = await fetchFollowingPrograms('onair', programs.length);
+      if (next.programs.length === 0) break;
+      programs.push(...next.programs);
+    }
+    return programs;
+  }
+
   private async tick(): Promise<void> {
     if (this.running) return;
     this.running = true;
@@ -51,7 +66,7 @@ export class LiveFollowNotifier {
         this.seen = null;
         return;
       }
-      const { programs } = await fetchFollowingPrograms('onair', 0);
+      const programs = await this.fetchOnAir();
       const current = new Set(programs.map((p) => p.programId));
       const prev = this.seen;
       this.seen = current;

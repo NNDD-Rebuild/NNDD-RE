@@ -222,7 +222,7 @@ live.nicovideo.jp/watch/lvXXX の #embedded-data (data-props)
 #### タイムシフト予約と通知
 
 - 番組一覧の各カードに「TS予約」、タイムシフト予約一覧に「予約解除」のボタンがある。予約は `POST /api/v2/programs/{id}/timeshift/reservation` (視聴開始はしない)、解除は `DELETE /api/v2/timeshift/reservations?programIds=lv…` (いずれも live2.nicovideo.jp)。エラーコードは `LiveWatchPage.ts` の `TIMESHIFT_ERROR_MESSAGES` で日本語の文面にする
-- フォロー中の放送者の番組開始通知 (`LiveFollowNotifier.ts`): 設定 > 生放送 > 通知で ON にすると、フォロー中 (放送中) の一覧を指定間隔で取得し、前回なかった番組を OS 通知する。最初の取得と未ログイン中は通知しない。一覧は先頭ページ (`offset=0`) だけを見る。通知クリックで生放送プレイヤーを開く
+- フォロー中の放送者の番組開始通知 (`LiveFollowNotifier.ts`): 設定 > 生放送 > 通知で ON にすると、フォロー中 (放送中) の一覧を指定間隔で取得し、前回なかった番組を OS 通知する。最初の取得と未ログイン中は通知しない。一覧は先頭から 2 ページ分 (2 回目は取得済みの件数を `offset` に指定) まで見る。2 ページ目までで取りきれない分は見えない。どちらかの取得に失敗した回は前回の状態を保ち、通知しない。通知クリックで生放送プレイヤーを開く
 
 #### 実機で未確認の点
 
