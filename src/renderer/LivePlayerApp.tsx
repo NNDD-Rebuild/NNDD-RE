@@ -163,6 +163,11 @@ export default function LivePlayerApp(): JSX.Element {
   const commentWindowOpenRef = useRef(false);
   const pendingPushRef = useRef<LiveListItem[]>([]);
   const statisticsRef = useRef<LiveStatistics | null>(null);
+  /**
+   * 放送者が登録した NG (SSNG)。削除は id だけ届くので id → 内容の Map で持つ。
+   * 番組ごとの一時的なもので、ユーザー自身の NG リストとは別に保持し永続化しない
+   */
+  const ssngMapRef = useRef(new Map<string, NgListItem>());
   /** コメントウィンドウからのシーク要求用 (イベント購読の effect から最新の関数を呼ぶ) */
   const seekToVposRef = useRef<(vposMs: number) => void>(() => {});
   /** コメントウィンドウへ全件 (snapshot) を送る */
@@ -173,7 +178,8 @@ export default function LivePlayerApp(): JSX.Element {
       items: listItemsRef.current,
       program: programRef.current,
       statistics: statisticsRef.current,
-      canSeek: isTimeshiftRef.current || chasePlayRef.current
+      canSeek: isTimeshiftRef.current || chasePlayRef.current,
+      ssngList: [...ssngMapRef.current.values()]
     });
   });
   const commentFetchModeRef = useRef<LiveStartResult['commentFetchMode']>('all');
@@ -216,6 +222,7 @@ export default function LivePlayerApp(): JSX.Element {
   /** video 要素 (VideoController に渡す) */
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
   const [ngList, setNgList] = useState<NgListItem[]>([]);
+  const [ssngList, setSsngList] = useState<NgListItem[]>([]);
   const [sideTab, setSideTab] = useState<'info' | 'comments' | 'notices'>('comments');
   /** サイドパネルの幅 (通常プレイヤーと共通の設定 player.sidebarWidth) */
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT);
@@ -353,6 +360,18 @@ export default function LivePlayerApp(): JSX.Element {
         case 'operatorComment':
           setOperatorComment(ev.notice);
           break;
+        case 'ssng': {
+          const { update } = ev;
+          if (update.operation === 'add') {
+            if (update.item) ssngMapRef.current.set(update.id, update.item);
+          } else {
+            ssngMapRef.current.delete(update.id);
+          }
+          const list = [...ssngMapRef.current.values()];
+          setSsngList(list);
+          if (commentWindowOpenRef.current) pushToCommentWindow({ type: 'ssng', ssngList: list });
+          break;
+        }
         case 'creatorSupport':
           setCreatorSupport(ev.support);
           break;
@@ -672,10 +691,13 @@ export default function LivePlayerApp(): JSX.Element {
       .catch(() => {});
   }, []);
 
+  // ユーザーの NG リストに放送者の NG (SSNG) を足したもの。画面の描画とコメントリストの両方に使う
+  const effectiveNgList = useMemo(() => [...ngList, ...ssngList], [ngList, ssngList]);
+
   // NG リストは画面のコメント描画にも反映する
   useEffect(() => {
-    rendererRef.current?.setConfig({ ngList });
-  }, [ngList]);
+    rendererRef.current?.setConfig({ ngList: effectiveNgList });
+  }, [effectiveNgList]);
 
   const handleAddNg = useCallback(async (item: NgListItem): Promise<void> => {
     await window.nndd.invoke(IpcChannel.NG_ADD_COMMENT, item);
@@ -916,7 +938,7 @@ export default function LivePlayerApp(): JSX.Element {
             {sideTab === 'comments' && showSideComments ? (
               <CommentList
                 comments={listComments}
-                ngList={ngList}
+                ngList={effectiveNgList}
                 onSeek={canSeek ? (sec) => seekToVpos(sec * 1000) : undefined}
                 currentTimeMs={positionMs}
                 onAddNg={handleAddNg}

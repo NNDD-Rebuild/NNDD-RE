@@ -261,11 +261,15 @@ export type LiveCommentWindowMessage =
       program: LiveProgramInfo | null;
       statistics: LiveStatistics | null;
       canSeek: boolean;
+      /** 放送者が登録した NG (SSNG)。コメントウィンドウでも自分の NG リストに足して適用する */
+      ssngList: NgListItem[];
     }
   | { type: 'append'; items: LiveListItem[] }
   /** 今映っている位置 (番組の vpos 基準、ms) */
   | { type: 'position'; vposMs: number }
-  | { type: 'statistics'; statistics: LiveStatistics };
+  | { type: 'statistics'; statistics: LiveStatistics }
+  /** SSNG の全件 (追加・削除のたびに送り直す) */
+  | { type: 'ssng'; ssngList: NgListItem[] };
 
 /** コメントウィンドウ・main → 生放送プレイヤー */
 export type LiveCommentWindowEvent =

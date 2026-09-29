@@ -35,6 +35,7 @@ export default function LiveCommentApp(): JSX.Element {
   const [statistics, setStatistics] = useState<LiveStatistics | null>(null);
   const [canSeek, setCanSeek] = useState(false);
   const [ngList, setNgList] = useState<NgListItem[]>([]);
+  const [ssngList, setSsngList] = useState<NgListItem[]>([]);
   const [tab, setTab] = useState<Tab>('comments');
   const [onTop, , onTopLoading] = useConfig<boolean>('live.commentWindowOnTop', true);
   const [onTopState, setOnTopState] = useState(true);
@@ -72,6 +73,7 @@ export default function LiveCommentApp(): JSX.Element {
           setProgram(msg.program);
           setStatistics(msg.statistics);
           setCanSeek(msg.canSeek);
+          setSsngList(msg.ssngList);
           if (msg.program) document.title = `コメント一覧 — ${msg.program.title}`;
           break;
         case 'append': {
@@ -94,6 +96,9 @@ export default function LiveCommentApp(): JSX.Element {
         case 'statistics':
           setStatistics(msg.statistics);
           break;
+        case 'ssng':
+          setSsngList(msg.ssngList);
+          break;
       }
     });
     // リスナー登録後に準備完了を通知 → プレイヤーから snapshot が届く
@@ -106,6 +111,7 @@ export default function LiveCommentApp(): JSX.Element {
     [items]
   );
   const notices = useMemo(() => items.filter((i) => i.notice), [items]);
+  const effectiveNgList = useMemo(() => [...ngList, ...ssngList], [ngList, ssngList]);
 
   const handleSeek = useCallback(
     (timeSec: number) => window.nndd.send(IpcChannel.LIVE_COMMENT_WINDOW_SEEK, timeSec * 1000),
@@ -165,7 +171,7 @@ export default function LiveCommentApp(): JSX.Element {
         {tab === 'comments' ? (
           <CommentList
             comments={comments}
-            ngList={ngList}
+            ngList={effectiveNgList}
             onSeek={canSeek ? handleSeek : undefined}
             currentTimeMs={positionMs}
             onAddNg={handleAddNg}
