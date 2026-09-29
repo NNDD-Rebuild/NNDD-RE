@@ -3,10 +3,13 @@ import type {
   LiveEvent,
   LiveNotice,
   LiveProgramInfo,
+  LiveSsngUpdate,
   LiveStartResult,
   LiveStatistics,
+  NgListItem,
   NNDDREComment
 } from '@shared/types';
+import { NgListItemType } from '@shared/types';
 import { NicoHeaders } from '@shared/constants';
 import { NicoContext } from '../NicoContext';
 import { createLogger } from '../../util/Logger';
@@ -19,7 +22,19 @@ import {
   fetchLiveWatchPage
 } from './LiveWatchPage';
 import type { ChunkedMessage } from './gen/dwango/nicolive/chat/service/edge/payload_pb';
-import { ProgramStatus_State } from './gen/dwango/nicolive/chat/data/atoms_pb';
+import {
+  CommentLock_Status,
+  CommentMode_Layout,
+  Enquete_Status,
+  ProgramStatus_State
+} from './gen/dwango/nicolive/chat/data/atoms_pb';
+import { ForwardedChat_ForwardingMode } from './gen/dwango/nicolive/chat/data/atoms/forwarded_pb';
+import type { ForwardedChat } from './gen/dwango/nicolive/chat/data/atoms/forwarded_pb';
+import {
+  SSNGUpdated_SSNGOperation,
+  SSNGUpdated_SSNGType
+} from './gen/dwango/nicolive/chat/data/atoms/moderator_pb';
+import type { SSNGUpdated } from './gen/dwango/nicolive/chat/data/atoms/moderator_pb';
 
 const log = createLogger('LiveSession');
 
@@ -45,6 +60,40 @@ const AROUND_AHEAD_SEC = 300;
 const AROUND_BEHIND_SEC = 60;
 /** コメントを renderer へまとめて送る間隔 (受信毎に IPC すると多コメ時に重い) */
 const COMMENT_FLUSH_MS = 200;
+
+/**
+ * 転送コメント (クルーズ・コラボ元の番組から転送されてきたコメント) を変換する。
+ * コラボ共有は画面にも流し、クルーズ由来はリストにだけ載せる。番組ごとにコメント番号が独立しているので、
+ * thread に転送元の番組IDを入れて自番組のコメントと区別する
+ */
+function forwardedToComment(f: ForwardedChat, atMs: number): NNDDREComment {
+  const collab = f.mode === ForwardedChat_ForwardingMode.COLLAB_SHARING;
+  return {
+    ...chatToComment(f.chat!, atMs, collab),
+    thread: `forwarded-${f.sourceLiveId.toString()}`,
+    fork: collab ? 'forwarded-collab' : 'forwarded-cruise',
+    forwarded: collab ? 'collab' : 'cruise'
+  };
+}
+
+/** 放送者NG (SSNG) の更新を LiveSsngUpdate に変換する。追加で種別・内容が分からないものは item なし */
+function toSsngUpdate(u: SSNGUpdated): LiveSsngUpdate {
+  const id = u.ssngId.toString();
+  if (u.operation === SSNGUpdated_SSNGOperation.DELETE) return { operation: 'delete', id };
+  let item: NgListItem | undefined;
+  if (u.source) {
+    const type =
+      u.type === SSNGUpdated_SSNGType.USER
+        ? NgListItemType.USER_ID
+        : u.type === SSNGUpdated_SSNGType.COMMAND
+          ? NgListItemType.COMMAND
+          : u.type === SSNGUpdated_SSNGType.WORD
+            ? NgListItemType.WORD
+            : undefined;
+    if (type) item = { type, value: u.source };
+  }
+  return { operation: 'add', id, item };
+}
 
 /**
  * 生放送1番組分の視聴セッション。
@@ -338,6 +387,7 @@ export class LiveSession {
       const at = m.meta?.at ? Number(m.meta.at.seconds) * 1000 : 0;
       if (data.case === 'chat') comments.push(chatToComment(data.value, at));
       else if (data.case === 'overflowedChat') comments.push(chatToComment(data.value, at, false));
+      else if (data.case === 'forwardedChat') comments.push(forwardedToComment(data.value, at));
     }
     return comments;
   }
@@ -404,6 +454,15 @@ export class LiveSession {
         case 'nicoad':
           if (data.value.versions.case === 'v1') this.notice('nicoad', data.value.versions.value.message, atMs);
           break;
+        case 'forwardedChat':
+          this.pendingComments.push(forwardedToComment(data.value, atMs));
+          break;
+        case 'ssngUpdated': {
+          const u = toSsngUpdate(data.value);
+          log.info(`ssngUpdated: ${JSON.stringify({ ...u, raw: data.value.source })}`);
+          if (u) this.emit({ type: 'ssng', update: u });
+          break;
+        }
         case 'tagUpdated':
           // 全件が届くので差し替える
           this.emit({ type: 'tags', tags: data.value.tags.map((t) => t.text).filter(Boolean) });
@@ -431,6 +490,85 @@ export class LiveSession {
           : null;
         this.emit({ type: 'operatorComment', notice });
         if (notice) this.emit({ type: 'notice', notice });
+      }
+      if (s.enquete) {
+        const e = s.enquete;
+        // Closed で消す。Poll = 投票中、Result = 結果 (得票率つき)
+        this.emit({
+          type: 'enquete',
+          enquete:
+            e.status === Enquete_Status.Closed
+              ? null
+              : {
+                  question: e.question,
+                  choices: e.choices.map((c) => ({ description: c.description, perMille: c.perMille })),
+                  status: e.status === Enquete_Status.Result ? 'result' : 'poll'
+                }
+        });
+        if (e.status === Enquete_Status.Poll) this.notice('notification', `アンケート: ${e.question}`, atMs);
+      }
+      if (s.commentMode) {
+        const layout = s.commentMode.layout;
+        this.emit({
+          type: 'commentLayout',
+          layout:
+            layout === CommentMode_Layout.SplitTop
+              ? 'splitTop'
+              : layout === CommentMode_Layout.Background
+                ? 'background'
+                : 'normal'
+        });
+      }
+      if (s.commentLock) {
+        const l = s.commentLock;
+        const dur = l.followRestriction?.minimumFollowDuration;
+        this.emit({
+          type: 'commentLock',
+          lock: {
+            status:
+              l.status === CommentLock_Status.Locked
+                ? 'locked'
+                : l.status === CommentLock_Status.Restricted
+                  ? 'restricted'
+                  : 'unrestricted',
+            minimumFollowSec: dur ? Number(dur.seconds) : undefined
+          }
+        });
+      }
+      if (s.moveOrder) {
+        const to = s.moveOrder.to;
+        log.info(`moveOrder: ${to.case} ${JSON.stringify(to.value, (_k, v) => (typeof v === 'bigint' ? v.toString() : v))}`);
+        if (to.case === 'jump' || to.case === 'redirect') {
+          const wait = to.value.wait;
+          this.emit({
+            type: 'moveOrder',
+            order: {
+              kind: to.case,
+              target: to.case === 'jump' ? to.value.content : to.value.uri,
+              message: to.value.message,
+              waitMs: wait ? Number(wait.seconds) * 1000 + Math.floor(wait.nanos / 1e6) : 0
+            }
+          });
+        }
+      }
+      if (s.creatorSupportGoalStatus) {
+        const c = s.creatorSupportGoalStatus;
+        const g = c.goalStatus;
+        this.emit({
+          type: 'creatorSupport',
+          support:
+            c.display && g
+              ? {
+                  rewardName: g.rewardName,
+                  rewardDisplayName: g.rewardDisplayName,
+                  progressRatio: g.progressRatio,
+                  currentPoint: Number(g.currentPoint),
+                  lowerPoint: Number(g.lowerPoint),
+                  upperPoint: Number(g.upperPoint),
+                  isAchieved: g.isAchieved
+                }
+              : null
+        });
       }
       if (s.programStatus?.state === ProgramStatus_State.Ended) {
         this.ended = true;

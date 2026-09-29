@@ -70,6 +70,8 @@ export interface NNDDREComment {
   score?: number;
   /** フォーク種別 (main/owner/easy 等) */
   fork?: string;
+  /** 生放送: 他番組から転送されたコメント (cruise: クルーズ / collab: コラボ) */
+  forwarded?: 'cruise' | 'collab';
 }
 
 /**
