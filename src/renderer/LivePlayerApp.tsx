@@ -384,6 +384,18 @@ export default function LivePlayerApp(): JSX.Element {
         case 'enquete':
           setEnquete(ev.enquete);
           break;
+        case 'schedule': {
+          // 延長されると終了予定が変わる。番組情報の開始・終了時刻を差し替える
+          const { beginMs, endMs } = ev.schedule;
+          const patch = (p: LiveProgramInfo): LiveProgramInfo => ({
+            ...p,
+            endTimeMs: endMs,
+            ...(beginMs > 0 ? { beginTimeMs: beginMs } : {})
+          });
+          if (programRef.current) programRef.current = patch(programRef.current);
+          setProgram((prev) => (prev ? patch(prev) : prev));
+          break;
+        }
         case 'tags':
           if (programRef.current) programRef.current = { ...programRef.current, tags: ev.tags };
           setProgram((prev) => (prev ? { ...prev, tags: ev.tags } : prev));
@@ -780,6 +792,10 @@ export default function LivePlayerApp(): JSX.Element {
   };
 
   const elapsed = program && !isTimeshift ? formatElapsed(now - program.beginTimeMs) : '';
+  const remaining =
+    program && !isTimeshift && state === 'watching' && program.endTimeMs > now
+      ? formatElapsed(program.endTimeMs - now)
+      : '';
   const stateLabel = state === 'watching' ? (isTimeshift ? 'タイムシフト' : 'LIVE') : STATE_LABELS[state];
   const listComments = useMemo<NNDDREComment[]>(
     () => listItems.flatMap((i) => (i.comment ? [i.comment] : [])),
@@ -962,6 +978,7 @@ export default function LivePlayerApp(): JSX.Element {
                 program={program}
                 stateLabel={stateLabel}
                 elapsed={elapsed}
+                remaining={remaining}
                 statistics={statistics}
                 programId={programId}
                 commentLock={commentLock}
@@ -979,6 +996,7 @@ function ProgramInfo({
   program,
   stateLabel,
   elapsed,
+  remaining,
   statistics,
   programId,
   commentLock
@@ -986,6 +1004,7 @@ function ProgramInfo({
   program: LiveProgramInfo | null;
   stateLabel: string;
   elapsed: string;
+  remaining: string;
   statistics: LiveStatistics | null;
   programId: string;
   commentLock: LiveCommentLock | null;
@@ -998,6 +1017,7 @@ function ProgramInfo({
   }
 
   const begin = program.beginTimeMs ? new Date(program.beginTimeMs) : null;
+  const end = program.endTimeMs ? new Date(program.endTimeMs) : null;
   const pad = (n: number): string => String(n).padStart(2, '0');
   const liveUrl = `https://live.nicovideo.jp/watch/${program.programId || programId}`;
   const supplier = program.supplier;
@@ -1023,6 +1043,7 @@ function ProgramInfo({
         <span className="px-1.5 py-0.5 mr-1 rounded bg-nndd-accent text-white font-bold">{stateLabel}</span>
         {begin && `開始: ${begin.getFullYear()}/${pad(begin.getMonth() + 1)}/${pad(begin.getDate())} ${pad(begin.getHours())}:${pad(begin.getMinutes())}`}
         {elapsed && ` ・ 経過 ${elapsed}`}
+        {end && remaining && ` ・ 終了予定 ${pad(end.getHours())}:${pad(end.getMinutes())} (あと ${remaining})`}
         {statistics && ` ・ 来場 ${statistics.viewers.toLocaleString()} ・ コメ ${statistics.comments.toLocaleString()}`}
         {tsReservations !== undefined && ` ・ TS予約 ${tsReservations.toLocaleString()}`}
       </div>

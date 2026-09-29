@@ -66,6 +66,17 @@ const COMMENT_FLUSH_MS = 200;
  * コラボ共有は画面にも流し、クルーズ由来はリストにだけ載せる。番組ごとにコメント番号が独立しているので、
  * thread に転送元の番組IDを入れて自番組のコメントと区別する
  */
+/** 視聴 WebSocket の schedule の時刻 (ISO 文字列 / unix 秒 / unix ミリ秒) を unix ms にする。読めなければ 0 */
+function parseScheduleTime(v: unknown): number {
+  if (typeof v === 'number' && Number.isFinite(v)) return v < 1e11 ? v * 1000 : v;
+  if (typeof v === 'string' && v) {
+    if (/^\d+$/.test(v)) return parseScheduleTime(Number(v));
+    const t = Date.parse(v);
+    if (!Number.isNaN(t)) return t;
+  }
+  return 0;
+}
+
 function forwardedToComment(f: ForwardedChat, atMs: number): NNDDREComment {
   const collab = f.mode === ForwardedChat_ForwardingMode.COLLAB_SHARING;
   return {
@@ -327,6 +338,17 @@ export class LiveSession {
           giftPoints: Number(d.giftPoints) || 0
         });
         break;
+      case 'schedule': {
+        // 実際の形式は未確認 (ISO 文字列 / 秒 / ミリ秒のいずれでも受けられるようにし、届いた生データをログに残す)
+        log.info(`schedule: ${JSON.stringify(d)}`);
+        const beginMs = parseScheduleTime(d.begin);
+        const endMs = parseScheduleTime(d.end);
+        if (endMs > 0) {
+          if (this.program) this.program = { ...this.program, endTimeMs: endMs, ...(beginMs > 0 ? { beginTimeMs: beginMs } : {}) };
+          this.emit({ type: 'schedule', schedule: { beginMs, endMs } });
+        }
+        break;
+      }
       case 'disconnect': {
         const reason = String(d.reason ?? '');
         log.info(`disconnect: ${reason}`);
