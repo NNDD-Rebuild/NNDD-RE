@@ -244,6 +244,11 @@ export const IpcChannel = {
   PLAYER_NICONICO_FULLSCREEN: 'nndd:player:niconico:fullscreen',
   /** BrowserWindowのフルスクリーン状態変化 → renderer通知 */
   PLAYER_WINDOW_FULLSCREEN: 'nndd:player:window:fullscreen',
+  /**
+   * プレイヤーウィンドウの縦幅を指定px増減する (deltaPx: number) → 実際に増減したpx。
+   * 全画面・最大化中は変更せず 0 を返す。ユーザーニコ割の帯を動画に被せないために使う
+   */
+  PLAYER_WINDOW_ADJUST_HEIGHT: 'nndd:player:window:adjustHeight',
 
   // 更新
   UPDATE_CHECK: 'nndd:update:check',
@@ -350,6 +355,8 @@ export const IpcChannel = {
   LIBRARY_VIDEO_MOVE: 'nndd:library:video:move',
   /** 指定フォルダ内の動画ファイル一覧を名前順で返す (folderPath: string) → string[] */
   LIBRARY_FOLDER_VIDEOS: 'nndd:library:folder:videos',
+  /** ニコ割SWFから画像・音声を取り出す (swfPath: string) → NicowariContent */
+  LIBRARY_NICOWARI_READ: 'nndd:library:nicowari:read',
 
   // 外部ツール (バイナリ管理)
   /** yt-dlp / ffmpeg の検出状態を返す → { ytDlp: BinaryStatus, ffmpeg: BinaryStatus } */

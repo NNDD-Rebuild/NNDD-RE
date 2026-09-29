@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { NNDDREComment, WatchPageInfo, DomandStreamCandidate } from '@shared/types';
+import type { NNDDREComment, WatchPageInfo, DomandStreamCandidate, NicowariContent } from '@shared/types';
 import { IpcChannel } from '@shared/types';
 import { buildLocalUrl, isLocalMediaUrl, COMMENT_FONT_FAMILY } from '@shared/constants';
 import { VideoPlayer, type VideoPlayerHandle } from './components/player/VideoPlayer';
 import { VideoController } from './components/player/VideoController';
 import { VideoInfoView } from './components/player/VideoInfoView';
 import { HistoryBlockedDialog } from './components/player/HistoryBlockedDialog';
+import { NicowariBanner } from './components/player/NicowariBanner';
 import type { CommentRenderConfig } from './components/player/CommentRenderer';
 import { ensureCommandResolved } from './util/commentCommands';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
@@ -35,6 +36,8 @@ interface InitParams {
     thumbInfoXml?: string;
     thumbImage?: string;
     ichibaHtml?: string;
+    /** ユーザーニコ割SWF */
+    nicowari?: string[];
   };
   /** 音声のみ再生モード */
   audioOnly?: boolean;
@@ -68,6 +71,12 @@ export default function PlayerApp(): JSX.Element {
   const [watch, setWatch] = useState<WatchPageInfo | null>(null);
   const watchRef = useRef<WatchPageInfo | null>(null);
   const [comments, setComments] = useState<NNDDREComment[]>([]);
+  /** ローカル再生中の動画に付いているユーザーニコ割SWF */
+  const [nicowariFiles, setNicowariFiles] = useState<string[]>([]);
+  /** 表示中のユーザーニコ割 */
+  const [activeNicowari, setActiveNicowari] = useState<NicowariContent | null>(null);
+  /** ニコ割の「停止」指定で本編を一時停止したか (終了時に再開するため) */
+  const pausedByNicowariRef = useRef(false);
   const [pastComments, setPastComments] = useState<NNDDREComment[]>([]);
   const [showPastComments, setShowPastComments] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -313,8 +322,8 @@ export default function PlayerApp(): JSX.Element {
     const base = showPastComments
       ? limitSimultaneousComments(pastComments, pastCommentMaxCount)
       : comments;
-    // owner コマンドコメント (@ジャンプ 等) は画面に流さない
-    return base.filter((c) => !/^[＠@]ジャンプ/.test(c.text ?? ''));
+    // owner コマンドコメント (@ジャンプ / ＠CM 等) は画面に流さない
+    return base.filter((c) => !/^[＠@](ジャンプ|[CＣ][MＭ])/.test(c.text ?? ''));
   }, [showComments, showPastComments, pastComments, pastCommentMaxCount, comments]);
 
   const commentConfig = useMemo<Partial<CommentRenderConfig>>(
@@ -385,6 +394,9 @@ export default function PlayerApp(): JSX.Element {
         try {
           setLoading(true);
           setError(null);
+          setNicowariFiles([]);
+          setActiveNicowari(null);
+          pausedByNicowariRef.current = false;
           const isAudioOnly = !!params.audioOnly;
           audioOnlyRef.current = isAudioOnly;
           setAudioOnly(isAudioOnly);
@@ -650,6 +662,7 @@ export default function PlayerApp(): JSX.Element {
     setShowPastComments(false);
     setLocalCommentXmlPath(files?.commentXml);
     setLocalIchibaHtmlPath(files?.ichibaHtml);
+    setNicowariFiles(files?.nicowari ?? []);
     currentLocalPathRef.current = localPath;
     // ライブラリからソート済みリストが渡された場合はそれを優先、なければファイルシステムから取得
     if (folderPlaylist && folderPlaylist.length > 0) {
@@ -1141,6 +1154,59 @@ export default function PlayerApp(): JSX.Element {
     return () => video.removeEventListener('timeupdate', onTime);
   }, [video, comments]);
 
+  // owner コメントの ＠CM (ユーザーニコ割): 指定 vpos に達したらニコ割を動画上部に表示する。
+  // 書式: ＠CM nm12345 [再生|停止]。「停止」ならニコ割の間は本編を止める (本家NNDD準拠)。
+  // 時刻 (hhmm) 指定の時報型は本家同様に対象外。ニコ割SWFはローカル再生時のみ手元にある。
+  useEffect(() => {
+    if (!video || nicowariFiles.length === 0) return;
+    const cmComments = comments.filter(
+      (c) => (c.fork === 'owner' || c.fork === '1') && /^[＠@][CＣ][MＭ]/.test(c.text ?? '')
+    );
+    if (cmComments.length === 0) return;
+    const triggered = new Set<number>();
+    let disposed = false;
+    const onTime = (): void => {
+      const nowMs = video.currentTime * 1000;
+      for (const c of cmComments) {
+        if (triggered.has(c.no) || nowMs < c.vposMs) continue;
+        triggered.add(c.no);
+        const text = c.text ?? '';
+        const id = text.match(/(nm\d+)/i)?.[1];
+        if (!id || /(nm\d+)[^\d].*\s(\d{4})/i.test(text)) continue;
+        const file = nicowariFiles.find((f) => f.toLowerCase().includes(`[nicowari][${id.toLowerCase()}]`));
+        if (!file) {
+          console.warn('[Nicowari] ニコ割SWFがダウンロードされていません:', id);
+          continue;
+        }
+        const stop = text.includes('停止');
+        window.nndd
+          .invoke<NicowariContent>(window.nndd.channels.LIBRARY_NICOWARI_READ, file)
+          .then((content) => {
+            if (disposed) return;
+            if (stop && !video.paused) {
+              video.pause();
+              pausedByNicowariRef.current = true;
+            }
+            setActiveNicowari(content);
+          })
+          .catch((e) => console.warn('[Nicowari] 読み込み失敗:', file, e));
+      }
+    };
+    video.addEventListener('timeupdate', onTime);
+    return () => {
+      disposed = true;
+      video.removeEventListener('timeupdate', onTime);
+    };
+  }, [video, comments, nicowariFiles]);
+
+  const endNicowari = useCallback((): void => {
+    setActiveNicowari(null);
+    if (pausedByNicowariRef.current) {
+      pausedByNicowariRef.current = false;
+      videoElementRef.current?.play().catch(() => {});
+    }
+  }, []);
+
   // ── コメントウィンドウ連携 ──────────────────────────────
   // comments 変更時にプッシュ (ウィンドウが開いていれば main が転送)
   useEffect(() => {
@@ -1494,6 +1560,10 @@ export default function PlayerApp(): JSX.Element {
           <div ref={webviewWrapperRef} className="flex-1 min-h-0" />
         ) : (
           <>
+            {/* ユーザーニコ割: 動画に重ねず上部に帯を確保し、その分動画エリアの高さを縮める */}
+            {src && activeNicowari && (
+              <NicowariBanner content={activeNicowari} video={video} onEnd={endNicowari} />
+            )}
             <div
               className="flex-1 relative min-h-0"
               onDoubleClick={toggleFullscreen}

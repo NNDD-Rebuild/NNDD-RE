@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { ipcMain, dialog, shell, app, BrowserWindow, webContents, WebContentsView, nativeTheme, session } from 'electron';
+import { ipcMain, dialog, shell, app, BrowserWindow, webContents, WebContentsView, nativeTheme, session, screen } from 'electron';
 import type { Session } from 'electron';
 import { IpcChannel } from '@shared/types';
 import { LibraryManager } from '../db/LibraryManager';
@@ -76,6 +76,7 @@ import { BinaryInstaller } from '../util/BinaryInstaller';
 import type { NNDDREComment } from '@shared/types';
 import { YtDlpStreamer } from '../nicovideo/video/YtDlpStreamer';
 import { LocalTranscodeCache } from '../nicovideo/video/LocalTranscodeCache';
+import { NICOWARI_MARK, readNicowariSwf } from '../library/NicowariSwf';
 import { LibraryScanner } from '../library/LibraryScanner';
 import { TrayManager } from '../tray/TrayManager';
 import { DownloadStatusType } from '@shared/types';
@@ -1425,6 +1426,27 @@ export function registerIpcHandlers(
     });
   });
 
+  ipcMain.handle(IpcChannel.PLAYER_WINDOW_ADJUST_HEIGHT, (e, deltaPx: number) => {
+    const win = BrowserWindow.fromWebContents(e.sender);
+    const delta = Math.round(Number(deltaPx) || 0);
+    if (!win || delta === 0 || win.isFullScreen() || win.isMaximized()) return 0;
+    const [w, h] = win.getContentSize();
+    win.setContentSize(w, Math.max(1, h + delta));
+    // 最小サイズ等で OS/Electron に補正されることがあるため、実際の変化量を返す
+    // (呼び出し側はこの値で元に戻す)
+    const actualHeight = win.getContentSize()[1];
+    // 伸ばした結果ウィンドウ下端が画面外に出る場合は上へずらす
+    if (delta > 0) {
+      const bounds = win.getBounds();
+      const area = screen.getDisplayMatching(bounds).workArea;
+      const overflow = bounds.y + bounds.height - (area.y + area.height);
+      if (overflow > 0) {
+        win.setPosition(bounds.x, Math.max(area.y, bounds.y - overflow));
+      }
+    }
+    return actualHeight - h;
+  });
+
   ipcMain.on(IpcChannel.PLAYER_NICONICO_RESIZE, (e, bounds: NicoBounds) => {
     const win = BrowserWindow.fromWebContents(e.sender);
     if (!win) return;
@@ -1859,6 +1881,8 @@ export function registerIpcHandlers(
       const lowerNames = new Set(names.map((name) => name.toLowerCase()));
       return names
         .filter((name) => VIDEO_EXTS.has(pmod.extname(name).toLowerCase()))
+        // ニコ割素材 (動画本体と同じ動画IDを名乗る広告用Flash) は動画本体ではないので除外
+        .filter((name) => !name.includes(NICOWARI_MARK))
         // 同名の .flv がある .swf は連続再生リストに入れない (.flv を優先して再生する)
         .filter((name) => !(
           pmod.extname(name).toLowerCase() === '.swf' &&
@@ -1869,6 +1893,16 @@ export function registerIpcHandlers(
     } catch {
       return [];
     }
+  });
+
+  // ニコ割SWFから画像・音声を取り出す
+  ipcMain.handle(IpcChannel.LIBRARY_NICOWARI_READ, async (_e, swfPath: string) => {
+    const pmod = await import('node:path');
+    const name = pmod.basename(swfPath ?? '');
+    if (!name.includes(NICOWARI_MARK) || !name.toLowerCase().endsWith('.swf')) {
+      throw new Error('ニコ割のSWFファイルではありません');
+    }
+    return readNicowariSwf(swfPath);
   });
 
   // バイナリ管理

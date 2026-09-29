@@ -8,6 +8,7 @@ import { VideoFileSuffix } from '@shared/constants';
 import { createLogger } from '../util/Logger';
 import { setupHlsSessionInterceptor } from './HlsSessionInterceptor';
 import { registerProtocolHandlerForSession } from './LocalVideoProtocol';
+import { findNicowariFiles, NICOWARI_MARK } from '../library/NicowariSwf';
 
 const log = createLogger('PlayerManager');
 
@@ -37,6 +38,8 @@ export interface OpenPlayerParams {
     ichibaHtml?: string;
     /** 今コメント no 配列JSON (ストリーミング時と同等の今コメ再現用) */
     nowCommentJson?: string;
+    /** ユーザーニコ割SWF (`[id][Nicowari][nm12345].swf`)。投稿者コメントの ＠CM で再生する */
+    nicowari?: string[];
   };
   /** 自動再生による遷移か (true なら最小化中のウィンドウを前面に出さない) */
   autoNext?: boolean;
@@ -233,13 +236,21 @@ export class PlayerManager {
     const thumbImage =
       pick(VideoFileSuffix.THUMB_IMAGE) ??
       pick(VideoFileSuffix.THUMB_IMAGE_LEGACY);
+    let nicowari: string[] = [];
+    try {
+      const entries = fs.readdirSync(dir).filter((name) => name.includes(NICOWARI_MARK));
+      nicowari = findNicowariFiles(videoPath, entries);
+    } catch {
+      // フォルダが読めなければニコ割なし扱い
+    }
     return {
       commentXml: pick(VideoFileSuffix.COMMENT_XML),
       ownerCommentXml,
       thumbInfoXml,
       thumbImage,
       ichibaHtml: pick(VideoFileSuffix.ICHIBA_INFO_HTML),
-      nowCommentJson: pick(VideoFileSuffix.NOW_COMMENT_JSON)
+      nowCommentJson: pick(VideoFileSuffix.NOW_COMMENT_JSON),
+      nicowari
     };
   }
 
