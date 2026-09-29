@@ -404,6 +404,10 @@ export class LiveSession {
         case 'nicoad':
           if (data.value.versions.case === 'v1') this.notice('nicoad', data.value.versions.value.message, atMs);
           break;
+        case 'tagUpdated':
+          // 全件が届くので差し替える
+          this.emit({ type: 'tags', tags: data.value.tags.map((t) => t.text).filter(Boolean) });
+          break;
         default:
           break;
       }

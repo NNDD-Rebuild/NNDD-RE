@@ -344,6 +344,10 @@ export default function LivePlayerApp(): JSX.Element {
         case 'operatorComment':
           setOperatorComment(ev.notice);
           break;
+        case 'tags':
+          if (programRef.current) programRef.current = { ...programRef.current, tags: ev.tags };
+          setProgram((prev) => (prev ? { ...prev, tags: ev.tags } : prev));
+          break;
       }
     });
     return off;
