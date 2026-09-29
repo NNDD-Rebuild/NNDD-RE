@@ -4,6 +4,7 @@ import type {
   LiveCommentRange,
   LiveCommentWindowEvent,
   LiveCommentWindowMessage,
+  LiveCommentLayout,
   LiveConnectionState,
   LiveEnquete,
   LiveEvent,
@@ -204,6 +205,7 @@ export default function LivePlayerApp(): JSX.Element {
   const [statistics, setStatistics] = useState<LiveStatistics | null>(null);
   const [operatorComment, setOperatorComment] = useState<LiveNotice | null>(null);
   const [enquete, setEnquete] = useState<LiveEnquete | null>(null);
+  const [commentLayout, setCommentLayout] = useState<LiveCommentLayout>('normal');
   const [listItems, setListItems] = useState<LiveListItem[]>([]);
   /** 今映っている位置 (番組の vpos 基準、ms)。コメントリストの現在位置表示に使う */
   const [positionMs, setPositionMs] = useState(0);
@@ -346,6 +348,9 @@ export default function LivePlayerApp(): JSX.Element {
           break;
         case 'operatorComment':
           setOperatorComment(ev.notice);
+          break;
+        case 'commentLayout':
+          setCommentLayout(ev.layout);
           break;
         case 'enquete':
           setEnquete(ev.enquete);
@@ -775,7 +780,19 @@ export default function LivePlayerApp(): JSX.Element {
             }}
             className="absolute inset-0 w-full h-full object-contain"
           />
-          <div ref={overlayRef} className="absolute inset-0 pointer-events-none" />
+          {/*
+            放送者が指定するコメントの表示レイアウト (comment_mode) に合わせる。
+            splitTop: 映像の下半分を放送者が使うため、コメントは上半分だけに流す (領域を半分にして描画エンジンにも縮小を伝える)
+            background: コメントを主役にしない演出用。映像を隠さないよう薄く表示する
+          */}
+          <div
+            ref={overlayRef}
+            className="absolute inset-0 pointer-events-none"
+            style={{
+              bottom: commentLayout === 'splitTop' ? '50%' : undefined,
+              opacity: commentLayout === 'background' ? 0.4 : undefined
+            }}
+          />
           {operatorComment && (
             <div className="absolute top-0 inset-x-0 bg-black/70 text-white text-center text-sm py-1 px-2">
               {operatorComment.link ? (
