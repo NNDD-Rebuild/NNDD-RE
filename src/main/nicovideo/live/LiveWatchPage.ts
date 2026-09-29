@@ -1,5 +1,8 @@
 import type { LiveProgramInfo, LiveSupplier } from '@shared/types';
 import { NicoContext } from '../NicoContext';
+import { createLogger } from '../../util/Logger';
+
+const log = createLogger('LiveWatchPage');
 
 export const LIVE_ORIGIN = 'https://live.nicovideo.jp';
 
@@ -160,4 +163,52 @@ export async function activateTimeshift(programId: string): Promise<void> {
     const body = (await use.json().catch(() => ({}))) as { meta?: { errorCode?: string } };
     throw new Error(`タイムシフトの視聴開始に失敗しました (HTTP ${use.status} ${body.meta?.errorCode ?? ''})`.trim());
   }
+}
+
+const TIMESHIFT_ERROR_MESSAGES: Record<string, string> = {
+  PROGRAM_NOT_FOUND: '番組が見つかりません (削除された可能性があります)',
+  EXPIRED_GENERAL: 'タイムシフトの公開期間が終了しています',
+  DUPLICATED: '既に予約済みです',
+  UNAUTHORIZED: 'ログインが必要です',
+  FORBIDDEN: 'この番組は予約できません'
+};
+
+/** タイムシフト API のエラー応答から、利用者向けの文面を作る (未知のコードはそのまま添える) */
+async function timeshiftErrorText(res: Response, action: string): Promise<string> {
+  const body = (await res.json().catch(() => ({}))) as { meta?: { errorCode?: string; errorMessage?: string } };
+  const code = body.meta?.errorCode ?? '';
+  log.warn(`timeshift ${action} failed: HTTP ${res.status} ${JSON.stringify(body)}`);
+  const known = TIMESHIFT_ERROR_MESSAGES[code];
+  if (known) return `${action}に失敗しました: ${known}`;
+  return `${action}に失敗しました (HTTP ${res.status} ${code})`.trim();
+}
+
+/**
+ * タイムシフトを予約する (視聴開始はしない。視聴期限のカウントは始まらない)。
+ * 既に予約済み (DUPLICATED) はエラーにしない
+ */
+export async function reserveTimeshift(programId: string): Promise<void> {
+  const url = `https://live2.nicovideo.jp/api/v2/programs/${programId}/timeshift/reservation`;
+  const headers = { 'X-Frontend-Id': '9', Origin: LIVE_ORIGIN, Referer: `${LIVE_ORIGIN}/` };
+  const res = await NicoContext.get().http.fetch(url, { method: 'POST', headers });
+  if (res.ok) return;
+  const cloned = res.clone();
+  const body = (await cloned.json().catch(() => ({}))) as { meta?: { errorCode?: string } };
+  if (body.meta?.errorCode === 'DUPLICATED') return;
+  throw new Error(await timeshiftErrorText(res, 'タイムシフトの予約'));
+}
+
+/** タイムシフトの予約を解除する (複数指定可) */
+export async function cancelTimeshiftReservations(programIds: string[]): Promise<void> {
+  const ids = programIds.filter((id) => /^lv\d+$/.test(id));
+  if (ids.length === 0) throw new Error('解除する番組IDが指定されていません');
+  const url = `https://live2.nicovideo.jp/api/v2/timeshift/reservations?programIds=${ids.join(',')}`;
+  const headers = { 'X-Frontend-Id': '9', Origin: LIVE_ORIGIN, Referer: `${LIVE_ORIGIN}/` };
+  const res = await NicoContext.get().http.fetch(url, { method: 'DELETE', headers });
+  // 応答の形式は未確認なので、成功時も内容をログに残す
+  if (res.ok) {
+    log.info(`timeshift cancel ok: ${ids.join(',')} -> ${(await res.text().catch(() => '')).slice(0, 500)}`);
+    return;
+  }
+  throw new Error(await timeshiftErrorText(res, 'タイムシフト予約の解除'));
 }

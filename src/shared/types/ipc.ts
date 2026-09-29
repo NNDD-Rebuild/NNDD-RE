@@ -195,6 +195,10 @@ export const IpcChannel = {
   LIVE_FETCH_COMMENTS_AROUND: 'nndd:live:fetchCommentsAround',
   /** タイムシフトの予約 → 視聴開始 (programId)。ユーザー確認後にのみ呼ぶ */
   LIVE_TIMESHIFT_ACTIVATE: 'nndd:live:timeshiftActivate',
+  /** タイムシフトの予約 (視聴開始はしない) */
+  LIVE_TIMESHIFT_RESERVE: 'nndd:live:timeshiftReserve',
+  /** タイムシフト予約の解除 (番組ID配列) */
+  LIVE_TIMESHIFT_CANCEL: 'nndd:live:timeshiftCancel',
   /** 画質変更 (quality) */
   LIVE_CHANGE_QUALITY: 'nndd:live:changeQuality',
   /** フォロー中の番組一覧 ({ status: 'onair' | 'reserved', offset }) → LiveProgramListResult */

@@ -91,12 +91,19 @@ function openPlayer(input: string): Promise<void> {
 function ProgramCard({
   p,
   rank,
-  onOpen
+  onOpen,
+  tsAction,
+  tsBusy,
+  onTsAction
 }: {
   p: LiveProgramSummary;
   /** ランキング順位 (ランキング表示時のみ) */
   rank?: number;
   onOpen: (id: string) => void;
+  /** タイムシフトの操作ボタン (reserve: 予約 / cancel: 予約解除)。出さないときは undefined */
+  tsAction?: 'reserve' | 'cancel';
+  tsBusy?: boolean;
+  onTsAction?: (p: LiveProgramSummary, action: 'reserve' | 'cancel') => void;
 }): JSX.Element {
   const badge = STATUS_BADGE[p.status];
   // 見た目は動画一覧のカード (VideoCard のグリッド表示) に揃える
@@ -153,6 +160,12 @@ function ProgramCard({
         {p.status === 'ENDED' && p.timeshiftPlayable === false && (
           <div className="text-xs text-nndd-subtext">タイムシフト視聴不可</div>
         )}
+        {p.timeshiftViewingLimitMs !== undefined && (
+          <div className="text-xs text-nndd-subtext">視聴期限: {formatDateTime(p.timeshiftViewingLimitMs)}</div>
+        )}
+        {p.timeshiftPublicationEndMs !== undefined && (
+          <div className="text-xs text-nndd-subtext">公開終了: {formatDateTime(p.timeshiftPublicationEndMs)}</div>
+        )}
         <div className="mt-auto pt-2 flex gap-1">
           <button
             onClick={() => onOpen(p.programId)}
@@ -160,6 +173,20 @@ function ProgramCard({
           >
             視聴
           </button>
+          {tsAction && onTsAction && (
+            <button
+              onClick={() => onTsAction(p, tsAction)}
+              disabled={tsBusy}
+              className="text-xs px-2 py-0.5 bg-nndd-border rounded hover:bg-nndd-accent hover:text-white disabled:opacity-50"
+              title={
+                tsAction === 'reserve'
+                  ? 'タイムシフトを予約する (視聴開始はしません)'
+                  : 'タイムシフトの予約を解除する'
+              }
+            >
+              {tsAction === 'reserve' ? 'TS予約' : '予約解除'}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -174,6 +201,9 @@ export function LiveView(): JSX.Element {
   const [subTab, setSubTab] = useState<SubTab>('followOnair');
   const [input, setInput] = useState('');
   const [openError, setOpenError] = useState('');
+  /** タイムシフト予約・解除の結果メッセージ */
+  const [tsMessage, setTsMessage] = useState<{ text: string; isError: boolean } | null>(null);
+  const [tsBusyId, setTsBusyId] = useState('');
 
   const [programs, setPrograms] = useState<LiveProgramSummary[]>([]);
   const [total, setTotal] = useState(0);
@@ -261,6 +291,7 @@ export function LiveView(): JSX.Element {
 
   // サブタブ切替時に読み込む (検索タブは検索実行時のみ)
   useEffect(() => {
+    setTsMessage(null);
     if (subTab === 'search') {
       setSearchPage(1);
       void load('search', searched, false, 0);
@@ -321,6 +352,34 @@ export function LiveView(): JSX.Element {
     openPlayer(id).catch((e) => setOpenError(errorText(e)));
   };
 
+  const onTsAction = async (p: LiveProgramSummary, action: 'reserve' | 'cancel'): Promise<void> => {
+    if (action === 'cancel' && !window.confirm(`「${p.title}」のタイムシフト予約を解除しますか？`)) return;
+    setTsBusyId(p.programId);
+    setTsMessage(null);
+    try {
+      if (action === 'reserve') {
+        await window.nndd.invoke(IpcChannel.LIVE_TIMESHIFT_RESERVE, p.programId);
+        setTsMessage({ text: `タイムシフトを予約しました: ${p.title}`, isError: false });
+      } else {
+        await window.nndd.invoke(IpcChannel.LIVE_TIMESHIFT_CANCEL, [p.programId]);
+        setPrograms((prev) => prev.filter((x) => x.programId !== p.programId));
+        setTotal((n) => Math.max(0, n - 1));
+        setTsMessage({ text: `予約を解除しました: ${p.title}`, isError: false });
+      }
+    } catch (e) {
+      setTsMessage({ text: errorText(e), isError: true });
+    } finally {
+      setTsBusyId('');
+    }
+  };
+
+  /** カードに出すタイムシフト操作。予約一覧では解除、それ以外は予約 (視聴不可の終了番組には出さない) */
+  const tsActionFor = (p: LiveProgramSummary): 'reserve' | 'cancel' | undefined => {
+    if (subTab === 'timeshift') return 'cancel';
+    if (p.status === 'ENDED' && p.timeshiftPlayable === false) return undefined;
+    return 'reserve';
+  };
+
   const isRanking = subTab === 'ranking';
   const shown = isRanking ? (ranking?.[rankingKind] ?? []) : programs;
   const cardItems = useMemo(
@@ -366,6 +425,11 @@ export function LiveView(): JSX.Element {
         </button>
       </form>
       {openError && <div className="px-3 pt-2 text-xs text-red-500">{openError}</div>}
+      {tsMessage && (
+        <div className={`px-3 pt-2 text-xs ${tsMessage.isError ? 'text-red-500' : 'text-green-500'}`}>
+          {tsMessage.text}
+        </div>
+      )}
 
       {/* サブタブ */}
       <div className="flex items-center gap-1 px-3 pt-2 border-b border-nndd-border">
@@ -555,7 +619,16 @@ export function LiveView(): JSX.Element {
           layout="grid"
           scrollElementRef={listScrollRef}
           getKey={(c) => c.key}
-          renderItem={(c) => <ProgramCard p={c.p} rank={c.rank} onOpen={onOpen} />}
+          renderItem={(c) => (
+            <ProgramCard
+              p={c.p}
+              rank={c.rank}
+              onOpen={onOpen}
+              tsAction={tsActionFor(c.p)}
+              tsBusy={tsBusyId === c.p.programId}
+              onTsAction={(p, a) => void onTsAction(p, a)}
+            />
+          )}
         />
         {loading && <div className="mt-3 text-xs text-nndd-subtext">読み込み中…</div>}
         {canLoadMore && (

@@ -7,7 +7,7 @@ import { IpcChannel } from '@shared/types';
 import { LibraryManager } from '../db/LibraryManager';
 import { LivePlayerManager } from '../player/LivePlayerManager';
 import { LiveCommentWindowManager } from '../player/LiveCommentWindowManager';
-import { activateTimeshift, normalizeLiveId } from '../nicovideo/live/LiveWatchPage';
+import { activateTimeshift, cancelTimeshiftReservations, normalizeLiveId, reserveTimeshift } from '../nicovideo/live/LiveWatchPage';
 import {
   fetchFollowingPrograms,
   fetchLiveRanking,
@@ -1187,6 +1187,12 @@ export function registerIpcHandlers(
   );
   ipcMain.handle(IpcChannel.LIVE_TIMESHIFT_ACTIVATE, (_e, programId: string) =>
     activateTimeshift(String(programId))
+  );
+  ipcMain.handle(IpcChannel.LIVE_TIMESHIFT_RESERVE, (_e, programId: string) =>
+    reserveTimeshift(String(programId))
+  );
+  ipcMain.handle(IpcChannel.LIVE_TIMESHIFT_CANCEL, (_e, programIds: string[]) =>
+    cancelTimeshiftReservations((Array.isArray(programIds) ? programIds : []).map(String))
   );
   ipcMain.handle(
     IpcChannel.LIVE_LIST_FOLLOWING,

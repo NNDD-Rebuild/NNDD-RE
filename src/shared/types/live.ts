@@ -192,6 +192,10 @@ export interface LiveProgramSummary {
   isMemberOnly: boolean;
   /** タイムシフトが視聴可能か (分かる場合のみ) */
   timeshiftPlayable?: boolean;
+  /** タイムシフトの視聴期限 (unix ms)。予約一覧で分かる場合のみ */
+  timeshiftViewingLimitMs?: number;
+  /** タイムシフトの公開終了 (unix ms)。分かる場合のみ */
+  timeshiftPublicationEndMs?: number;
 }
 
 export interface LiveProgramListResult {

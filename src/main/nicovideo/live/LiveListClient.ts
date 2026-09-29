@@ -8,7 +8,10 @@ import type {
   LiveSearchParams
 } from '@shared/types';
 import { NicoContext } from '../NicoContext';
+import { createLogger } from '../../util/Logger';
 import { LIVE_ORIGIN, parseEmbeddedData } from './LiveWatchPage';
+
+const log = createLogger('LiveListClient');
 
 /**
  * 生放送の番組一覧 (フォロー中・検索・タイムシフト予約)。
@@ -188,7 +191,36 @@ function fromEmbeddedProgram(r: any): LiveProgramSummary {
       str(r.supplier?.icons?.uri150x150),
     providerType: str(r.providerType),
     isMemberOnly: Boolean(r.isFollowerOnly || r.payment),
-    timeshiftPlayable: typeof r.timeshift?.isPlayable === 'boolean' ? r.timeshift.isPlayable : undefined
+    timeshiftPlayable: typeof r.timeshift?.isPlayable === 'boolean' ? r.timeshift.isPlayable : undefined,
+    ...timeshiftDeadlines(r)
+  };
+}
+
+/**
+ * タイムシフトの視聴期限・公開終了の時刻。埋め込みデータのキー名は未確認のため、
+ * 想定される候補を順に見る (取れなければ入れない)。タイムシフト予約一覧の取得時に実際の形をログに出す
+ */
+function timeshiftDeadlines(r: any): Pick<LiveProgramSummary, 'timeshiftViewingLimitMs' | 'timeshiftPublicationEndMs'> {
+  const pick = (...vals: unknown[]): number | undefined => {
+    for (const v of vals) {
+      const ms = toMs(v);
+      if (ms > 0) return ms;
+    }
+    return undefined;
+  };
+  return {
+    timeshiftViewingLimitMs: pick(
+      r.timeshift?.viewing?.endTime,
+      r.timeshift?.viewingEndTime,
+      r.timeshift?.expireTime,
+      r.reservation?.expireTime,
+      r.expireTime
+    ),
+    timeshiftPublicationEndMs: pick(
+      r.timeshift?.publication?.endTime,
+      r.timeshift?.publicationEndTime,
+      r.timeshiftPublicationEndTime
+    )
   };
 }
 
@@ -204,7 +236,13 @@ async function fetchEmbeddedData(path: string, label: string): Promise<Record<st
 /** タイムシフト予約一覧 (live.nicovideo.jp/embed/timeshift-reservations の embedded-data) */
 export async function fetchTimeshiftReservations(): Promise<LiveProgramListResult> {
   const props = await fetchEmbeddedData('/embed/timeshift-reservations', 'タイムシフト予約一覧');
-  const programs = ((props.reservations?.reservations ?? []) as any[]).map(fromEmbeddedProgram);
+  const items = (props.reservations?.reservations ?? []) as any[];
+  if (items[0]) {
+    // 視聴期限などのキー名を確認するため、先頭1件の timeshift 関連を残す
+    const { timeshift, reservation } = items[0];
+    log.info(`timeshift reservation sample: ${JSON.stringify({ timeshift, reservation }).slice(0, 1500)}`);
+  }
+  const programs = items.map(fromEmbeddedProgram);
   return { programs, total: programs.length };
 }
 
