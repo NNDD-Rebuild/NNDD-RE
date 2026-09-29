@@ -203,7 +203,7 @@ function fromEmbeddedProgram(r: any): LiveProgramSummary {
 function timeshiftDeadlines(r: any): Pick<LiveProgramSummary, 'timeshiftViewingLimitMs' | 'timeshiftPublicationEndMs'> {
   const pick = (...vals: unknown[]): number | undefined => {
     for (const v of vals) {
-      const ms = toMs(v);
+      const ms = typeof v === 'string' ? isoToMs(v) : toMs(v);
       if (ms > 0) return ms;
     }
     return undefined;
