@@ -506,6 +506,10 @@ export class LiveSession {
                 }
         });
         if (e.status === Enquete_Status.Poll) this.notice('notification', `アンケート: ${e.question}`, atMs);
+        else if (e.status === Enquete_Status.Result) {
+          const lines = e.choices.map((c, i) => `${i + 1}. ${c.description} ${((c.perMille ?? 0) / 10).toFixed(1)}%`);
+          this.notice('notification', `アンケート結果: ${e.question} / ${lines.join(' / ')}`, atMs);
+        }
       }
       if (s.commentMode) {
         const layout = s.commentMode.layout;

@@ -5,6 +5,7 @@ import type {
   LiveCommentWindowEvent,
   LiveCommentWindowMessage,
   LiveConnectionState,
+  LiveEnquete,
   LiveEvent,
   LiveListItem,
   LiveNotice,
@@ -26,6 +27,7 @@ import {
   sanitizeDescription
 } from './components/player/VideoInfoView';
 import { ContextMenuPopup, MenuItem } from './components/common/VideoCard';
+import { EnqueteOverlay } from './components/live/LiveOverlays';
 
 /** 生放送プレイヤー → コメントウィンドウ (main が中継) */
 function pushToCommentWindow(msg: LiveCommentWindowMessage): void {
@@ -201,6 +203,7 @@ export default function LivePlayerApp(): JSX.Element {
   const [stateMessage, setStateMessage] = useState('');
   const [statistics, setStatistics] = useState<LiveStatistics | null>(null);
   const [operatorComment, setOperatorComment] = useState<LiveNotice | null>(null);
+  const [enquete, setEnquete] = useState<LiveEnquete | null>(null);
   const [listItems, setListItems] = useState<LiveListItem[]>([]);
   /** 今映っている位置 (番組の vpos 基準、ms)。コメントリストの現在位置表示に使う */
   const [positionMs, setPositionMs] = useState(0);
@@ -343,6 +346,9 @@ export default function LivePlayerApp(): JSX.Element {
           break;
         case 'operatorComment':
           setOperatorComment(ev.notice);
+          break;
+        case 'enquete':
+          setEnquete(ev.enquete);
           break;
         case 'tags':
           if (programRef.current) programRef.current = { ...programRef.current, tags: ev.tags };
@@ -781,6 +787,7 @@ export default function LivePlayerApp(): JSX.Element {
               )}
             </div>
           )}
+          {enquete && <EnqueteOverlay enquete={enquete} onClose={() => setEnquete(null)} />}
           {(state === 'error' || state === 'ended' || (!streamUri && state !== 'watching')) && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div className="bg-black/70 text-white px-4 py-3 rounded text-sm text-center max-w-md pointer-events-auto">
