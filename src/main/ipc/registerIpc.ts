@@ -1855,8 +1855,15 @@ export function registerIpcHandlers(
     const VIDEO_EXTS = new Set(['.mp4', '.flv', '.swf', '.webm', '.mkv', '.m4a']);
     if (!fsmod.existsSync(folderPath)) return [];
     try {
-      return fsmod.readdirSync(folderPath)
+      const names = fsmod.readdirSync(folderPath);
+      const lowerNames = new Set(names.map((name) => name.toLowerCase()));
+      return names
         .filter((name) => VIDEO_EXTS.has(pmod.extname(name).toLowerCase()))
+        // 同名の .flv がある .swf は連続再生リストに入れない (.flv を優先して再生する)
+        .filter((name) => !(
+          pmod.extname(name).toLowerCase() === '.swf' &&
+          lowerNames.has(name.slice(0, -4).toLowerCase() + '.flv')
+        ))
         .sort((a, b) => a.localeCompare(b, 'ja'))
         .map((name) => pmod.join(folderPath, name));
     } catch {

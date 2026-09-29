@@ -112,6 +112,18 @@ export class LibraryScanner {
     // 既存レコード?
     const existing = library.videoDao.getByKey(videoId);
 
+    // 同じ動画IDのファイルが複数ある場合 (本家NNDD時代の .flv と .swf の併存等)、
+    // DBには1件しか持てないため、優先度の低いファイルで既存レコードを上書きしない。
+    if (
+      existing &&
+      existing.uri !== filePath &&
+      fs.existsSync(existing.uri) &&
+      this.filePriority(filePath) < this.filePriority(existing.uri)
+    ) {
+      log.debug('skip (同じ動画IDの優先ファイルあり):', filePath, '<', existing.uri);
+      return 'skipped';
+    }
+
     // 付帯ファイル (新形式優先、旧形式フォールバック)
     const thumbImagePathNew = path.join(dir, `${baseName}${VideoFileSuffix.THUMB_IMAGE}`);
     const thumbImagePathLegacy = path.join(dir, `${baseName}${VideoFileSuffix.THUMB_IMAGE_LEGACY}`);
@@ -165,6 +177,14 @@ export class LibraryScanner {
     const dirId = library.videoDao.ensureFileDir(dir);
     library.videoDao.insertOrUpdate(video, dirId);
     return existing ? 'updated' : 'added';
+  }
+
+  /**
+   * 同じ動画IDのファイルが複数あるときの優先度 (大きいほど優先)。
+   * .swf は .flv より後回しにする。
+   */
+  private static filePriority(filePath: string): number {
+    return path.extname(filePath).toLowerCase() === '.swf' ? 0 : 1;
   }
 
   static extractVideoId(baseName: string): string | null {
