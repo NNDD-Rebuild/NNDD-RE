@@ -20,7 +20,7 @@ export function EnqueteOverlay({
 }): JSX.Element {
   const isResult = enquete.status === 'result';
   return (
-    <div className="absolute left-2 bottom-2 w-72 max-w-[60%] rounded bg-black/80 text-white text-xs shadow-lg pointer-events-auto">
+    <div className="absolute left-2 bottom-2 w-72 max-w-[48%] rounded bg-black/80 text-white text-xs shadow-lg pointer-events-auto">
       <div className="flex items-start gap-2 px-2 py-1.5 border-b border-white/20">
         <div className="flex-1 min-w-0">
           <div className="text-[10px] text-nndd-accent font-bold">
@@ -38,7 +38,7 @@ export function EnqueteOverlay({
       </div>
       <div className="p-2 space-y-1.5">
         {enquete.choices.map((c, i) => {
-          const percent = c.perMille !== undefined ? c.perMille / 10 : undefined;
+          const percent = c.perMille !== undefined ? Math.max(0, Math.min(100, c.perMille / 10)) : undefined;
           return (
             <div key={i}>
               <div className="flex justify-between gap-2">
@@ -63,12 +63,19 @@ export function EnqueteOverlay({
 }
 
 /** クリエイターサポートの目標ゲージ (映像の上端に細く出す) */
-export function CreatorSupportBar({ support }: { support: LiveCreatorSupport }): JSX.Element {
+export function CreatorSupportBar({
+  support,
+  lowered = false
+}: {
+  support: LiveCreatorSupport;
+  /** 移動指示バナーと重ならないよう下げて表示する */
+  lowered?: boolean;
+}): JSX.Element {
   const percent = Math.max(0, Math.min(100, support.progressRatio * 100));
   const name = support.rewardDisplayName || support.rewardName;
   return (
     <div
-      className="absolute right-2 top-10 w-52 max-w-[40%] rounded bg-black/70 text-white text-[10px] px-2 py-1 pointer-events-none"
+      className={`absolute right-2 ${lowered ? 'top-28' : 'top-10'} w-52 max-w-[40%] rounded bg-black/70 text-white text-[10px] px-2 py-1 pointer-events-none`}
       title={`クリエイターサポート目標: ${name} (${support.currentPoint.toLocaleString()} / ${support.upperPoint.toLocaleString()} pt)`}
     >
       <div className="flex justify-between gap-2">
@@ -108,7 +115,7 @@ export function CommentLockChip({ lock }: { lock: LiveCommentLock }): JSX.Elemen
   if (!text) return null;
   return (
     <div
-      className="absolute right-2 bottom-2 max-w-[50%] rounded bg-black/70 text-white text-[10px] px-2 py-0.5 pointer-events-none"
+      className="absolute right-2 bottom-2 max-w-[48%] rounded bg-black/70 text-white text-[10px] px-2 py-0.5 pointer-events-none"
       title={text}
     >
       🔒 {text}

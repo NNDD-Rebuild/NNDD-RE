@@ -906,7 +906,7 @@ export default function LivePlayerApp(): JSX.Element {
               }}
             />
           )}
-          {creatorSupport && <CreatorSupportBar support={creatorSupport} />}
+          {creatorSupport && <CreatorSupportBar support={creatorSupport} lowered={moveOrder !== null} />}
           {commentLock && commentLock.status !== 'unrestricted' && <CommentLockChip lock={commentLock} />}
           {enquete && <EnqueteOverlay enquete={enquete} onClose={() => setEnquete(null)} />}
           {(state === 'error' || state === 'ended' || (!streamUri && state !== 'watching')) && (
