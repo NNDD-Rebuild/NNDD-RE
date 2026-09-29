@@ -230,7 +230,9 @@ export class MyListClient {
       sortOrder: 'desc',
       pageSize: String(pageSize),
       page: String(page),
-      sensitive: 'mask'
+      // センシティブ (年齢制限等) 動画も含めて取得する。パラメータ名は sensitiveContents
+      // (sensitive は API に無視され、未指定扱い=センシティブ動画が除外される)
+      sensitiveContents: 'mask'
     });
     const url = `https://nvapi.nicovideo.jp/v3/users/${encodeURIComponent(userId)}/videos?${params}`;
     log.debug('fetch user videos:', url);
