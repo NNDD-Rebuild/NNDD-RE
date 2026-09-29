@@ -58,6 +58,7 @@ import { MyListAutoDownloader } from '../downloader/MyListAutoDownloader';
 import { SeriesAutoDownloader } from '../downloader/SeriesAutoDownloader';
 import { FollowUserAutoDownloader } from '../downloader/FollowUserAutoDownloader';
 import { ChannelWatcher } from '../downloader/ChannelWatcher';
+import { LiveFollowNotifier } from '../nicovideo/live/LiveFollowNotifier';
 import { ScheduleManager } from '../downloader/ScheduleManager';
 import { SeriesClient } from '../nicovideo/series/SeriesClient';
 import type { Schedule } from '@shared/types';
@@ -121,6 +122,8 @@ export function registerIpcHandlers(
   scheduler.start();
   const channelWatcher = new ChannelWatcher(library, trayManager);
   channelWatcher.start();
+  const liveFollowNotifier = new LiveFollowNotifier();
+  liveFollowNotifier.apply();
 
   // VIDEO_OPEN_PLAYER 時点でプリフェッチした WatchInfo を一時保持するキャッシュ
   const watchInfoPrefetchCache = new Map<string, Promise<WatchPageInfo>>();
@@ -930,6 +933,9 @@ export function registerIpcHandlers(
     }
     if (key === 'logLevel') {
       setLogLevel(value as 'standard' | 'verbose');
+    }
+    if (key === 'live.followNotify' || key === 'live.followNotifyIntervalMin') {
+      liveFollowNotifier.apply();
     }
     if (key.startsWith('discordRpc.')) {
       void getDiscordRpcManager().onConfigChanged();

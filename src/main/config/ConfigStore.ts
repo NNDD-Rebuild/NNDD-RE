@@ -335,6 +335,10 @@ export interface NnddConfig {
     commentWindowOnTop: boolean;
     /** 放送者の移動指示 (別番組へジャンプ) に自動で従うか。false なら案内バナーを出すだけ */
     autoFollowMoveOrder: boolean;
+    /** フォロー中の放送者の番組が始まったら OS 通知を出すか */
+    followNotify: boolean;
+    /** 通知のための確認間隔 (分、最短 1) */
+    followNotifyIntervalMin: number;
     /** コメントウィンドウの位置・サイズ (前回閉じたとき) */
     commentWindowBounds?: { x: number; y: number; width: number; height: number };
   };
@@ -481,7 +485,9 @@ const DEFAULTS: NnddConfig = {
     allowMultipleWindows: false,
     commentListDisplay: 'side',
     commentWindowOnTop: true,
-    autoFollowMoveOrder: false
+    autoFollowMoveOrder: false,
+    followNotify: false,
+    followNotifyIntervalMin: 5
   },
   channelWatch: {
     enabled: false,

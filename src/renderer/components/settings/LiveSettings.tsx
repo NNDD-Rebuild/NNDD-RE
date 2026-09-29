@@ -15,6 +15,14 @@ export function LiveSettings(): JSX.Element {
     'live.autoFollowMoveOrder',
     false
   );
+  const [followNotify, setFollowNotify, followNotifyLoading] = useConfig<boolean>(
+    'live.followNotify',
+    false
+  );
+  const [notifyInterval, setNotifyInterval, notifyIntervalLoading] = useConfig<number>(
+    'live.followNotifyIntervalMin',
+    5
+  );
 
   return (
     <div className="p-4 max-w-3xl">
@@ -48,6 +56,37 @@ export function LiveSettings(): JSX.Element {
           <p className="text-xs text-nndd-subtext mt-1 ml-6">
             放送者が視聴者を別の番組へ誘導したとき、指定された待ち時間 (最短 5 秒) の後に自動で移動します。
             OFF の場合は、移動を案内するバナーを表示するだけです。
+          </p>
+        </div>
+      </div>
+
+      <div className="mb-5">
+        <div className="text-sm font-bold mb-2 border-b border-nndd-border pb-1">通知</div>
+        <div className="pl-3 space-y-2">
+          <label className="flex items-center gap-2 cursor-pointer select-none text-sm">
+            <input
+              type="checkbox"
+              checked={followNotify}
+              disabled={followNotifyLoading}
+              onChange={(e) => void setFollowNotify(e.target.checked)}
+            />
+            フォロー中の放送者が生放送を始めたら通知する
+          </label>
+          <div className="flex items-center gap-2 text-sm ml-6">
+            確認間隔
+            <input
+              type="number"
+              min={1}
+              value={notifyInterval}
+              disabled={notifyIntervalLoading || !followNotify}
+              onChange={(e) => void setNotifyInterval(Math.max(1, Math.floor(Number(e.target.value)) || 1))}
+              className="w-16 bg-nndd-bg border border-nndd-border px-1 py-0.5 text-sm"
+            />
+            分 (最短 1 分)
+          </div>
+          <p className="text-xs text-nndd-subtext ml-6">
+            ログイン中のみ動作します。通知をクリックすると、その番組を生放送プレイヤーで開きます。
+            アプリを起動した直後に放送中の番組は通知しません。
           </p>
         </div>
       </div>
