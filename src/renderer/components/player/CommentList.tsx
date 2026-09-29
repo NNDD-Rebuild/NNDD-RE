@@ -475,6 +475,14 @@ export function CommentList({
                     {formatVpos(c.vposMs)}
                   </td>
                   <td className="px-1 py-0.5 truncate overflow-hidden max-w-0">
+                    {c.forwarded && (
+                      <span
+                        className="mr-1 px-1 rounded bg-nndd-accent/30 text-nndd-accent text-[10px]"
+                        title={c.forwarded === 'collab' ? '別番組から転送されたコメント (コラボ)' : '別番組から転送されたコメント (クルーズ)'}
+                      >
+                        転送
+                      </span>
+                    )}
                     <CommentTextCell text={c.text} />
                   </td>
                   <td className="px-1 py-0.5 truncate overflow-hidden max-w-0 text-nndd-subtext">{c.userId}</td>
