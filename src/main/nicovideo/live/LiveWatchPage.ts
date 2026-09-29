@@ -175,12 +175,12 @@ const TIMESHIFT_ERROR_MESSAGES: Record<string, string> = {
 
 /** タイムシフト API のエラー応答から、利用者向けの文面を作る (未知のコードはそのまま添える) */
 async function timeshiftErrorText(res: Response, action: string): Promise<string> {
-  const body = (await res.json().catch(() => ({}))) as { meta?: { errorCode?: string; errorMessage?: string } };
+  const body = ((await res.json().catch(() => null)) ?? {}) as { meta?: { errorCode?: string; errorMessage?: string } };
   const code = body.meta?.errorCode ?? '';
   log.warn(`timeshift ${action} failed: HTTP ${res.status} ${JSON.stringify(body)}`);
   const known = TIMESHIFT_ERROR_MESSAGES[code];
   if (known) return `${action}に失敗しました: ${known}`;
-  return `${action}に失敗しました (HTTP ${res.status} ${code})`.trim();
+  return `${action}に失敗しました (HTTP ${res.status}${code ? ` ${code}` : ''})`;
 }
 
 /**
