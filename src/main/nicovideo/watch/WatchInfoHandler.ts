@@ -152,6 +152,8 @@ export class WatchInfoHandler {
       const url = `${NicoApi.WATCH_PAGE}${videoId}`;
       log.debug('fetchSeriesFromHtml: fetching HTML for series:', url);
       const html = await ctx.http.getText(url, { noCookie, noCookieReceive: noCookie });
+      const lazySeries = await WatchInfoHandler.fetchSeriesFromLazyApi(videoId, html, noCookie);
+      if (lazySeries) return lazySeries;
       const series = WatchPageParser.parseSeriesFromHtml(html);
       if (!series) return null;
 
@@ -164,6 +166,45 @@ export class WatchInfoHandler {
       return series;
     } catch (e) {
       log.warn('fetchSeriesFromHtml failed:', e);
+      return null;
+    }
+  }
+
+  /**
+   * 新ウォッチページ (v4) はシリーズ情報を HTML に埋め込まず、
+   * POST nvapi /v4/watch/lazy/{id} (body: keyToken) で返す。
+   * keyToken は数分で失効するため、HTML 取得直後に呼ぶこと。
+   */
+  private static async fetchSeriesFromLazyApi(
+    videoId: string,
+    html: string,
+    noCookie = false
+  ): Promise<{ id: string; title: string } | null> {
+    const key = WatchPageParser.parseLazyKey(html);
+    if (!key) return null;
+    try {
+      const ctx = NicoContext.get();
+      const url = `https://nvapi.nicovideo.jp/v4/watch/lazy/${encodeURIComponent(videoId)}?actionTrackId=${encodeURIComponent(key.watchTrackId)}`;
+      const res = await ctx.http.postJson<{ data?: { series?: { id?: number | string; title?: string } | null } }>(
+        url,
+        { keyToken: key.keyToken },
+        {
+          headers: {
+            'X-Frontend-Id': '6',
+            'X-Frontend-Version': '0',
+            'X-Niconico-Language': 'ja-jp',
+            'X-Request-With': 'https://www.nicovideo.jp'
+          },
+          noCookie,
+          noCookieReceive: noCookie
+        }
+      );
+      const s = res?.data?.series;
+      if (!s || s.id == null) return null;
+      log.debug('fetchSeriesFromLazyApi: seriesId=%s', s.id);
+      return { id: String(s.id), title: String(s.title ?? '') };
+    } catch (e) {
+      log.warn('fetchSeriesFromLazyApi failed:', e);
       return null;
     }
   }

@@ -185,6 +185,21 @@ export class WatchPageParser {
   }
 
   /**
+   * 新ウォッチページ ($watchV4) から lazy API 用のキーを取り出す。
+   * シリーズ情報は HTML/v3 API には含まれず、POST /v4/watch/lazy/{id} で取得する。
+   */
+  static parseLazyKey(html: string): { keyToken: string; watchTrackId: string } | null {
+    const json = this.extractEmbeddedJson(html) as Record<string, any> | null;
+    const data = json?.data?.response?.['$watchV4']?.data;
+    const keyToken = data?.lazy?.authKey;
+    const watchTrackId = data?.client?.watchTrackId;
+    if (typeof keyToken === 'string' && typeof watchTrackId === 'string') {
+      return { keyToken, watchTrackId };
+    }
+    return null;
+  }
+
+  /**
    * HTMLからシリーズIDだけを抽出する (href パターン)。
    * タイトルは含まない。WatchInfoHandler が別途 nvapi で補完する用途。
    */
