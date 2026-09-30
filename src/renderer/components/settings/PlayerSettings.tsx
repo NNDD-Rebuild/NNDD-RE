@@ -55,6 +55,10 @@ export function PlayerSettings(): JSX.Element {
     true
   );
   const [rate, setRate] = useConfig<number>('player.playbackRate', 1.0);
+  const [keepPlaybackRate, setKeepPlaybackRate] = useConfig<boolean>(
+    'player.keepPlaybackRate',
+    false
+  );
   const [volumeNormalize, setVolumeNormalize] = useConfig<boolean>(
     'player.volumeNormalize',
     false
@@ -438,6 +442,16 @@ export function PlayerSettings(): JSX.Element {
           </div>
           <p className="text-xs text-nndd-subtext mt-0.5">
             指定画質が無い動画では自動的に最高画質にフォールバックします
+          </p>
+        </Row>
+        <Row label="再生速度を次の動画に引き継ぐ">
+          <input
+            type="checkbox"
+            checked={keepPlaybackRate}
+            onChange={(e) => setKeepPlaybackRate(e.target.checked)}
+          />
+          <p className="text-xs text-nndd-subtext mt-0.5">
+            プレイヤーで変更した再生速度を次の動画にも適用 (OFF時は毎回デフォルト再生速度)
           </p>
         </Row>
         <Row label="リピート再生">

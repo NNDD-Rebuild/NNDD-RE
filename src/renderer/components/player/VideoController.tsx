@@ -121,6 +121,10 @@ export function VideoController({
   const [defaultRate] = useConfig<number>('player.playbackRate', 1.0);
   const defaultRateRef = useRef(defaultRate);
   defaultRateRef.current = defaultRate;
+  const [keepRate] = useConfig<boolean>('player.keepPlaybackRate', false);
+  const keepRateRef = useRef(keepRate);
+  keepRateRef.current = keepRate;
+  const lastRateRef = useRef<number | null>(null);
   const [inPip, setInPip] = useState(false);
   const docPipSupported = typeof window !== 'undefined' && 'documentPictureInPicture' in window;
   const pipSupported =
@@ -168,7 +172,11 @@ export function VideoController({
     // 発火しないうえ、リセット後の値が既に目標値と同じだと代入しても ratechange が来ず
     // UI (rate state) が前の動画の速度のまま残るため、rate state は直接揃える。
     const onLoadedMetaRate = (): void => {
-      const target = isLiveRef.current ? 1.0 : defaultRateRef.current;
+      const target = isLiveRef.current
+        ? 1.0
+        : keepRateRef.current && lastRateRef.current !== null
+          ? lastRateRef.current
+          : defaultRateRef.current;
       if (video.playbackRate !== target) {
         video.playbackRate = target;
       }
@@ -351,6 +359,7 @@ export function VideoController({
   const changeRate = (r: number): void => {
     if (!video) return;
     video.playbackRate = r;
+    if (!isLiveRef.current) lastRateRef.current = r;
   };
 
   // 標準 video Picture-in-Picture (コメント非対応環境向けフォールバック)

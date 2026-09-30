@@ -158,6 +158,8 @@ export interface NnddConfig {
     commentOutlineIntensity: 'light' | 'normal';
     /** デフォルト再生速度 */
     playbackRate: number;
+    /** 動画を切り替えても直前に選んだ再生速度を引き継ぐ (OFF時は毎回デフォルト再生速度) */
+    keepPlaybackRate: boolean;
     /**
      * 音量ノーマライズ。ON にすると Web Audio API の DynamicsCompressorNode で
      * 動画間の音量差を平滑化する (静かな動画は持ち上げ、大音量はピークを抑える)。
@@ -402,6 +404,7 @@ const DEFAULTS: NnddConfig = {
     commentDropShadow: true,
     commentOutlineIntensity: 'light',
     playbackRate: 1.0,
+    keepPlaybackRate: false,
     volumeNormalize: false,
     repeat: false,
     niconicoInheritLogin: true,
