@@ -4,6 +4,7 @@ import { is } from '@electron-toolkit/utils';
 import { IpcChannel, type LiveCommentRange, type LiveEvent, type LiveStartResult } from '@shared/types';
 import { getConfigStore } from '../config/ConfigStore';
 import { createLogger } from '../util/Logger';
+import { getDiscordRpcManager } from '../discord/DiscordRpcManager';
 import { LiveSession, type LiveStreamCookie } from '../nicovideo/live/LiveSession';
 
 const log = createLogger('LivePlayerManager');
@@ -121,7 +122,13 @@ export class LivePlayerManager {
     });
     win.on('ready-to-show', () => win.show());
     this.windows.set(win, { requestedId: programId });
-    win.on('closed', () => this.windows.delete(win));
+    // closed 後は webContents に触れないので、ID は先に控えておく
+    const webContentsId = win.webContents.id;
+    win.on('closed', () => {
+      // レンダラー側の unmount は ×閉じ時に間に合わないことがあるため、Discord Presence はここでもクリアする
+      void getDiscordRpcManager().clearActivity(webContentsId);
+      this.windows.delete(win);
+    });
     this.loadPage(win, programId);
   }
 

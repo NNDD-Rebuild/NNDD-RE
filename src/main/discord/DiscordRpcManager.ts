@@ -10,6 +10,8 @@ const DISCORD_CLIENT_ID = '1529880212769214575';
 const GITHUB_REPO_URL = 'https://github.com/NNDD-Rebuild/NNDD-RE';
 /** ニコニコ動画IDのパターン。ローカル専用ファイル (LANライブラリ等) はIDが取れないため判定して弾く */
 const VIDEO_ID_PATTERN = /^(?:sm|nm|so|ax|sd|ca|cd|cw|zb|ze|yo)\d+$/;
+const LIVE_WATCH_PAGE = 'https://live.nicovideo.jp/watch/';
+const LIVE_ID_PATTERN = /^lv\d+$/;
 
 /**
  * Discord Rich Presence 連携。
@@ -79,8 +81,16 @@ class DiscordRpcManagerImpl {
       ? info.startedAtMs + info.durationSec * 1000
       : undefined;
 
+    const isLive = info.kind === 'live' || info.kind === 'timeshift';
+    const stateText =
+      info.kind === 'live' ? 'NNDD-REで生放送を視聴中' : info.kind === 'timeshift' ? 'NNDD-REでタイムシフトを視聴中' : 'NNDD-REで視聴中';
+
     const buttons: { label: string; url: string }[] = [];
-    if (VIDEO_ID_PATTERN.test(info.videoId)) {
+    if (isLive) {
+      if (LIVE_ID_PATTERN.test(info.videoId)) {
+        buttons.push({ label: '生放送を見る', url: `${LIVE_WATCH_PAGE}${info.videoId}` });
+      }
+    } else if (VIDEO_ID_PATTERN.test(info.videoId)) {
       buttons.push({ label: '動画を見る', url: `${NicoApi.WATCH_PAGE}${info.videoId}` });
     }
     if (cfg.showGithubButton) {
@@ -89,8 +99,8 @@ class DiscordRpcManagerImpl {
 
     try {
       await this.client.user?.setActivity({
-        details: cfg.showTitle ? info.title.slice(0, 128) : 'NNDD-REで視聴中',
-        state: 'NNDD-REで視聴中',
+        details: cfg.showTitle ? info.title.slice(0, 128) : stateText,
+        state: stateText,
         startTimestamp: info.startedAtMs,
         endTimestamp,
         largeImageKey: cfg.showThumbnail ? info.thumbnailUrl : undefined,

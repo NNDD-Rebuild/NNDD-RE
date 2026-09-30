@@ -14,6 +14,9 @@ export interface DiscordRpcConfig {
 
 /** 再生中動画のPresence更新情報 (renderer → main) */
 export interface DiscordActivityInfo {
+  /** 再生の種別。省略時は通常の動画。live は放送中の生放送、timeshift はタイムシフト視聴 */
+  kind?: 'live' | 'timeshift';
+  /** 動画ID。生放送のときは番組ID (lv123...) */
   videoId: string;
   title: string;
   thumbnailUrl?: string;
