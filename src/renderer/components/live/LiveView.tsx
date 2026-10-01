@@ -227,9 +227,14 @@ export function LiveView(): JSX.Element {
   /** fetchList から最新の絞り込み条件を読むための参照 */
   const filterRef = useRef({ rankingType, rankingDate, recentCategory, recentSort });
   filterRef.current = { rankingType, rankingDate, recentCategory, recentSort };
+  /**
+   * 一覧読み込み (load) の連番。読み込み中にサブタブ・絞り込み条件・検索ページを切り替えた場合、
+   * 最後に投げた読み込みの結果だけを反映する (前のタブの番組一覧が新しいタブに出ないようにする)
+   */
+  const loadSeqRef = useRef(0);
 
   const fetchList = useCallback(
-    async (tab: SubTab, offset: number, search: Omit<LiveSearchParams, 'offset'> | null): Promise<LiveProgramListResult | null> => {
+    async (tab: SubTab, offset: number, search: Omit<LiveSearchParams, 'offset'> | null, seq: number): Promise<LiveProgramListResult | null> => {
       switch (tab) {
         case 'followOnair':
         case 'followReserved':
@@ -246,7 +251,7 @@ export function LiveView(): JSX.Element {
             date: f.rankingType === 'closed' ? f.rankingDate.replace(/-/g, '') : undefined
           };
           const r = await window.nndd.invoke<LiveRankingResult>(IpcChannel.LIVE_RANKING, params);
-          setRanking(r);
+          if (seq === loadSeqRef.current) setRanking(r);
           return null;
         }
         case 'recent': {
@@ -268,10 +273,12 @@ export function LiveView(): JSX.Element {
 
   const load = useCallback(
     async (tab: SubTab, search: Omit<LiveSearchParams, 'offset'> | null, append: boolean, offset: number) => {
+      const seq = ++loadSeqRef.current;
       setLoading(true);
       setError('');
       try {
-        const r = await fetchList(tab, offset, search);
+        const r = await fetchList(tab, offset, search, seq);
+        if (seq !== loadSeqRef.current) return;
         if (!r) {
           setPrograms([]);
           setTotal(0);
@@ -280,10 +287,11 @@ export function LiveView(): JSX.Element {
         setPrograms((prev) => (append ? [...prev, ...r.programs] : r.programs));
         setTotal(r.total);
       } catch (e) {
+        if (seq !== loadSeqRef.current) return;
         setError(errorText(e));
         if (!append) setPrograms([]);
       } finally {
-        setLoading(false);
+        if (seq === loadSeqRef.current) setLoading(false);
       }
     },
     [fetchList]

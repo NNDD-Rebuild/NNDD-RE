@@ -97,6 +97,10 @@ export function SearchView(): JSX.Element {
 
   useEffect(reloadSaved, []);
 
+  // 検索実行 (handleSearch / プレイヤーからのタグ検索 共通) の連番。
+  // 検索中に Enter・保存済み検索・タグ検索で次の検索を始めた場合、最後に投げた検索の結果だけを反映する
+  const searchSeqRef = useRef(0);
+
   // プレイヤーからのタグ検索
   useEffect(() => {
     if (!pendingSearchTag) return;
@@ -105,6 +109,7 @@ export function SearchView(): JSX.Element {
     setWord(tag);
     setType(NNDDRESearchType.TAG);
     setPage(1);
+    const seq = ++searchSeqRef.current;
     setLoading(true);
     setError(null);
     window.nndd
@@ -113,12 +118,17 @@ export function SearchView(): JSX.Element {
         { word: tag, type: NNDDRESearchType.TAG, sortType, offset: 0, limit: LIMIT }
       )
       .then((r) => {
+        if (seq !== searchSeqRef.current) return;
         setResults(r.items);
         setTotal(r.totalCount);
         void checkDownloaded(r.items.map((i) => i.videoId));
       })
-      .catch((e) => setError(toUserFriendlyErrorMessage(e)))
-      .finally(() => setLoading(false));
+      .catch((e) => {
+        if (seq === searchSeqRef.current) setError(toUserFriendlyErrorMessage(e));
+      })
+      .finally(() => {
+        if (seq === searchSeqRef.current) setLoading(false);
+      });
   // eslint-disable-next-line react-hooks/exhaustive-deps -- pendingSearchTag が来た時だけ検索し、ソート順等の変更では再検索しない
   }, [pendingSearchTag]);
 
@@ -152,6 +162,7 @@ export function SearchView(): JSX.Element {
     if (!trimmed) return;
     // マイリスト/シリーズURLならナビゲーション
     if (targetPage === 1 && handleNavigate(trimmed)) return;
+    const seq = ++searchSeqRef.current;
     setLoading(true);
     setError(null);
     try {
@@ -165,15 +176,16 @@ export function SearchView(): JSX.Element {
         offset: (targetPage - 1) * LIMIT,
         limit: LIMIT
       });
+      if (seq !== searchSeqRef.current) return;
       setResults(r.items);
       setTotal(r.totalCount);
       setPage(targetPage);
       scrollRef.current?.scrollTo({ top: 0 });
       void checkDownloaded(r.items.map((i) => i.videoId));
     } catch (e) {
-      setError(toUserFriendlyErrorMessage(e));
+      if (seq === searchSeqRef.current) setError(toUserFriendlyErrorMessage(e));
     } finally {
-      setLoading(false);
+      if (seq === searchSeqRef.current) setLoading(false);
     }
   };
 

@@ -51,7 +51,10 @@ export function RankingView(): JSX.Element {
       .catch(() => {});
   }, []);
 
+  // ジャンル・期間・サブカテゴリを取得中に切り替えた場合、最後に投げた取得の結果だけを反映する
+  const fetchSeqRef = useRef(0);
   const fetchRanking = async (): Promise<void> => {
+    const seq = ++fetchSeqRef.current;
     setLoading(true);
     setError(null);
     try {
@@ -59,15 +62,18 @@ export function RankingView(): JSX.Element {
         window.nndd.channels.RANKING_FETCH,
         { genre, term, tag: tag || undefined }
       );
+      if (seq !== fetchSeqRef.current) return;
       const mapped = res.items.map((d) => ({ ...d, registeredAt: new Date(d.registeredAt) }));
       setItems(mapped);
       setTrendTags(res.trendTags ?? []);
       void checkDownloaded(mapped.map((d) => d.videoId));
     } catch (e) {
-      setError(toUserFriendlyErrorMessage(e));
+      if (seq === fetchSeqRef.current) setError(toUserFriendlyErrorMessage(e));
     } finally {
-      setLoading(false);
-      requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 0 }));
+      if (seq === fetchSeqRef.current) {
+        setLoading(false);
+        requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 0 }));
+      }
     }
   };
 
