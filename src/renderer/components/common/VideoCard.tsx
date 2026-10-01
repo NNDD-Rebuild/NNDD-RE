@@ -383,7 +383,7 @@ function Stats({ data }: { data: VideoCardData }): JSX.Element {
         {data.likeCount !== undefined && <span>♡ {fmt(data.likeCount)}</span>}
       </>}
       {data.registeredAt && (
-        <span className="ml-auto">{formatDate(data.registeredAt)}</span>
+        <span className="ml-auto">{formatLocaleDate(data.registeredAt)}</span>
       )}
     </div>
   );
@@ -533,7 +533,8 @@ function formatLen(v: number | string): string {
   return `${m}:${String(s).padStart(2, '0')}`;
 }
 
-function formatDate(d: Date | string): string {
+/** 日付のみ (ja-JP ロケール、例: 2024/1/5) */
+function formatLocaleDate(d: Date | string): string {
   const date = typeof d === 'string' ? new Date(d) : d;
   if (isNaN(date.getTime())) return '';
   return date.toLocaleDateString('ja-JP');

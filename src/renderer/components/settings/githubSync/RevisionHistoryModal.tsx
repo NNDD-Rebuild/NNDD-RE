@@ -34,7 +34,7 @@ export function RevisionHistoryModal({
   const handleRestore = async (rev: GistRevision): Promise<void> => {
     if (
       !window.confirm(
-        `${formatDate(rev.committedAt)} 時点のバックアップ内容でローカルデータを置き換えます。よろしいですか?`
+        `${formatLocaleDateTime(rev.committedAt)} 時点のバックアップ内容でローカルデータを置き換えます。よろしいですか?`
       )
     ) {
       return;
@@ -94,7 +94,7 @@ export function RevisionHistoryModal({
               >
                 <div className="min-w-0">
                   <div className="text-nndd-text">
-                    {formatDate(rev.committedAt)}
+                    {formatLocaleDateTime(rev.committedAt)}
                     {idx === 0 && (
                       <span className="ml-1.5 text-[10px] text-nndd-accent">(最新)</span>
                     )}
@@ -119,6 +119,7 @@ export function RevisionHistoryModal({
   );
 }
 
-function formatDate(iso: string): string {
+/** 日時 (ja-JP ロケール、秒まで。例: 2024/1/5 9:03:07) */
+function formatLocaleDateTime(iso: string): string {
   return new Date(iso).toLocaleString('ja-JP');
 }
