@@ -152,20 +152,27 @@ export function FollowView(): JSX.Element {
   const userHasNext = userApiPage * LIMIT < userTotalCount;
 
   // --- 全体フィード取得 ---
-  // 取得中に再度呼ばれた場合 (取得中のログイン状態確定など) は新しい取得を優先し、古い取得の結果は捨てる
-  const fetchAll = useCallback(async (untilId: string | null): Promise<void> => {
+  // 取得中に再度呼ばれた場合 (取得中のログイン状態確定など) は新しい取得を優先し、古い取得の結果は捨てる。
+  // 戻り値は結果を反映したか (追い越された / 失敗なら false)。先頭取得の反映時はページ位置も先頭に戻す
+  const fetchAll = useCallback(async (untilId: string | null): Promise<boolean> => {
     const seq = ++allSeqRef.current;
     setAllLoading(true);
     setAllError(null);
     try {
       const r = await apiFetchAllFeed(LIMIT, untilId ?? undefined);
-      if (seq !== allSeqRef.current) return;
+      if (seq !== allSeqRef.current) return false;
       setAllItems(r.items);
       setAllHasNext(r.hasNext);
       allNextCursorRef.current = r.nextCursor;
+      if (untilId === null) {
+        allCursorStackRef.current = [null];
+        setAllPageIdx(0);
+      }
       void checkDownloaded(r.items.map((i) => i.videoId));
+      return true;
     } catch (e) {
       if (seq === allSeqRef.current) setAllError(toUserFriendlyErrorMessage(e));
+      return false;
     } finally {
       if (seq === allSeqRef.current) {
         setAllLoading(false);
@@ -282,12 +289,12 @@ export function FollowView(): JSX.Element {
     } else {
       const cursor = allNextCursorRef.current;
       if (!allHasNext || allLoading || !cursor) return;
-      const newIdx = allPageIdx + 1;
+      // ページ位置は取得が反映されてから進める (fetchAll(null) に追い越された結果でずらさない)
+      if (!(await fetchAll(cursor))) return;
       const newStack = allCursorStackRef.current.slice(0, allPageIdx + 1);
       newStack.push(cursor);
       allCursorStackRef.current = newStack;
-      setAllPageIdx(newIdx);
-      await fetchAll(cursor);
+      setAllPageIdx(allPageIdx + 1);
     }
   };
 
