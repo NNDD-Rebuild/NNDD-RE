@@ -28,7 +28,7 @@ export class MyListAutoDownloader {
   async renew(myList: MyList): Promise<{ fetched: number; queued: number }> {
     const id = this.extractMylistId(myList.myListUrl);
     if (!id) throw new Error(`invalid mylist url: ${myList.myListUrl}`);
-    const items = await MyListClient.fetchPublicMylist(id);
+    const items = await this.fetchAllItems(id);
     let queued = 0;
 
     // ライブラリ内に既にある動画はスキップ
@@ -82,6 +82,17 @@ export class MyListAutoDownloader {
       }
     }
     return out;
+  }
+
+  /** fetchPublicMylist は 1 ページ (最大 100 件) ずつしか返さないため、total に達するまで読む。 */
+  private async fetchAllItems(mylistId: string): Promise<MyListItem[]> {
+    const pageSize = 100;
+    const all: MyListItem[] = [];
+    for (let page = 1; ; page++) {
+      const { items, total } = await MyListClient.fetchPublicMylist(mylistId, page, pageSize);
+      all.push(...items);
+      if (items.length < pageSize || all.length >= total) return all;
+    }
   }
 
   private extractMylistId(url: string): string | null {
