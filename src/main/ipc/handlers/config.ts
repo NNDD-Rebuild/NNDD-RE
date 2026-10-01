@@ -16,31 +16,13 @@ import type { IpcHandlerContext } from './context';
 const log = createLogger('IPC');
 
 /**
- * NnddConfig (ConfigStore.ts) に定義が無いが、renderer が CONFIG_GET / CONFIG_SET で使っているキー。
- * NnddConfig に追加したら、ここから外す。
- */
-const RENDERER_EXTRA_CONFIG_KEYS = [
-  'history.showWatchedBadge',
-  'player.autoNextFolder',
-  'player.pastCommentMaxCount',
-  'ui.librarySortCol',
-  'ui.librarySortDir'
-] as const;
-
-type RendererExtraConfigKey = (typeof RENDERER_EXTRA_CONFIG_KEYS)[number];
-
-/** CONFIG_GET / CONFIG_SET で受け付けるキー */
-type IpcConfigKey = ConfigKey | RendererExtraConfigKey;
-
-/**
  * renderer から渡されたキーが設定として存在するか。
- * 既定値 (DEFAULT_CONFIG) をドット区切りでたどれるキーと、RENDERER_EXTRA_CONFIG_KEYS だけを許可する。
+ * 既定値 (DEFAULT_CONFIG) をドット区切りでたどれるキーだけを許可する。
  * 配列の要素やプリミティブ値の内側 ('libraryRoot.length' など)、__proto__ などは通さない。
  * NnddConfig で省略可能 (?:) かつ既定値に無いキーも通らない (renderer からは使っていない)。
  */
-function isIpcConfigKey(key: unknown): key is IpcConfigKey {
+function isIpcConfigKey(key: unknown): key is ConfigKey {
   if (typeof key !== 'string' || key === '') return false;
-  if ((RENDERER_EXTRA_CONFIG_KEYS as readonly string[]).includes(key)) return true;
   let node: unknown = DEFAULT_CONFIG;
   for (const seg of key.split('.')) {
     if (node === null || typeof node !== 'object' || Array.isArray(node)) return false;
@@ -50,7 +32,7 @@ function isIpcConfigKey(key: unknown): key is IpcConfigKey {
   return true;
 }
 
-function isTopLevelKey(key: IpcConfigKey): key is ConfigTopLevelKey {
+function isTopLevelKey(key: ConfigKey): key is ConfigTopLevelKey {
   return !key.includes('.');
 }
 

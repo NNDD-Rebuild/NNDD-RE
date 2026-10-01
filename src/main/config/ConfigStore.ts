@@ -224,6 +224,10 @@ export interface NnddConfig {
      * フルスクリーン時の自動非表示挙動には影響しない。
      */
     controlsAlwaysVisible: boolean;
+    /** ローカル再生時、同じフォルダの次の動画を自動で連続再生する (プレイヤーのチェックボックスで切り替え) */
+    autoNextFolder: boolean;
+    /** 過去ログ (過去コメント) の同時描画件数の上限。0 = 無制限 */
+    pastCommentMaxCount: number;
   };
 
   /** UI 設定 */
@@ -252,6 +256,16 @@ export interface NnddConfig {
      *   - 'list': リスト表示
      */
     contentViewMode: 'grid' | 'list';
+    /** ライブラリ一覧の初期ソート列 (renderer の SortCol と同じ値) */
+    librarySortCol: 'videoName' | 'time' | 'playCount' | 'pubDate' | 'creationDate';
+    /** ライブラリ一覧の初期ソート方向 */
+    librarySortDir: 'asc' | 'desc';
+  };
+
+  /** 視聴履歴 */
+  history: {
+    /** ランキング・フォロー中・マイリストの動画カードに再生済みバッジを表示する */
+    showWatchedBadge: boolean;
   };
 
   /** 内蔵HTTPサーバー */
@@ -423,7 +437,9 @@ const DEFAULTS: NnddConfig = {
     controlUiSize: 'normal',
     openVideoLinkInPlayer: true,
     resumePlayback: false,
-    controlsAlwaysVisible: true
+    controlsAlwaysVisible: true,
+    autoNextFolder: false,
+    pastCommentMaxCount: 0
   },
   ui: {
     theme: 'dark',
@@ -434,7 +450,12 @@ const DEFAULTS: NnddConfig = {
       maximized: false
     },
     libraryViewMode: 'table',
-    contentViewMode: 'grid'
+    contentViewMode: 'grid',
+    librarySortCol: 'pubDate',
+    librarySortDir: 'asc'
+  },
+  history: {
+    showWatchedBadge: true
   },
   httpServer: {
     enabled: false,
