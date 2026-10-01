@@ -5,6 +5,7 @@ import { NicoApiError } from '../NicoHttp';
 import { CommentCommandParser } from './CommentCommandParser';
 import { createLogger } from '../../util/Logger';
 import * as path from 'path';
+import type { NicoV3CommentResponse, NicoV3CommentItem } from '../apiTypes';
 
 const log = createLogger('CommentClient');
 
@@ -34,36 +35,6 @@ class CommentRateLimiter {
 }
 
 const rateLimiter = new CommentRateLimiter(3);
-
-interface V3CommentResponse {
-  data?: {
-    threads?: Array<{
-      id: string;
-      fork: string;
-      commentCount?: number;
-      comments?: V3CommentItem[];
-    }>;
-  };
-  meta?: {
-    status: number;
-    errorCode?: string;
-  };
-}
-
-interface V3CommentItem {
-  id: string;
-  no: number;
-  vposMs: number;
-  body: string;
-  commands?: string[];
-  userId: string;
-  isPremium?: boolean;
-  isMyPost?: boolean;
-  nicoruCount?: number;
-  score?: number;
-  postedAt?: string;
-  source?: string;
-}
 
 /**
  * 新コメントAPI (V3) クライアント。
@@ -117,7 +88,7 @@ export class CommentClient {
     }
 
     await rateLimiter.acquire();
-    const res = await NicoContext.get().http.postJson<V3CommentResponse>(url, body, {
+    const res = await NicoContext.get().http.postJson<NicoV3CommentResponse>(url, body, {
       debugDumpPath,
       debugLabel: 'comment'
     });
@@ -234,11 +205,11 @@ export class CommentClient {
           }
         };
 
-        let res: V3CommentResponse;
+        let res: NicoV3CommentResponse;
         try {
           await rateLimiter.acquire(signal);
           if (signal?.aborted) break;
-          res = await NicoContext.get().http.postJson<V3CommentResponse>(url, body, {
+          res = await NicoContext.get().http.postJson<NicoV3CommentResponse>(url, body, {
             debugDumpPath,
             debugLabel: `comment-${target.fork}-r${round}`
           });
@@ -263,7 +234,7 @@ export class CommentClient {
         }
 
         const threads = res?.data?.threads ?? [];
-        const batch: V3CommentItem[] = threads.flatMap((t) => t.comments ?? []);
+        const batch: NicoV3CommentItem[] = threads.flatMap((t) => t.comments ?? []);
 
         if (batch.length === 0) {
           log.debug(`thread=${target.id} round=${round}: no more comments`);
@@ -327,7 +298,7 @@ export class CommentClient {
   }
 
   private static toNNDDREComment(
-    c: V3CommentItem,
+    c: NicoV3CommentItem,
     threadId: string,
     fork: string
   ): NNDDREComment {

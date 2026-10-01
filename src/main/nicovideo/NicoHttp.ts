@@ -3,20 +3,9 @@ import { CookieStore } from './auth/CookieStore';
 import { createLogger } from '../util/Logger';
 import fs from 'node:fs';
 import path from 'node:path';
+import type { NicoApiErrorBody } from './apiTypes';
 
 const log = createLogger('NicoHttp');
-
-/**
- * ニコニコAPIがエラーレスポンス (4xx) の body に埋め込む meta 情報。
- * 例: { meta: { status: 404, errorCode: "NOT_FOUND" } }
- */
-interface NicoApiErrorBody {
-  meta?: {
-    status?: number;
-    errorCode?: string;
-    errorMessage?: string;
-  };
-}
 
 /**
  * HTTPエラー時、bodyのJSONから読み取れた errorCode 等を保持する例外。

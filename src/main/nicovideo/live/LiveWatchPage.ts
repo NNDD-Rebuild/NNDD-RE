@@ -2,6 +2,7 @@ import type { LiveProgramInfo, LiveSupplier } from '@shared/types';
 import { NicoApi, NicoEndpoint, NicoHeaders } from '@shared/constants';
 import { NicoContext } from '../NicoContext';
 import { createLogger } from '../../util/Logger';
+import type { NicoLiveSupplierNode } from '../apiTypes';
 
 const log = createLogger('LiveWatchPage');
 
@@ -55,7 +56,7 @@ export function normalizeLiveId(input: string): string | null {
 }
 
 /** embedded-data の program.supplier → LiveSupplier */
-function toSupplier(s: any): LiveSupplier | null {
+function toSupplier(s: NicoLiveSupplierNode | null | undefined): LiveSupplier | null {
   if (!s || typeof s !== 'object' || !s.name) return null;
   return {
     type: String(s.supplierType ?? ''),

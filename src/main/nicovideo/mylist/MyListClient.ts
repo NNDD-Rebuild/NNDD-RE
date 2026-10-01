@@ -5,37 +5,9 @@ import { mylistUrl } from '@shared/utils/nicoUrl';
 import { NicoContext } from '../NicoContext';
 import { createLogger } from '../../util/Logger';
 import { ImageCache } from '../../util/ImageCache';
+import type { NicoNvapiMylistResponse } from '../apiTypes';
 
 const log = createLogger('MyListClient');
-
-interface NvApiMylistResponse {
-  meta?: { status?: number; errorCode?: string };
-  data?: {
-    mylist?: {
-      id: string;
-      name: string;
-      description?: string;
-      items?: NvApiMylistItem[];
-      totalItemCount?: number;
-    };
-    // 一部レスポンスは items を data 直下に持つ
-    items?: NvApiMylistItem[];
-  };
-}
-
-interface NvApiMylistItem {
-  watchId: string;
-  itemId: number;
-  description?: string;
-  video: {
-    id: string;
-    title: string;
-    duration: number;
-    thumbnail: { url: string };
-    count: { view: number; comment: number; mylist: number; like?: number };
-    registeredAt: string;
-  };
-}
 
 /**
  * マイリスト API クライアント (V2)。
@@ -63,12 +35,12 @@ export class MyListClient {
         ]
       : [NicoEndpoint.publicMylist(mylistId, pageSize, page)];
 
-    let res: NvApiMylistResponse | null = null;
+    let res: NicoNvapiMylistResponse | null = null;
     let lastError: unknown = null;
     for (const url of candidates) {
       log.debug('fetch mylist:', url);
       try {
-        res = await ctx.http.getJson<NvApiMylistResponse>(url);
+        res = await ctx.http.getJson<NicoNvapiMylistResponse>(url);
         const status = res.meta?.status;
         if (status && status >= 400) {
           log.warn(`mylist fetch returned status=${status} errorCode=${res.meta?.errorCode}, trying fallback`);
@@ -126,7 +98,7 @@ export class MyListClient {
 
     for (const url of urls) {
       try {
-        const res = await ctx.http.getJson<NvApiMylistResponse>(url);
+        const res = await ctx.http.getJson<NicoNvapiMylistResponse>(url);
         if (res.meta?.status && res.meta.status >= 400) continue;
         const name = res.data?.mylist?.name;
         if (name) return { name, description: res.data?.mylist?.description };
@@ -137,7 +109,7 @@ export class MyListClient {
 
   static async fetchWatchLater(pageSize = 100): Promise<MyListItem[]> {
     const url = NicoEndpoint.watchLaterList(pageSize);
-    const res = await NicoContext.get().http.getJson<NvApiMylistResponse>(url);
+    const res = await NicoContext.get().http.getJson<NicoNvapiMylistResponse>(url);
     const rawItems = res.data?.mylist?.items ?? res.data?.items ?? [];
     let items = rawItems.map((i) => ({
       videoId: i.video.id,

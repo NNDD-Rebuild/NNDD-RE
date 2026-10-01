@@ -3,113 +3,14 @@ import { NicoApi, NicoEndpoint } from '@shared/constants/api';
 import { NicoContext } from '../NicoContext';
 import { createLogger } from '../../util/Logger';
 import { ImageCache } from '../../util/ImageCache';
+import type { NicoFeedActivitiesResponse, NicoFeedActorsResponse, NicoNicorepoEntry, NicoNicorepoResponse, NicoNvapiFollowingResponse, NicoNvapiVideosResponse, NicoNvapiVideoBulkItem, NicoNvapiVideoBulkResponse } from '../apiTypes';
 
 const log = createLogger('FollowFeedClient');
-
-// api.feed.nicovideo.jp 型定義
-interface FeedActor {
-  id: string;
-  type: 'user' | 'channel';
-  name: string;
-  iconUrl: string;
-  url: string;
-  isLive: boolean;
-  isUnread?: boolean;
-}
-
-interface FeedActivity {
-  id: string;
-  kind: string;
-  createdAt: string;
-  sensitive: boolean;
-  thumbnailUrl: string;
-  message?: { text: string };
-  label?: { text: string };
-  content?: {
-    type: string;
-    id: string;
-    title: string;
-    url: string;
-    startedAt?: string;
-    video?: { duration: number };
-  };
-  actor?: FeedActor;
-}
-
-interface FeedActivitiesResponse {
-  code: string;
-  activities: FeedActivity[];
-  nextCursor?: string;
-  impressionId?: string;
-}
-
-interface FeedActorsResponse {
-  code: string;
-  actors: FeedActor[];
-}
-
-interface NicorepoEntry {
-  id: string;
-  updated: string;
-  actor?: { name?: string; url?: string; iconUrl?: string };
-  title?: string;
-  object?: { type?: string; url?: string; name?: string; image?: string };
-}
-
-interface NicorepoResponse {
-  meta?: { status?: number; hasNext?: boolean; maxId?: string; minId?: string };
-  data?: NicorepoEntry[];
-}
-
-interface NvapiUser {
-  id: number | string;
-  nickname?: string;
-}
-
-interface NvapiFollowingUser {
-  id?: number | string;
-  nickname?: string;
-  icons?: { small?: string; large?: string };
-}
 
 export interface FollowingUser {
   id: string;
   nickname: string;
   iconUrl: string;
-}
-
-interface NvapiFollowingResponse {
-  meta?: { status?: number };
-  data?: {
-    items?: NvapiFollowingUser[];
-    summary?: {
-      followees?: number;
-      followers?: number;
-      hasNext?: boolean;
-      cursor?: string;
-    };
-  };
-}
-
-interface NvapiVideoEssential {
-  id?: string;
-  title?: string;
-  thumbnail?: { url?: string; middleUrl?: string };
-  registeredAt?: string;
-  count?: { view?: number; comment?: number; mylist?: number; like?: number };
-  duration?: number;
-}
-
-interface NvapiVideoItem {
-  essential?: NvapiVideoEssential;
-}
-
-interface NvapiVideosResponse {
-  meta?: { status?: number };
-  data?: {
-    items?: NvapiVideoItem[];
-    totalCount?: number;
-  };
 }
 
 export interface ProbeResult {
@@ -163,7 +64,7 @@ async function getFollowingUsers(maxCount = 30): Promise<FollowingUser[]> {
         log.debug(`following users: ${url} → ${res.status}`);
         break;
       }
-      const json = await res.json() as NvapiFollowingResponse;
+      const json = await res.json() as NicoNvapiFollowingResponse;
       const items = json.data?.items ?? [];
       for (const item of items) {
         if (!item.id) continue;
@@ -232,7 +133,7 @@ async function getUserRecentVideos(
       }
       return { videos: [], totalCount: 0 };
     }
-    const json = await res.json() as NvapiVideosResponse;
+    const json = await res.json() as NicoNvapiVideosResponse;
     const totalCount = json.data?.totalCount ?? 0;
     let videos = (json.data?.items ?? []).map((v): SearchResultItem | null => {
       const e = v.essential;
@@ -292,7 +193,7 @@ async function batchAsync<T, R>(
 }
 
 /** NicorepoEntry → SearchResultItem (型エラーなし版) */
-function parseNicorepoToItems(entries: NicorepoEntry[]): SearchResultItem[] {
+function parseNicorepoToItems(entries: NicoNicorepoEntry[]): SearchResultItem[] {
   const results: SearchResultItem[] = [];
   for (const e of entries) {
     if (e.object?.type !== 'video' || !e.object.url) continue;
@@ -319,20 +220,6 @@ function parseNicorepoToItems(entries: NicorepoEntry[]): SearchResultItem[] {
   return results;
 }
 
-interface NvapiVideoBulkItem {
-  id?: string;
-  title?: string;
-  thumbnail?: { url?: string; middleUrl?: string };
-  registeredAt?: string;
-  count?: { view?: number; comment?: number; mylist?: number; like?: number };
-  duration?: number;
-}
-
-interface NvapiVideoBulkResponse {
-  meta?: { status?: number };
-  data?: { videos?: NvapiVideoBulkItem[] };
-}
-
 /** nvapi /v1/videos?ids=... でviewCount/duration等を補完 (失敗時は元データそのまま) */
 async function enrichVideoInfo(items: SearchResultItem[]): Promise<SearchResultItem[]> {
   if (items.length === 0) return items;
@@ -342,8 +229,8 @@ async function enrichVideoInfo(items: SearchResultItem[]): Promise<SearchResultI
   try {
     const res = await http.fetch(url, { timeoutMs: 8000 });
     if (!res.ok) { log.debug(`enrichVideoInfo: ${res.status}`); return items; }
-    const json = await res.json() as NvapiVideoBulkResponse;
-    const map = new Map<string, NvapiVideoBulkItem>();
+    const json = await res.json() as NicoNvapiVideoBulkResponse;
+    const map = new Map<string, NicoNvapiVideoBulkItem>();
     for (const v of json.data?.videos ?? []) { if (v.id) map.set(v.id, v); }
     let enriched = items.map((item): SearchResultItem => {
       const v = map.get(item.videoId);
@@ -381,7 +268,7 @@ async function tryFeedApi(limit: number, cursor?: string): Promise<FeedResult | 
   try {
     const res = await http.fetch(url, { timeoutMs: 10000, headers: { 'Accept': 'application/json', 'Origin': NicoApi.WWW_BASE } });
     if (!res.ok) { log.debug(`feed API: ${url} → ${res.status}`); return null; }
-    const json = await res.json() as FeedActivitiesResponse;
+    const json = await res.json() as NicoFeedActivitiesResponse;
     if (json.code !== 'ok') { log.debug(`feed API: code=${json.code}`); return null; }
 
     let items = (json.activities ?? [])
@@ -425,7 +312,7 @@ async function getFeedActors(): Promise<FollowingUser[]> {
   try {
     const res = await http.fetch(url, { timeoutMs: 10000, headers: { 'Accept': 'application/json', 'Origin': NicoApi.WWW_BASE } });
     if (!res.ok) return [];
-    const json = await res.json() as FeedActorsResponse;
+    const json = await res.json() as NicoFeedActorsResponse;
     if (json.code !== 'ok') return [];
     const users: FollowingUser[] = json.actors
       .filter(a => a.type === 'user')
@@ -469,7 +356,7 @@ async function tryNicorepoFeed(limit: number, cursor?: string): Promise<FeedResu
     try {
       const res = await http.fetch(url, { timeoutMs: 10000 });
       if (!res.ok) { log.debug(`nicorepo: ${url} → ${res.status}`); continue; }
-      const json = await res.json() as NicorepoResponse;
+      const json = await res.json() as NicoNicorepoResponse;
       const rawItems = parseNicorepoToItems(json.data ?? []);
       const items = await enrichVideoInfo(rawItems);
       const hasNext = json.meta?.hasNext ?? false;
@@ -642,7 +529,7 @@ export class FollowFeedClient {
   }
 }
 
-function parseNicorepoEntries(entries: NicorepoEntry[]): SearchResultItem[] {
+function parseNicorepoEntries(entries: NicoNicorepoEntry[]): SearchResultItem[] {
   return entries
     .filter((e) => e.object?.type === 'video' && e.object.url)
     .map((e): SearchResultItem | null => {
