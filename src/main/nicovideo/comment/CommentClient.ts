@@ -1,5 +1,6 @@
 import type { NNDDREComment, WatchPageInfo } from '@shared/types';
 import { NicoContext } from '../NicoContext';
+import { NicoApiError } from '../NicoHttp';
 import { CommentCommandParser } from './CommentCommandParser';
 import { createLogger } from '../../util/Logger';
 import * as path from 'path';
@@ -242,7 +243,7 @@ export class CommentClient {
           });
           retries429 = 0;
         } catch (e) {
-          if (String(e).includes('429') && retryWaitSec > 0 && retries429 < MAX_429_RETRIES) {
+          if (e instanceof NicoApiError && e.httpStatus === 429 && retryWaitSec > 0 && retries429 < MAX_429_RETRIES) {
             retries429++;
             onProgress?.(`429 レート制限: ${retryWaitSec}秒待機中... (${retries429}/${MAX_429_RETRIES})`);
             log.warn(`429 rate limit, waiting ${retryWaitSec}s (retry ${retries429}/${MAX_429_RETRIES})`);
