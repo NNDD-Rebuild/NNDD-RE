@@ -20,7 +20,7 @@ export function useWatchedIds(videoIds: string[]): Set<string> {
       .invoke<string[]>(window.nndd.channels.WATCHED_CHECK_BATCH, videoIds)
       .then((ids) => setWatchedIds(new Set(ids)))
       .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 配列の参照ではなく内容 (key) が変わった時だけ照合する
   }, [key, showWatchedBadge]);
 
   return watchedIds;

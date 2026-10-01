@@ -46,8 +46,7 @@ function WebApp(): JSX.Element {
       .invoke<'dark' | 'light'>(window.nndd.channels.CONFIG_GET, 'ui.theme')
       .then((v) => { if (v === 'light') document.documentElement.classList.add('light'); })
       .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [setLibraryViewMode]);
 
   useEffect(() => {
     // ライブラリ等からの再生要求: URL を積んでプレイヤー表示へ (init は shim が保持済み)

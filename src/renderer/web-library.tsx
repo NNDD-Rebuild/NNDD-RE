@@ -21,8 +21,7 @@ function WebLibraryApp(): JSX.Element {
       .invoke<'dark' | 'light'>(window.nndd.channels.CONFIG_GET, 'ui.theme')
       .then((v) => { if (v === 'light') document.documentElement.classList.add('light'); })
       .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [setLibraryViewMode]);
 
   return (
     <div className="flex flex-col h-screen bg-nndd-bg text-nndd-text">

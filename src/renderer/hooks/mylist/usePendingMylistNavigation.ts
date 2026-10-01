@@ -64,7 +64,7 @@ export function usePendingMylistNavigation({
       };
       void fetchAndShow();
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchItems は呼び出し側で安定化されていないため、pending ID が来た時だけ処理する
   }, [pendingMylistId]);
 
   // pendingSeriesId 処理: シリーズを一時表示 (SERIES_FETCH → 直接setItems)
@@ -73,7 +73,7 @@ export function usePendingMylistNavigation({
     const seriesId = pendingSeriesId;
     setPendingSeriesId(null);
     void showSeries(seriesId);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- showSeries は呼び出し側で安定化されていないため、pending ID が来た時だけ処理する
   }, [pendingSeriesId]);
 
   // pendingChannelId 処理: チャンネル動画一覧を一時表示 (DBには保存しない)
@@ -98,6 +98,6 @@ export function usePendingMylistNavigation({
       void fetchItems(tempMl);
     };
     void fetchAndShow();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchItems は呼び出し側で安定化されていないため、pending ID が来た時だけ処理する
   }, [pendingChannelId]);
 }

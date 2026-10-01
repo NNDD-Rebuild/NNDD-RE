@@ -218,7 +218,7 @@ export class LocalFileHandler {
    * ニコニコAPIのコメントに稀に含まれる \x00-\x08, \x0B, \x0C, \x0E-\x1F 等を除去する。
    * 参照: https://www.w3.org/TR/xml/#charsets
    */
-  // eslint-disable-next-line no-control-regex
+  // eslint-disable-next-line no-control-regex -- 不正な制御文字を除去するため意図的に制御文字を範囲指定している
   private static readonly INVALID_XML_CHARS = /[\x00-\x08\x0B\x0C\x0E-\x1F￾￿]/g;
 
   private static xmlAttr(s: string): string {

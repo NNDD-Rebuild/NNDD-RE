@@ -75,12 +75,11 @@ export function RankingView(): JSX.Element {
   useEffect(() => {
     setTag(ALL_TAG);
     setTrendTags([]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [genre]);
 
   useEffect(() => {
     fetchRanking();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchRanking は毎回作り直されるため、条件の変化時だけ取得する
   }, [genre, term, tag, isLoggedIn]);
 
   const handlePlay = (videoId: string): void => {

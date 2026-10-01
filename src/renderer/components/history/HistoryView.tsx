@@ -59,7 +59,7 @@ export function HistoryView(): JSX.Element {
     if (activeTab !== 'history') return;
     if (source === 'app') reload();
     else if (!nicoLoaded) reloadNico();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- タブ・表示元の切替時だけ読み直す (読込関数は毎回作り直されるため依存に含めない)
   }, [activeTab, source]);
 
   const handleClear = async (): Promise<void> => {

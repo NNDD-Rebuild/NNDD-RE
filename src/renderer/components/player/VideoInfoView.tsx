@@ -132,14 +132,14 @@ export function VideoInfoView({
   // シリーズ無しの動画に切り替わった時、シリーズタブを 'info' に戻す
   useEffect(() => {
     if (!watch?.series && tab === 'series') setTab('info');
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- タブ切替では発火させず、動画のシリーズ有無が変わった時だけ判定する
   }, [watch?.series]);
 
   // videoId不明、またはローカル再生(連続再生OFF時)に切り替わった時、関連動画タブを 'info' に戻す。
   // 連続再生ON中はDL済み動画を経由してもタブ・取得を止めない (でないと2本目以降で連続再生が止まる)
   useEffect(() => {
     if ((!watch?.videoId || (isLocal && !autoNextRelated)) && tab === 'related') setTab('info');
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- タブ切替では発火させず、動画・再生元・連続再生設定が変わった時だけ判定する
   }, [watch?.videoId, isLocal, autoNextRelated]);
 
   // タブバーがペイン幅に収まらない時、必要な幅を親に通知 (スクロールでなくペイン幅拡大で対応)

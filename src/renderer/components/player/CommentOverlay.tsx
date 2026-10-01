@@ -110,7 +110,7 @@ export const CommentOverlay = forwardRef<CommentOverlayHandle, Props>(
         renderer.stop();
         rendererRef.current = null;
       };
-      // eslint-disable-next-line react-hooks/exhaustive-deps
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- レンダラーは video 要素ごとに作り直し、コメント・設定の更新は下の effect で反映する
     }, [videoRef]);
 
     // コメント更新

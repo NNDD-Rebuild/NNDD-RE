@@ -44,8 +44,7 @@ export function LoginArea(): JSX.Element {
         setLoggedIn(false);
       }
     })();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [setLoggedIn]);
 
   // セッション切れ通知 (定期チェックで main から送信)
   useEffect(() => {
@@ -64,8 +63,7 @@ export function LoginArea(): JSX.Element {
       }
     );
     return unsub;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [setLoggedIn, showToast]);
 
   const onLogout = async (): Promise<void> => {
     await window.nndd.invoke(window.nndd.channels.AUTH_LOGOUT);

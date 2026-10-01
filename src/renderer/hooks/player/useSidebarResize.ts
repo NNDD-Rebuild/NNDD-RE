@@ -76,7 +76,6 @@ export function useSidebarResize(): {
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return { sidebarWidth, isSidebarDragging, handleTabsOverflow, onSidebarDividerMouseDown };

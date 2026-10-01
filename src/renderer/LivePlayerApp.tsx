@@ -346,7 +346,6 @@ export default function LivePlayerApp(): JSX.Element {
       setNow(Date.now());
     }, 1000);
     return () => window.clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ---- 周辺取得モードのコメント取得 ----

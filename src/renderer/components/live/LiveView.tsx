@@ -298,17 +298,17 @@ export function LiveView(): JSX.Element {
     } else {
       void load(subTab, null, false, 0);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- サブタブ切替時だけ読み込む (検索条件の変更では読み直さない)
   }, [subTab]);
 
   // 絞り込み条件の変更で読み直す
   useEffect(() => {
     if (subTab === 'ranking') void load('ranking', null, false, 0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- サブタブ切替時の読込は上の effect が行うため、ここでは絞り込み条件の変化だけを見る
   }, [rankingType, rankingDate]);
   useEffect(() => {
     if (subTab === 'recent') void load('recent', null, false, 0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- サブタブ切替時の読込は上の effect が行うため、ここでは絞り込み条件の変化だけを見る
   }, [recentCategory, recentSort]);
 
   const runSearch = (wordArg?: string): void => {
@@ -344,7 +344,7 @@ export function LiveView(): JSX.Element {
     setSubTab('search');
     setKeyword(pendingLiveSearch);
     runSearch(pendingLiveSearch);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runSearch は毎回作り直されるため、pendingLiveSearch が来た時だけ検索する
   }, [pendingLiveSearch]);
 
   const onOpen = (id: string): void => {

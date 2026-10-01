@@ -119,7 +119,7 @@ export function SearchView(): JSX.Element {
       })
       .catch((e) => setError(toUserFriendlyErrorMessage(e)))
       .finally(() => setLoading(false));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- pendingSearchTag が来た時だけ検索し、ソート順等の変更では再検索しない
   }, [pendingSearchTag]);
 
   /** マイリスト/シリーズURL・IDを検出してそのタブへ遷移 */

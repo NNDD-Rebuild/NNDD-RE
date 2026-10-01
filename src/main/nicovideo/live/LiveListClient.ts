@@ -237,7 +237,7 @@ async function fetchEmbeddedData(path: string, label: string): Promise<Record<st
 /** タイムシフト予約一覧 (live.nicovideo.jp/embed/timeshift-reservations の embedded-data) */
 export async function fetchTimeshiftReservations(): Promise<LiveProgramListResult> {
   const props = await fetchEmbeddedData('/embed/timeshift-reservations', 'タイムシフト予約一覧');
-  const items = (props.reservations?.reservations ?? []) as any[];
+  const items: Array<{ timeshift?: unknown; reservation?: unknown }> = props.reservations?.reservations ?? [];
   if (items[0]) {
     // 視聴期限などのキー名を確認するため、先頭1件の timeshift 関連を残す
     const { timeshift, reservation } = items[0];

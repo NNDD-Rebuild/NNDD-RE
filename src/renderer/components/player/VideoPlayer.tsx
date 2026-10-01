@@ -163,7 +163,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
     return () => {
       if (pipWindowRef.current) restoreFromPip(true);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- アンマウント時に一度だけ実行するクリーンアップ
   }, []);
 
   useEffect(() => {

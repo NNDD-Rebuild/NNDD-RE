@@ -124,7 +124,7 @@ export function InfoContent({ watch, ichibaHtmlPath }: { watch: WatchPageInfo | 
           <div className="text-xs text-nndd-subtext mb-1">タグ (ダブルクリックで検索)</div>
           <div className="flex flex-wrap gap-1">
             {watch.tags.map((t) => (
-              // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions
+              // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- ダブルクリック専用の補助操作で、キーボード操作の追加は挙動変更になるため
               <span
                 key={t}
                 className="px-2 py-0.5 bg-nndd-border rounded text-xs cursor-pointer hover:bg-nndd-accent hover:text-white transition-colors"
@@ -139,7 +139,7 @@ export function InfoContent({ watch, ichibaHtmlPath }: { watch: WatchPageInfo | 
 
       <div className="mt-2">
         <div className="text-xs text-nndd-subtext mb-1">説明</div>
-        {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
+        {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- 説明文内リンクのクリックを委譲で拾うためのハンドラで、リンク自体はキーボード操作可能 */}
         <div
           className="text-sm leading-relaxed break-words whitespace-pre-wrap"
           dangerouslySetInnerHTML={{
