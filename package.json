@@ -21,6 +21,7 @@
     "tc": "tsc --noEmit -p tsconfig.node.json",
     "tc:web": "tsc --noEmit -p tsconfig.web.json",
     "tc:all": "npm run tc && npm run tc:web",
+    "check:ipc": "node scripts/check-ipc-coverage.mjs",
     "gen:proto": "buf generate"
   },
   "dependencies": {
