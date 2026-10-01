@@ -9,7 +9,7 @@ import { ControlBarSelect } from './ControlBarSelect';
  */
 const LIVE_QUALITY_SELECT_CLASS = '!text-xs max-w-[4.5rem]';
 
-const PLAYBACK_RATE_OPTIONS = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0] as const;
+const PLAYBACK_RATE_OPTIONS = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0] as const;
 
 // Linuxのみカスタムドロップダウンに置き換える。ネイティブ<select>は全画面時に
 // 展開方向をJS/CSSから制御できず、Linux(Wayland)環境で選択肢が画面外にはみ出す
