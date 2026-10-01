@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import type { AddressInfo } from 'node:net';
-import { handleProxyRequest, decodeProxyUrl, type HlsProxyType } from './HlsProxy';
+import { handleProxyRequest, isHlsProxyType } from './HlsProxy';
 import { getMimeType, isPathAllowed } from './LocalVideoProtocol';
 import { LOCAL_MEDIA_PATH } from '../../shared/constants/paths';
 import { createLogger } from '../util/Logger';
@@ -20,6 +20,13 @@ let serverPort = 0;
 const localMediaToken = crypto.randomBytes(24).toString('hex');
 
 /**
+ * HLS プロキシのアクセストークン。
+ * 他プロセスやブラウザ上の Web ページが、ログイン Cookie 付きで任意 URL を取得する踏み台にしないよう、
+ * プロキシ URL (buildHlsProxyBase) に付与したものだけを受け付ける。
+ */
+const hlsProxyToken = crypto.randomBytes(24).toString('hex');
+
+/**
  * HLS プロキシを `http://127.0.0.1:{port}/hls/proxy` で提供するローカル専用 HTTP サーバー。
  */
 export async function startStreamServer(): Promise<void> {
@@ -32,10 +39,16 @@ export async function startStreamServer(): Promise<void> {
       return;
     }
 
-    // HLS プロキシ: /hls/proxy?vid=videoId&url=BASE64&t=m3u8|seg|key
+    // HLS プロキシ: /hls/proxy?token=...&vid=videoId&url=BASE64&t=m3u8|seg|key
     if (url.pathname === '/hls/proxy') {
+      if (url.searchParams.get('token') !== hlsProxyToken) {
+        res.writeHead(403, { 'Content-Type': 'text/plain' });
+        res.end('forbidden');
+        return;
+      }
+
       const encodedUrl = url.searchParams.get('url') ?? '';
-      const type = (url.searchParams.get('t') ?? 'seg') as HlsProxyType;
+      const typeParam = url.searchParams.get('t') ?? 'seg';
       const videoId = url.searchParams.get('vid') ?? '';
 
       if (!encodedUrl) {
@@ -43,6 +56,12 @@ export async function startStreamServer(): Promise<void> {
         res.end('missing url param');
         return;
       }
+      if (!isHlsProxyType(typeParam)) {
+        res.writeHead(400, { 'Content-Type': 'text/plain' });
+        res.end('invalid type param');
+        return;
+      }
+      const type = typeParam;
 
       handleProxyRequest(encodedUrl, type, buildHlsProxyBase(videoId))
         .then(({ body, contentType, m3u8Meta }) => {
@@ -202,7 +221,8 @@ export function buildLocalMediaUrl(absolutePath: string): string {
 /** HLS プロキシのベース URL を返す (videoId 付き) */
 export function buildHlsProxyBase(videoId: string): string {
   if (serverPort === 0) throw new Error('StreamServer not started yet');
-  if (!videoId) return `http://127.0.0.1:${serverPort}/hls/proxy`;
-  return `http://127.0.0.1:${serverPort}/hls/proxy?vid=${encodeURIComponent(videoId)}`;
+  const base = `http://127.0.0.1:${serverPort}/hls/proxy?token=${hlsProxyToken}`;
+  if (!videoId) return base;
+  return `${base}&vid=${encodeURIComponent(videoId)}`;
 }
 
