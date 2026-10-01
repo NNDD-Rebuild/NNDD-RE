@@ -35,6 +35,7 @@ export class ImageCache {
   private static _queue: (() => Promise<void>)[] = [];
   private static _activeCount = 0;
   private static readonly _maxConcurrent = 5;
+  private static _inflight = new Map<string, Promise<string>>();
 
   static get cacheDir(): string {
     if (!this._dir) {
@@ -153,6 +154,15 @@ export class ImageCache {
     const cached = this.getCached(url);
     if (cached) return cached;
 
+    // 書き込み完了前に同じ URL が来ても通信・書き込みを重複させない
+    const running = this._inflight.get(url);
+    if (running) return running;
+    const task = this.fetchAndStore(url, http).finally(() => this._inflight.delete(url));
+    this._inflight.set(url, task);
+    return task;
+  }
+
+  private static async fetchAndStore(url: string, http: NicoHttp): Promise<string> {
     try {
       const buf = await http.getBinary(url, {
         noCookieReceive: true,
