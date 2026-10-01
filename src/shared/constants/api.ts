@@ -11,6 +11,18 @@ export const NicoApi = {
 
   /** トップページ (ログイン後リダイレクト先) */
   TOP: 'https://www.nicovideo.jp/',
+  /** www.nicovideo.jp のオリジン (末尾スラッシュなし。Origin / X-Request-With ヘッダーにも使う) */
+  WWW_BASE: 'https://www.nicovideo.jp',
+
+  /** ユーザーページ */
+  USER_PAGE: 'https://www.nicovideo.jp/user/',
+  /** マイリストページ */
+  MYLIST_PAGE: 'https://www.nicovideo.jp/my/mylist/',
+  /** シリーズページ */
+  SERIES_PAGE: 'https://www.nicovideo.jp/series/',
+
+  /** アカウント (ログイン) サイトのオリジン */
+  ACCOUNT_BASE: 'https://account.nicovideo.jp',
 
   /** ログインページ */
   LOGIN: 'https://account.nicovideo.jp/login',
@@ -25,6 +37,11 @@ export const NicoApi = {
 
   /** スレッド (コメント) API (V3) */
   COMMENT_THREADS_V3: 'https://public.nvcomment.nicovideo.jp/v1/threads',
+  /** コメントサーバー (nvComment) のオリジン */
+  NVCOMMENT_BASE: 'https://public.nvcomment.nicovideo.jp',
+
+  /** nvapi のオリジン (個別の定数が無いエンドポイントはこれにパスを足して組み立てる) */
+  NVAPI_BASE: 'https://nvapi.nicovideo.jp',
 
   /** マイリストAPI (V2) */
   MYLIST_API_BASE: 'https://nvapi.nicovideo.jp/v1/users/me/mylists',
@@ -64,7 +81,20 @@ export const NicoApi = {
    * ニコレポ/フォロー新着
    * /v1/timelines/nicorepo/{term}/users/{userId}/pc/entries.json
    */
-  NICOREPO_BASE: 'https://public.api.nicovideo.jp/v1/timelines/nicorepo'
+  NICOREPO_BASE: 'https://public.api.nicovideo.jp/v1/timelines/nicorepo',
+  /** api.nicovideo.jp のオリジン (旧ニコレポ等) */
+  API_BASE: 'https://api.nicovideo.jp',
+  /** フォローフィードAPI のオリジン */
+  FEED_API_BASE: 'https://api.feed.nicovideo.jp',
+
+  /** 生放送サイトのオリジン */
+  LIVE_BASE: 'https://live.nicovideo.jp',
+  /** 生放送ウォッチページ */
+  LIVE_WATCH_PAGE: 'https://live.nicovideo.jp/watch/',
+  /** 生放送API (タイムシフト予約等) のオリジン */
+  LIVE2_API_BASE: 'https://live2.nicovideo.jp',
+  /** 生放送 番組検索API のオリジン */
+  CAS_API_BASE: 'https://api.cas.nicovideo.jp'
 } as const;
 
 /**
@@ -102,3 +132,8 @@ export const NicoAuthCookieName = {
   USER_SESSION: 'user_session',
   USER_SESSION_SECURE: 'user_session_secure'
 } as const;
+
+/**
+ * ニコニコの Cookie ドメイン
+ */
+export const NICO_COOKIE_DOMAIN = '.nicovideo.jp';
