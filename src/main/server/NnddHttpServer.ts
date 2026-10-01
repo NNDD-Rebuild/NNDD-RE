@@ -4,6 +4,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { NNDDREVideo } from '@shared/types';
+import { NicoApi } from '@shared/constants/api';
 import { VideoFileSuffix } from '@shared/constants/paths';
 import { extractBracketedVideoId } from '@shared/utils/videoId';
 import { LibraryManager } from '../db/LibraryManager';
@@ -555,7 +556,7 @@ export class NnddHttpServer {
       const played = !v.yetReading ? 'true' : 'false';
       lines.push('    <item>');
       lines.push(`      <title>${esc(v.videoName)}</title>`);
-      lines.push(`      <link>https://www.nicovideo.jp/watch/${esc(vid)}</link>`);
+      lines.push(`      <link>${NicoApi.WATCH_PAGE}${esc(vid)}</link>`);
       lines.push(`      <played>${played}</played>`);
       lines.push('    </item>');
     }

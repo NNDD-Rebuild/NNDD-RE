@@ -184,7 +184,7 @@ export class WatchInfoHandler {
     if (!key) return null;
     try {
       const ctx = NicoContext.get();
-      const url = `https://nvapi.nicovideo.jp/v4/watch/lazy/${encodeURIComponent(videoId)}?actionTrackId=${encodeURIComponent(key.watchTrackId)}`;
+      const url = `${NicoApi.NVAPI_BASE}/v4/watch/lazy/${encodeURIComponent(videoId)}?actionTrackId=${encodeURIComponent(key.watchTrackId)}`;
       const res = await ctx.http.postJson<{ data?: { series?: { id?: number | string; title?: string } | null } }>(
         url,
         { keyToken: key.keyToken },
@@ -193,7 +193,7 @@ export class WatchInfoHandler {
             'X-Frontend-Id': '6',
             'X-Frontend-Version': '0',
             'X-Niconico-Language': 'ja-jp',
-            'X-Request-With': 'https://www.nicovideo.jp'
+            'X-Request-With': NicoApi.WWW_BASE
           },
           noCookie,
           noCookieReceive: noCookie
@@ -221,7 +221,7 @@ export class WatchInfoHandler {
     try {
       const ctx = NicoContext.get();
       // v2/series/{id} は detail.title を含む (registerIpc.ts と同じエンドポイント)
-      const url = `https://nvapi.nicovideo.jp/v2/series/${encodeURIComponent(seriesId)}?pageSize=1&page=1`;
+      const url = `${NicoApi.NVAPI_BASE}/v2/series/${encodeURIComponent(seriesId)}?pageSize=1&page=1`;
       log.debug('fetchSeriesTitleFromApi:', url);
       const res = await ctx.http.getJson<{ data?: { detail?: { title?: string } } }>(url, {
         noCookie,
@@ -279,7 +279,7 @@ export class WatchInfoHandler {
     // ログイン: /api/watch/v3 (user-session 必須)
     // 未ログイン: /api/watch/v3_guest
     const endpoint = loggedIn ? 'v3' : 'v3_guest';
-    const url = `https://www.nicovideo.jp/api/watch/${endpoint}/${encodeURIComponent(videoId)}?actionTrackId=${actionTrackId}`;
+    const url = `${NicoApi.WWW_BASE}/api/watch/${endpoint}/${encodeURIComponent(videoId)}?actionTrackId=${actionTrackId}`;
     log.debug('fetching watch JSON API:', url);
     
     // debugDumpPath の設定 (設定画面から有効化)
@@ -298,7 +298,7 @@ export class WatchInfoHandler {
         'X-Frontend-Id': '6',
         'X-Frontend-Version': '0',
         'X-Niconico-Language': 'ja-jp',
-        'X-Request-With': 'https://www.nicovideo.jp'
+        'X-Request-With': NicoApi.WWW_BASE
       },
       noCookie,
       noCookieReceive: noCookie,

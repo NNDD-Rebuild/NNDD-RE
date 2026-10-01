@@ -1,4 +1,5 @@
 import type { WatchPageInfo, DomandStreamCandidate } from '@shared/types';
+import { NicoApi } from '@shared/constants';
 import { NicoContext } from '../NicoContext';
 import { createLogger } from '../../util/Logger';
 import * as path from 'path';
@@ -123,7 +124,7 @@ export class WatchSession {
     // 埋め込まれる (ゲスト取得時) ため、ここで新規生成せず同じ値を使い回す必要がある。
     // 別の actionTrackId を使うと uid 不一致で HTTP 400 INVALID_PARAMETER になる。
     const actionTrackId = this.watch.actionTrackId ?? this.generateActionTrackId();
-    const url = `https://nvapi.nicovideo.jp/v1/watch/${encodeURIComponent(
+    const url = `${NicoApi.NVAPI_BASE}/v1/watch/${encodeURIComponent(
       this.videoId
     )}/access-rights/hls?actionTrackId=${actionTrackId}`;
 
@@ -164,7 +165,7 @@ export class WatchSession {
       {
         headers: {
           'X-Access-Right-Key': accessRightKey,
-          'X-Request-With': 'https://www.nicovideo.jp'
+          'X-Request-With': NicoApi.WWW_BASE
         },
         noCookie: guest,
         noCookieReceive: false,

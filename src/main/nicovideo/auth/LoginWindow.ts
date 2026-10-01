@@ -1,5 +1,5 @@
 import { BrowserWindow, session } from 'electron';
-import { NicoApi, NicoAuthCookieName } from '@shared/constants';
+import { NICO_COOKIE_DOMAIN, NicoApi, NicoAuthCookieName } from '@shared/constants';
 import { CookieStore } from './CookieStore';
 import { createLogger } from '../../util/Logger';
 
@@ -92,14 +92,14 @@ export class LoginWindow {
 
       const checkAndCapture = async (): Promise<void> => {
         try {
-          const cookies = await ses.cookies.get({ domain: '.nicovideo.jp' });
+          const cookies = await ses.cookies.get({ domain: NICO_COOKIE_DOMAIN });
           const userSession = cookies.find(
             (c) => c.name === NicoAuthCookieName.USER_SESSION
           );
           if (!userSession) return;
           // 認証成功 → CookieStore に取り込む
           for (const c of cookies) {
-            const domain = c.domain ?? '.nicovideo.jp';
+            const domain = c.domain ?? NICO_COOKIE_DOMAIN;
             const cookieDomain = domain.replace(/^\./, '');
             // expirationDate 未指定 (セッションCookie) の場合は付けない。
             // 付け忘れると tough-cookie 側で無期限扱いになり、実際のサーバー側の

@@ -74,7 +74,7 @@ export class RankingClient {
   ): Promise<RankingFetchResult> {
     const params = new URLSearchParams({ term, responseType: 'json' });
     if (tag) params.set('tag', tag);
-    const url = `https://www.nicovideo.jp/ranking/genre/${encodeURIComponent(featuredKey)}?${params.toString()}`;
+    const url = `${NicoApi.RANKING_RSS}genre/${encodeURIComponent(featuredKey)}?${params.toString()}`;
     log.debug('fetch ranking (bff):', url);
     const res = await NicoContext.get().http.getJson<BffRankingResponse>(url);
     const rankingData = res?.data?.response?.$getTeibanRanking?.data;
@@ -111,7 +111,7 @@ export class RankingClient {
    * 総合ランキング(featuredKey=e9uj2uks)のページを流用して取得する。
    */
   static async fetchGenres(): Promise<RankingGenreInfo[]> {
-    const url = 'https://www.nicovideo.jp/ranking/genre/e9uj2uks?responseType=json';
+    const url = `${NicoApi.RANKING_RSS}genre/e9uj2uks?responseType=json`;
     log.debug('fetch ranking genres (bff):', url);
     const res = await NicoContext.get().http.getJson<BffRankingResponse>(url);
     const items = res?.data?.response?.$getTeibanRankingFeaturedKeys?.data?.items ?? [];
@@ -150,7 +150,7 @@ export class RankingClient {
   static async fetchHot(genre: string): Promise<RankingItem[]> {
     let items: RankingItem[];
     try {
-      const url = `https://nvapi.nicovideo.jp/v1/ranking/hot-topic?genre=${encodeURIComponent(genre)}&pageSize=100`;
+      const url = `${NicoApi.NVAPI_BASE}/v1/ranking/hot-topic?genre=${encodeURIComponent(genre)}&pageSize=100`;
       const res = await NicoContext.get().http.getJson<{ data?: { items?: BffRankingItem[] } }>(url);
       items = (res?.data?.items ?? []).map((v, idx) => ({
         rank: idx + 1,

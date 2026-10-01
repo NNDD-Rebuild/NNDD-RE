@@ -1,3 +1,4 @@
+import { NicoApi } from '@shared/constants';
 import { NicoContext } from '../NicoContext';
 import { createLogger } from '../../util/Logger';
 
@@ -31,8 +32,7 @@ export type ApiLoginResult =
  * 自動的に CookieStore へ保存される。
  */
 export class ApiLoginClient {
-  private static readonly LOGIN_POST_URL =
-    'https://account.nicovideo.jp/api/v1/login?site=niconico&next_url=%2F';
+  private static readonly LOGIN_POST_URL: string = NicoApi.LOGIN_POST;
 
   static async login(email: string, password: string): Promise<ApiLoginResult> {
     const ctx = NicoContext.get();
@@ -45,8 +45,8 @@ export class ApiLoginClient {
 
     for (let hop = 0; hop < 5; hop++) {
       const headers: Record<string, string> = {
-        Origin: 'https://account.nicovideo.jp',
-        Referer: hop === 0 ? 'https://account.nicovideo.jp/login' : currentUrl
+        Origin: NicoApi.ACCOUNT_BASE,
+        Referer: hop === 0 ? NicoApi.LOGIN : currentUrl
       };
       if (currentMethod === 'POST') {
         headers['Content-Type'] = 'application/x-www-form-urlencoded';
@@ -84,7 +84,7 @@ export class ApiLoginClient {
       if (lastLocation.includes('/mfa')) {
         const abs = lastLocation.startsWith('http')
           ? lastLocation
-          : `https://account.nicovideo.jp${lastLocation}`;
+          : `${NicoApi.ACCOUNT_BASE}${lastLocation}`;
         return { status: 'mfa', mfaSubmitUrl: abs };
       }
 

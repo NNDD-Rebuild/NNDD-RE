@@ -1,3 +1,4 @@
+import { NicoApi } from '@shared/constants';
 import { NicoContext } from '../NicoContext';
 import { createLogger } from '../../util/Logger';
 
@@ -88,7 +89,7 @@ export class SeriesClient {
   }
 
   private static async fetchPageRaw(id: string, page: number): Promise<SeriesRes> {
-    const url = `https://nvapi.nicovideo.jp/v2/series/${encodeURIComponent(id)}?pageSize=${PAGE_SIZE}&page=${page}`;
+    const url = `${NicoApi.NVAPI_BASE}/v2/series/${encodeURIComponent(id)}?pageSize=${PAGE_SIZE}&page=${page}`;
     log.debug('fetch series page %d:', page, url);
     return NicoContext.get().http.getJson<SeriesRes>(url);
   }

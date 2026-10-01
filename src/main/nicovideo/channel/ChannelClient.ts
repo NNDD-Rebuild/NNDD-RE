@@ -1,4 +1,5 @@
 import type { MyListItem } from '@shared/types';
+import { NicoApi } from '@shared/constants';
 import { NicoContext } from '../NicoContext';
 import { createLogger } from '../../util/Logger';
 import { ImageCache } from '../../util/ImageCache';
@@ -16,7 +17,7 @@ export class ChannelClient {
     page = 1,
     cacheImages = true
   ): Promise<{ items: MyListItem[]; total: number; name?: string }> {
-    const url = `https://ch.nicovideo.jp/${encodeURIComponent(channelId)}/video?sort=f&order=d&page=${page}`;
+    const url = `${NicoApi.CHANNEL_VIDEOS_BASE}${encodeURIComponent(channelId)}/video?sort=f&order=d&page=${page}`;
     log.debug('fetch channel videos:', url);
     const res = await NicoContext.get().http.fetch(url, { timeoutMs: 10000 });
     if (!res.ok) {

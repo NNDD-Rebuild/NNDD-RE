@@ -3,6 +3,7 @@ import type {
   CommentThreadInfo,
   DomandStreamCandidate
 } from '@shared/types';
+import { NicoApi } from '@shared/constants';
 import { createLogger } from '../../util/Logger';
 
 const log = createLogger('WatchPageParser');
@@ -397,6 +398,6 @@ export class WatchPageParser {
     if (nv && nv['server']) return String(nv['server']);
     // フォールバック: client.nicosid 付近にあるパターン
     void client;
-    return 'https://public.nvcomment.nicovideo.jp';
+    return NicoApi.NVCOMMENT_BASE;
   }
 }

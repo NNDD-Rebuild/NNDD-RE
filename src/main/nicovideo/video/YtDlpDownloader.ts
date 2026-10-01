@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { watchUrl } from '@shared/utils/nicoUrl';
 import { NicoContext } from '../NicoContext';
 import { getConfigStore } from '../../config/ConfigStore';
 import { BinaryInstaller } from '../../util/BinaryInstaller';
@@ -35,7 +36,7 @@ export class YtDlpDownloader {
     try {
       fs.mkdirSync(path.dirname(opts.outputPath), { recursive: true });
 
-      const url = `https://www.nicovideo.jp/watch/${videoId}`;
+      const url = watchUrl(videoId);
       const args = [
         '--cookies', cookiesPath,
         '--output', opts.outputPath,

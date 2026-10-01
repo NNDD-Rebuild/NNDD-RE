@@ -3,6 +3,7 @@ import { ipcMain } from 'electron';
 import type { Session } from 'electron';
 import { IpcChannel } from '@shared/types';
 import type { WatchPageInfo } from '@shared/types';
+import { NICO_COOKIE_DOMAIN } from '@shared/constants';
 import { getConfigStore } from '../../config/ConfigStore';
 import { AuthManager, WatchInfoHandler } from '../../nicovideo';
 import { WatchSession } from '../../nicovideo/video/WatchSession';
@@ -339,7 +340,7 @@ async function injectDomandBidCookie(ses: Session, cookieStr: string): Promise<v
       url: 'https://nicovideo.jp/',
       name,
       value,
-      domain: '.nicovideo.jp',
+      domain: NICO_COOKIE_DOMAIN,
       path: '/',
       secure: true,
       httpOnly: true

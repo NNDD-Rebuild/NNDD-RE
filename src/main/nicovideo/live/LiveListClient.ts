@@ -1,4 +1,5 @@
 import { LIVE_SEARCH_PAGE_SIZE } from '@shared/types';
+import { NicoApi } from '@shared/constants';
 import type {
   LiveProgramListResult,
   LiveProgramSummary,
@@ -160,7 +161,7 @@ function fetchSearchPage(params: LiveSearchParams, offset: number): Promise<Sear
     offset: String(offset)
   });
   return NicoContext.get().http.getJson<SearchResponse>(
-    `https://api.cas.nicovideo.jp/v2/search/programs.json?${q}`,
+    `${NicoApi.CAS_API_BASE}/v2/search/programs.json?${q}`,
     { headers: LIVE_HEADERS }
   );
 }

@@ -1,6 +1,8 @@
 import { ipcMain, BrowserWindow, WebContentsView, session, screen } from 'electron';
 import { IpcChannel } from '@shared/types';
 import type { DiscordActivityInfo } from '@shared/types';
+import { NICO_COOKIE_DOMAIN, NicoApi } from '@shared/constants';
+import { watchUrl } from '@shared/utils/nicoUrl';
 import { NicoContext } from '../../nicovideo/NicoContext';
 import { getDiscordRpcManager } from '../../discord/DiscordRpcManager';
 import { createLogger } from '../../util/Logger';
@@ -97,13 +99,13 @@ export function registerPlayerHandlers(): void {
       try {
         const ctx = NicoContext.get();
         const nicoSes = session.fromPartition('persist:niconico');
-        const cookies = await ctx.cookieStore.rawJar.getCookies('https://www.nicovideo.jp/');
+        const cookies = await ctx.cookieStore.rawJar.getCookies(NicoApi.TOP);
         for (const c of cookies) {
           await nicoSes.cookies.set({
-            url: 'https://www.nicovideo.jp',
+            url: NicoApi.WWW_BASE,
             name: c.key,
             value: c.value,
-            domain: c.domain ?? '.nicovideo.jp',
+            domain: c.domain ?? NICO_COOKIE_DOMAIN,
             path: c.path ?? '/',
             secure: Boolean(c.secure),
             httpOnly: Boolean(c.httpOnly),
@@ -121,7 +123,7 @@ export function registerPlayerHandlers(): void {
     view.webContents.on('did-finish-load', () => {
       setTimeout(() => { void fitPlayerToView(entry); }, 1500);
     });
-    view.webContents.loadURL(`https://www.nicovideo.jp/watch/${videoId}`);
+    view.webContents.loadURL(watchUrl(videoId));
     niconicoViews.set(win.id, entry);
 
     // niconicoプレイヤー内の requestFullscreen() を拾ってviewをリサイズ

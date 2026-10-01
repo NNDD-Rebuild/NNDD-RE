@@ -48,7 +48,7 @@ interface FeedActorsResponse {
   actors: FeedActor[];
 }
 
-const FEED_API = 'https://api.feed.nicovideo.jp';
+const FEED_API = NicoApi.FEED_API_BASE;
 
 interface NicorepoEntry {
   id: string;
@@ -134,7 +134,7 @@ const TERMS = ['last-6-months', 'last-1-month'] as const;
 /** ユーザーID取得 */
 async function getMyUserId(): Promise<string> {
   const http = NicoContext.get().http;
-  const res = await http.fetch('https://nvapi.nicovideo.jp/v1/users/me', { timeoutMs: 8000 });
+  const res = await http.fetch(`${NicoApi.NVAPI_BASE}/v1/users/me`, { timeoutMs: 8000 });
   if (!res.ok) throw new Error(`user info failed: HTTP ${res.status}`);
   const json = await res.json() as {
     data?: { user?: { id?: string | number } };
@@ -151,7 +151,7 @@ async function getFollowingUsers(maxCount = 30): Promise<FollowingUser[]> {
   const myUserId = await getMyUserId();
   const http = NicoContext.get().http;
   const users: FollowingUser[] = [];
-  const baseUrl = `https://nvapi.nicovideo.jp/v1/users/${myUserId}/following/users`;
+  const baseUrl = `${NicoApi.NVAPI_BASE}/v1/users/${myUserId}/following/users`;
 
   let cursor: string | undefined;
   while (users.length < maxCount) {
@@ -223,7 +223,7 @@ async function getUserRecentVideos(
     sensitiveContents: 'mask',
   });
 
-  const url = `https://nvapi.nicovideo.jp/v3/users/${user.id}/videos?${params}`;
+  const url = `${NicoApi.USER_VIDEOS_API}${user.id}/videos?${params}`;
   try {
     const res = await http.fetch(url, { timeoutMs: 8000 });
     if (!res.ok) {
@@ -341,7 +341,7 @@ async function enrichVideoInfo(items: SearchResultItem[]): Promise<SearchResultI
   if (items.length === 0) return items;
   const http = NicoContext.get().http;
   const ids = items.map(i => i.videoId).join(',');
-  const url = `https://nvapi.nicovideo.jp/v1/videos?ids=${encodeURIComponent(ids)}`;
+  const url = `${NicoApi.NVAPI_BASE}/v1/videos?ids=${encodeURIComponent(ids)}`;
   try {
     const res = await http.fetch(url, { timeoutMs: 8000 });
     if (!res.ok) { log.debug(`enrichVideoInfo: ${res.status}`); return items; }
@@ -382,7 +382,7 @@ async function tryFeedApi(limit: number, cursor?: string): Promise<FeedResult | 
   if (cursor) params.set('cursor', cursor);
   const url = `${FEED_API}/v1/activities/followings/video?${params}`;
   try {
-    const res = await http.fetch(url, { timeoutMs: 10000, headers: { 'Accept': 'application/json', 'Origin': 'https://www.nicovideo.jp' } });
+    const res = await http.fetch(url, { timeoutMs: 10000, headers: { 'Accept': 'application/json', 'Origin': NicoApi.WWW_BASE } });
     if (!res.ok) { log.debug(`feed API: ${url} → ${res.status}`); return null; }
     const json = await res.json() as FeedActivitiesResponse;
     if (json.code !== 'ok') { log.debug(`feed API: code=${json.code}`); return null; }
@@ -426,7 +426,7 @@ async function getFeedActors(): Promise<FollowingUser[]> {
   const http = NicoContext.get().http;
   const url = `${FEED_API}/v1/actors?limit=100`;
   try {
-    const res = await http.fetch(url, { timeoutMs: 10000, headers: { 'Accept': 'application/json', 'Origin': 'https://www.nicovideo.jp' } });
+    const res = await http.fetch(url, { timeoutMs: 10000, headers: { 'Accept': 'application/json', 'Origin': NicoApi.WWW_BASE } });
     if (!res.ok) return [];
     const json = await res.json() as FeedActorsResponse;
     if (json.code !== 'ok') return [];
@@ -456,7 +456,7 @@ async function tryNicorepoFeed(limit: number, cursor?: string): Promise<FeedResu
   if (cursor) params.set('maxId', cursor);
 
   // public.api.nicovideo.jp は ENOTFOUND のため api.nicovideo.jp を使用
-  const NICOREPO_API = 'https://api.nicovideo.jp/v1/timelines/nicorepo';
+  const NICOREPO_API = `${NicoApi.API_BASE}/v1/timelines/nicorepo`;
 
   // 候補A: /my/ パス (ユーザーID不要)
   const candidateUrls: string[] = [
@@ -548,9 +548,9 @@ async function buildFeedFromFollowings(
 function buildNicorepoUrls(userId: string, params: URLSearchParams): string[] {
   const urls: string[] = [];
   const bases = [
-    'https://api.nicovideo.jp',
-    'https://nvapi.nicovideo.jp',
-    'https://www.nicovideo.jp',
+    NicoApi.API_BASE,
+    NicoApi.NVAPI_BASE,
+    NicoApi.WWW_BASE,
   ];
   for (const base of bases) {
     for (const term of TERMS) {
@@ -606,7 +606,7 @@ export class FollowFeedClient {
 
     // Cookie診断
     try {
-      const wwwCookie = await ctx.cookieStore.cookieHeader('https://www.nicovideo.jp/');
+      const wwwCookie = await ctx.cookieStore.cookieHeader(NicoApi.TOP);
       const feedCookie = await ctx.cookieStore.cookieHeader(`${FEED_API}/`);
       results.push({
         url: '--- Cookie診断 ---', status: 0, ok: !!wwwCookie,
@@ -621,7 +621,7 @@ export class FollowFeedClient {
 
     // ログイン確認
     try {
-      const res = await http.fetch('https://nvapi.nicovideo.jp/v1/users/me', { timeoutMs: 8000 });
+      const res = await http.fetch(`${NicoApi.NVAPI_BASE}/v1/users/me`, { timeoutMs: 8000 });
       const text = await res.text();
       results.push({ url: 'nvapi /v1/users/me', status: res.status, ok: res.ok, preview: text.slice(0, 200) });
     } catch (e) {
@@ -635,7 +635,7 @@ export class FollowFeedClient {
       ['feed /v1/unread', `${FEED_API}/v1/unread`],
     ] as [string, string][]) {
       try {
-        const res = await http.fetch(url, { timeoutMs: 8000, headers: { 'Accept': 'application/json', 'Origin': 'https://www.nicovideo.jp' } });
+        const res = await http.fetch(url, { timeoutMs: 8000, headers: { 'Accept': 'application/json', 'Origin': NicoApi.WWW_BASE } });
         const text = await res.text();
         results.push({ url: label, status: res.status, ok: res.ok, preview: text.slice(0, 300) });
       } catch (e) {

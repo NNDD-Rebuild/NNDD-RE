@@ -43,7 +43,7 @@ export class ConnectionDiag {
       },
       {
         name: 'マイリストAPI',
-        url: 'https://nvapi.nicovideo.jp/v1/users/me/mylists'
+        url: NicoApi.MYLIST_API_BASE
       }
     ];
 
