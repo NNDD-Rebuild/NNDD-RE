@@ -4,6 +4,7 @@ import { LibraryManager } from '../db/LibraryManager';
 import { createLogger } from '../util/Logger';
 import { VideoFileSuffix } from '@shared/constants';
 import type { NNDDREVideo } from '@shared/types';
+import { extractBracketedVideoId } from '@shared/utils/videoId';
 import { ThumbInfoXmlReader } from '../nicovideo/video/ThumbInfoXmlReader';
 import { InfoTxtReader } from '../nicovideo/video/InfoTxtReader';
 
@@ -188,8 +189,7 @@ export class LibraryScanner {
   }
 
   static extractVideoId(baseName: string): string | null {
-    const m = baseName.match(/\[((?:sm|nm|so|ax|sd|ca|cd|cw|zb|ze|yo)\d+)\]/);
-    return m ? m[1] : null;
+    return extractBracketedVideoId(baseName);
   }
 
   /**
