@@ -124,7 +124,12 @@ export function MyListView(): JSX.Element {
     reloadPlaylists();
   }, [isLoggedIn]);
 
+  // 右ペインの一覧取得 (fetchItems / fetchPlaylistItems / showSeries 共通) の連番。
+  // リスト・ページを素早く切り替えたとき、最後に投げた取得の結果だけを反映する
+  const itemsSeqRef = useRef(0);
+
   const fetchItems = async (ml: MyList, page = 1): Promise<void> => {
+    const seq = ++itemsSeqRef.current;
     setLoading(true);
     setError(null);
     setSelected({ kind: 'mylist', mylist: ml });
@@ -136,6 +141,7 @@ export function MyListView(): JSX.Element {
       if (ml.type === RssType.SERIES) {
         const seriesId = ml.myListUrl.match(/series\/(\d+)/)?.[1] ?? ml.myListUrl;
         const result = await window.nndd.invoke<SeriesFetchResult>(IpcChannel.SERIES_FETCH, seriesId);
+        if (seq !== itemsSeqRef.current) return;
         if (!result) { setItems([]); setTotalItems(0); return; }
         const mapped = result.items.map((it) => ({ ...it, pubDate: new Date(it.pubDate) }));
         setItems(mapped.map(mylistItemToCard));
@@ -146,22 +152,27 @@ export function MyListView(): JSX.Element {
           IpcChannel.MYLIST_FETCH_PAGE,
           { url: ml.myListUrl, type: ml.type, page, pageSize: PAGE_SIZE }
         );
+        if (seq !== itemsSeqRef.current) return;
         const mapped = data.items.map((d) => ({ ...d, pubDate: new Date(d.pubDate) }));
         setItems(mapped.map(mylistItemToCard));
         setTotalItems(data.total);
         void checkDownloaded(mapped.map((i) => i.videoId));
       }
     } catch (e) {
+      if (seq !== itemsSeqRef.current) return;
       setError(toUserFriendlyErrorMessage(e));
       setItems([]);
       setTotalItems(0);
     } finally {
-      setLoading(false);
-      requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 0 }));
+      if (seq === itemsSeqRef.current) {
+        setLoading(false);
+        requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 0 }));
+      }
     }
   };
 
   const fetchPlaylistItems = async (pl: Playlist): Promise<void> => {
+    const seq = ++itemsSeqRef.current;
     setLoading(true);
     setError(null);
     setSelected({ kind: 'playlist', playlist: pl });
@@ -170,24 +181,29 @@ export function MyListView(): JSX.Element {
     resetSearch();
     try {
       const list = await window.nndd.invoke<PlaylistItem[]>(IpcChannel.PLAYLIST_GET_ITEMS, pl.id);
+      if (seq !== itemsSeqRef.current) return;
       setItems(list.map(playlistItemToCard));
       setTotalItems(list.length);
       void checkDownloaded(list.map((it) => it.videoId));
     } catch (e) {
+      if (seq !== itemsSeqRef.current) return;
       setError(toUserFriendlyErrorMessage(e));
       setItems([]);
       setTotalItems(0);
     } finally {
-      setLoading(false);
+      if (seq === itemsSeqRef.current) setLoading(false);
     }
   };
 
   /** pendingSeriesId で指定されたシリーズを一時表示 (SERIES_FETCH → 直接setItems) */
   const showSeries = async (seriesId: string): Promise<void> => {
+    const seq = ++itemsSeqRef.current;
     setLoading(true);
     setError(null);
     try {
       const result = await window.nndd.invoke<SeriesFetchResult>(IpcChannel.SERIES_FETCH, seriesId).catch(() => null);
+      // 取得中に別のリストを選んだ場合は、後から届いたシリーズで表示を奪わない
+      if (seq !== itemsSeqRef.current) return;
       if (!result) return;
       const url = seriesUrl(seriesId);
       const tempMl: MyList = {
@@ -212,7 +228,7 @@ export function MyListView(): JSX.Element {
       setItems(seriesMapped.map(mylistItemToCard));
       void checkDownloaded(seriesMapped.map((i) => i.videoId));
     } finally {
-      setLoading(false);
+      if (seq === itemsSeqRef.current) setLoading(false);
     }
   };
 
@@ -237,6 +253,8 @@ export function MyListView(): JSX.Element {
   const handleRenewAll = async (): Promise<void> => {
     setRenewingAll(true);
     setAutoDlResult(null);
+    // 一括更新中に別のリスト・ページへ移動していたら、開始時に選択していたリストへ表示を戻さない
+    const seqAtStart = itemsSeqRef.current;
     try {
       const results = await window.nndd.invoke<
         Record<string, { fetched: number; queued: number; error?: string }>
@@ -248,7 +266,7 @@ export function MyListView(): JSX.Element {
           ? `${queued}件をDLキューに追加 (${errors}件のマイリストで取得失敗)`
           : `${queued}件をDLキューに追加しました`
       );
-      if (selected?.kind === 'mylist') await fetchItems(selected.mylist);
+      if (selected?.kind === 'mylist' && seqAtStart === itemsSeqRef.current) await fetchItems(selected.mylist);
       reloadMylists();
     } catch (e) {
       setAutoDlResult(toUserFriendlyErrorMessage(e));

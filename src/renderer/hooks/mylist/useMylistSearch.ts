@@ -26,6 +26,9 @@ export function useMylistSearch({
   const [loadedCount, setLoadedCount] = useState(0);
   const cancelLoadAllRef = useRef(false);
   const isLoadingAllRef = useRef(false);
+  // リスト切替 (resetSearch) ごとに進める世代。cancelLoadAllRef は次の全件取得の開始で false に戻るため、
+  // 切替前のリストの取得が await から戻ったときに中断を見落とさないよう、世代でも判定する
+  const loadAllGenRef = useRef(0);
 
   /** 検索語・全件キャッシュをクリアし、進行中の全件取得を中断する (リスト切替時) */
   const resetSearch = (): void => {
@@ -33,20 +36,25 @@ export function useMylistSearch({
     setAllItems(null);
     cancelLoadAllRef.current = true;
     isLoadingAllRef.current = false;
+    ++loadAllGenRef.current;
+    // 中断した取得の完了処理は (世代が古いので) 読込中表示を下げないため、ここで下げる
+    setLoadingAll(false);
   };
 
   /** 指定マイリストの全ページを取得して1つの配列にまとめる (検索・一括DL共用) */
   const fetchAllMylistPages = async (ml: MyList): Promise<VideoCardData[] | null> => {
+    const gen = loadAllGenRef.current;
+    const isCancelled = (): boolean => cancelLoadAllRef.current || gen !== loadAllGenRef.current;
     const totalPages = Math.ceil(totalItems / PAGE_SIZE);
     const merged: VideoCardData[] = [];
     for (let p = 1; p <= totalPages; p++) {
-      if (cancelLoadAllRef.current) return null;
+      if (isCancelled()) return null;
       const data = await window.nndd.invoke<{ items: MyListItem[]; total: number }>(
         IpcChannel.MYLIST_FETCH_PAGE,
         // 全件先読み中は画像キャッシュを保存しない (検索確定時/DL時にヒット分だけ保存する)
         { url: ml.myListUrl, type: ml.type, page: p, pageSize: PAGE_SIZE, cacheImages: false }
       );
-      if (cancelLoadAllRef.current) return null;
+      if (isCancelled()) return null;
       const mapped = data.items.map((d) => ({ ...d, pubDate: new Date(d.pubDate) }));
       merged.push(...mapped.map(mylistItemToCard));
       setLoadedCount(merged.length);
@@ -60,6 +68,7 @@ export function useMylistSearch({
     if (isLoadingAllRef.current) return; // 連続入力による二重起動を防止
     isLoadingAllRef.current = true;
     cancelLoadAllRef.current = false;
+    const gen = loadAllGenRef.current;
     setLoadingAll(true);
     setLoadedCount(0);
     try {
@@ -68,8 +77,11 @@ export function useMylistSearch({
     } catch {
       // 失敗時は現在ページのみでの検索にフォールバック (allItems は null のまま)
     } finally {
-      setLoadingAll(false);
-      isLoadingAllRef.current = false;
+      // リスト切替後は、切替先で始まった全件取得の読込中表示・二重起動防止を解除しない
+      if (gen === loadAllGenRef.current) {
+        setLoadingAll(false);
+        isLoadingAllRef.current = false;
+      }
     }
   };
 
