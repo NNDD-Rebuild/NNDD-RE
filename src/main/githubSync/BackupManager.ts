@@ -400,7 +400,7 @@ export class BackupManager {
       const gist = await client.get(profile.gistId);
       const raw = gist.files[GitHubApi.BACKUP_FILE_NAME]?.content;
       if (!raw) return { ok: false, error: 'Gist内にバックアップファイルが見つかりません' };
-      const payload = JSON.parse(raw) as BackupPayload;
+      const payload = parseBackupPayload(raw);
       const applied = this.applyPayload(payload, profile.dataScope);
       this.updateProfile(profileId, {
         lastSyncedAt: new Date().toISOString(),
@@ -466,7 +466,7 @@ export class BackupManager {
     const gist = await client.get(profile.gistId);
     const raw = gist.files[GitHubApi.BACKUP_FILE_NAME]?.content;
     if (!raw) return null;
-    return JSON.parse(raw) as BackupPayload;
+    return parseBackupPayload(raw);
   }
 
   /** プロファイルに紐づく Gist の世代 (リビジョン) 一覧を新しい順で返す */
@@ -495,7 +495,7 @@ export class BackupManager {
       const gist = await client.get(profile.gistId, sha);
       const raw = gist.files[GitHubApi.BACKUP_FILE_NAME]?.content;
       if (!raw) return { ok: false, error: '指定バージョンにバックアップファイルが見つかりません' };
-      const payload = JSON.parse(raw) as BackupPayload;
+      const payload = parseBackupPayload(raw);
       const applied = this.applyPayload(payload, profile.dataScope);
       this.updateProfile(profileId, {
         lastSyncedAt: new Date().toISOString(),
@@ -508,4 +508,135 @@ export class BackupManager {
       return { ok: false, error: message };
     }
   }
+}
+
+// --- バックアップ JSON の検証 ---
+// 復元は項目ごとに別トランザクションで全置換するため、途中の項目で例外が出ると一部だけ置き換わった状態になる。
+// ローカルデータに触れる前に形を確かめて、不正なら丸ごと中断する。
+
+type JsonObject = Record<string, unknown>;
+
+function invalid(where: string, expected: string): never {
+  throw new Error(`バックアップの形式が不正です: ${where} が${expected}ではありません`);
+}
+
+function expectObject(v: unknown, where: string): JsonObject {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) invalid(where, 'オブジェクト');
+  return v as JsonObject;
+}
+
+function expectArray(v: unknown, where: string): unknown[] {
+  if (!Array.isArray(v)) invalid(where, '配列');
+  return v;
+}
+
+function expectString(v: unknown, where: string): void {
+  if (typeof v !== 'string') invalid(where, '文字列');
+}
+
+/** DB 上 NULL を許す列。バックアップ作成時に null がそのまま書き出されることがある */
+function expectNullableString(v: unknown, where: string): void {
+  if (v !== null && typeof v !== 'string') invalid(where, '文字列');
+}
+
+function expectBoolean(v: unknown, where: string): void {
+  if (typeof v !== 'boolean') invalid(where, '真偽値');
+}
+
+function expectNumber(v: unknown, where: string): void {
+  if (typeof v !== 'number' || !Number.isFinite(v)) invalid(where, '数値');
+}
+
+/** 項目があれば配列であることと、各要素を check で確かめる */
+function checkOptionalList(root: JsonObject, key: string, check: (item: unknown, where: string) => void): void {
+  if (root[key] === undefined) return;
+  expectArray(root[key], key).forEach((item, i) => check(item, `${key}[${i}]`));
+}
+
+function parseBackupPayload(raw: string): BackupPayload {
+  let data: unknown;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new Error('バックアップファイルを JSON として読み取れません');
+  }
+  const root = expectObject(data, 'バックアップ全体');
+
+  const version = root.schemaVersion;
+  if (typeof version !== 'number' || !Number.isInteger(version) || version < 1) invalid('schemaVersion', '1以上の整数');
+  if (version > BACKUP_SCHEMA_VERSION) {
+    throw new Error(
+      `新しいバージョンのアプリで作成されたバックアップです (形式 ${version}、対応 ${BACKUP_SCHEMA_VERSION} まで)。アプリを更新してから復元してください`
+    );
+  }
+  expectString(root.exportedAt, 'exportedAt');
+  expectString(root.appVersion, 'appVersion');
+  expectObject(root.scope, 'scope');
+
+  if (root.config !== undefined) expectObject(root.config, 'config');
+
+  if (root.ngList !== undefined) {
+    const ngList = expectObject(root.ngList, 'ngList');
+    expectArray(ngList.comments, 'ngList.comments').forEach((c, i) => {
+      const o = expectObject(c, `ngList.comments[${i}]`);
+      expectString(o.type, `ngList.comments[${i}].type`);
+      expectString(o.value, `ngList.comments[${i}].value`);
+    });
+    expectArray(ngList.tags, 'ngList.tags').forEach((t, i) => expectString(t, `ngList.tags[${i}]`));
+    expectArray(ngList.ups, 'ngList.ups').forEach((u, i) => expectString(u, `ngList.ups[${i}]`));
+  }
+
+  checkOptionalList(root, 'myList', (item, where) => {
+    const o = expectObject(item, where);
+    expectString(o.url, `${where}.url`);
+    expectNullableString(o.name, `${where}.name`);
+    expectNullableString(o.type, `${where}.type`);
+    expectBoolean(o.isDir, `${where}.isDir`);
+  });
+
+  checkOptionalList(root, 'schedule', (item, where) => {
+    const o = expectObject(item, where);
+    expectString(o.id, `${where}.id`);
+    expectNullableString(o.name, `${where}.name`);
+    if (o.targetType !== undefined) expectNullableString(o.targetType, `${where}.targetType`);
+    expectNullableString(o.targetMyListUrl, `${where}.targetMyListUrl`);
+    if (o.targetId !== undefined) expectNullableString(o.targetId, `${where}.targetId`);
+    expectArray(o.daysOfWeek, `${where}.daysOfWeek`).forEach((d, i) => expectNumber(d, `${where}.daysOfWeek[${i}]`));
+    expectNullableString(o.time, `${where}.time`);
+    expectBoolean(o.enabled, `${where}.enabled`);
+  });
+
+  checkOptionalList(root, 'savedSearch', (item, where) => {
+    const o = expectObject(item, where);
+    expectString(o.id, `${where}.id`);
+    expectNullableString(o.name, `${where}.name`);
+    expectNullableString(o.word, `${where}.word`);
+    expectNullableString(o.type, `${where}.type`);
+    expectNullableString(o.sortType, `${where}.sortType`);
+  });
+
+  checkOptionalList(root, 'playlist', (item, where) => {
+    const o = expectObject(item, where);
+    expectString(o.name, `${where}.name`);
+    expectArray(o.items, `${where}.items`).forEach((it, i) => {
+      const itemWhere = `${where}.items[${i}]`;
+      const v = expectObject(it, itemWhere);
+      expectString(v.videoId, `${itemWhere}.videoId`);
+      expectNullableString(v.title, `${itemWhere}.title`);
+      expectNullableString(v.thumbnailUrl, `${itemWhere}.thumbnailUrl`);
+      expectNumber(v.lengthSec, `${itemWhere}.lengthSec`);
+    });
+  });
+
+  checkOptionalList(root, 'history', (item, where) => {
+    const o = expectObject(item, where);
+    expectString(o.videoId, `${where}.videoId`);
+    expectNullableString(o.title, `${where}.title`);
+    expectNullableString(o.thumbnailUrl, `${where}.thumbnailUrl`);
+    if (typeof o.watchedAt !== 'string' || Number.isNaN(Date.parse(o.watchedAt))) invalid(`${where}.watchedAt`, '日時の文字列');
+    expectBoolean(o.isLocal, `${where}.isLocal`);
+    if (o.watchSeconds !== undefined && o.watchSeconds !== null) expectNumber(o.watchSeconds, `${where}.watchSeconds`);
+  });
+
+  return root as unknown as BackupPayload;
 }
