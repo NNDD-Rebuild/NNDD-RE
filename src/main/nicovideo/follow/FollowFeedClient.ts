@@ -136,8 +136,11 @@ async function getMyUserId(): Promise<string> {
   const http = NicoContext.get().http;
   const res = await http.fetch('https://nvapi.nicovideo.jp/v1/users/me', { timeoutMs: 8000 });
   if (!res.ok) throw new Error(`user info failed: HTTP ${res.status}`);
-  const json = await res.json() as Record<string, unknown>;
-  const id = (json['data'] as Record<string, unknown>)?.['user']?.['id'] ?? json['id'];
+  const json = await res.json() as {
+    data?: { user?: { id?: string | number } };
+    id?: string | number;
+  };
+  const id = json.data?.user?.id ?? json.id;
   if (!id) throw new Error('userId not found');
   log.verbose('userId =', id);
   return String(id);
@@ -647,7 +650,7 @@ export class FollowFeedClient {
 function parseNicorepoEntries(entries: NicorepoEntry[]): SearchResultItem[] {
   return entries
     .filter((e) => e.object?.type === 'video' && e.object.url)
-    .map((e) => {
+    .map((e): SearchResultItem | null => {
       const obj = e.object!;
       const videoId = obj.url?.match(/\/watch\/((?:sm|nm|so|ss)\d+|\d+)/)?.[1] ?? '';
       if (!videoId) return null;
@@ -663,7 +666,7 @@ function parseNicorepoEntries(entries: NicorepoEntry[]): SearchResultItem[] {
         likeCount: 0,
         registeredAt: new Date(e.updated),
         tags: []
-      } satisfies SearchResultItem;
+      };
     })
     .filter((x): x is SearchResultItem => x !== null);
 }
