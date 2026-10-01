@@ -1,6 +1,7 @@
 import { useEffect, type MutableRefObject } from 'react';
 import type { MyList } from '@shared/types';
 import { IpcChannel, RssType } from '@shared/types';
+import { channelUrl, mylistUrl } from '@shared/utils/nicoUrl';
 import { useAppStore } from '@renderer/store/useAppStore';
 
 /**
@@ -44,7 +45,7 @@ export function usePendingMylistNavigation({
       void fetchItems(existing);
     } else {
       // 追加せず一時表示のみ (DBには保存しない)
-      const url = `https://www.nicovideo.jp/my/mylist/${mylistId}`;
+      const url = mylistUrl(mylistId);
       const fetchAndShow = async (): Promise<void> => {
         // マイリスト名を取得して表示名に使用
         const info = await window.nndd.invoke<{ name: string } | null>(
@@ -80,7 +81,7 @@ export function usePendingMylistNavigation({
     if (!pendingChannelId) return;
     const channelId = pendingChannelId;
     setPendingChannelId(null);
-    const url = `https://ch.nicovideo.jp/${channelId}`;
+    const url = channelUrl(channelId);
     const fetchAndShow = async (): Promise<void> => {
       const info = await window.nndd.invoke<{ name: string } | null>(
         IpcChannel.MYLIST_FETCH_INFO,

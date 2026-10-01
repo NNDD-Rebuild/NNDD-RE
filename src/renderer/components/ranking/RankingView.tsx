@@ -5,6 +5,7 @@ import { VideoCard } from '../common/VideoCard';
 import { VirtualizedItemList } from '../common/VirtualizedItemList';
 import { useAppStore } from '@renderer/store/useAppStore';
 import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
+import { watchUrl } from '@shared/utils/nicoUrl';
 import { useWatchedIds } from '@renderer/hooks/useWatchedIds';
 import { useLibraryCheck } from '@renderer/hooks/useLibraryCheck';
 
@@ -95,7 +96,7 @@ export function RankingView(): JSX.Element {
     );
   };
   const handleNiconico = (videoId: string): void => {
-    window.nndd.invoke(window.nndd.channels.SYS_OPEN_PATH, `https://www.nicovideo.jp/watch/${videoId}`);
+    window.nndd.invoke(window.nndd.channels.SYS_OPEN_PATH, watchUrl(videoId));
   };
   const handlePlayAudioOnly = (videoId: string): void => {
     window.nndd.invoke(window.nndd.channels.VIDEO_OPEN_PLAYER, { videoId, audioOnly: true });

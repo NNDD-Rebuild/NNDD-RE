@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useConfig } from '@renderer/hooks/useConfig';
 import type { WatchPageInfo } from '@shared/types';
 import { IpcChannel } from '@shared/types';
+import { userUrl, watchUrl } from '@shared/utils/nicoUrl';
 import { ContextMenuPopup, MenuItem } from '../../common/VideoCard';
 import { descriptionLinkUrl, openDescriptionUrl, sanitizeDescription } from './description';
 
@@ -26,7 +27,7 @@ export function InfoContent({ watch, ichibaHtmlPath }: { watch: WatchPageInfo | 
     }
   };
 
-  const nicoUrl = `https://www.nicovideo.jp/watch/${watch.videoId}`;
+  const nicoUrl = watchUrl(watch.videoId);
 
   return (
     <div className="overflow-auto h-full p-3 text-sm text-nndd-text">
@@ -97,7 +98,7 @@ export function InfoContent({ watch, ichibaHtmlPath }: { watch: WatchPageInfo | 
                 onClick={() => {
                   window.nndd.invoke(
                     window.nndd.channels.SYS_OPEN_PATH,
-                    `https://www.nicovideo.jp/user/${watch.owner!.id}`
+                    userUrl(watch.owner!.id)
                   );
                   setOwnerCtxMenu(null);
                 }}

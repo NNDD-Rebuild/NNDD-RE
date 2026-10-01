@@ -7,6 +7,7 @@ import {
 } from 'react';
 import type { NNDDREComment, NgListItem } from '@shared/types';
 import { NgListItemType, IpcChannel } from '@shared/types';
+import { mylistUrl, watchUrl } from '@shared/utils/nicoUrl';
 import { NgListDialog } from './NgListDialog';
 
 // ── 列幅型 ──────────────────────────────────────────────
@@ -700,7 +701,7 @@ function CommentTextCell({ text }: { text: string }): JSX.Element {
                 e.stopPropagation();
                 void window.nndd.invoke(
                   window.nndd.channels.SYS_OPEN_PATH,
-                  `https://www.nicovideo.jp/watch/${p.value}`
+                  watchUrl(p.value)
                 );
               }}
             >
@@ -717,7 +718,7 @@ function CommentTextCell({ text }: { text: string }): JSX.Element {
                 e.stopPropagation();
                 void window.nndd.invoke(
                   window.nndd.channels.SYS_OPEN_PATH,
-                  `https://www.nicovideo.jp/my/mylist/${p.id}`
+                  mylistUrl(p.id)
                 );
               }}
             >

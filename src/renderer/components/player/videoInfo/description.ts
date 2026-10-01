@@ -1,4 +1,5 @@
 import { IpcChannel } from '@shared/types';
+import { NicoApi } from '@shared/constants';
 
 /** 説明文 (sanitizeDescription 済み) のクリック位置からリンク URL を取り出す */
 export function descriptionLinkUrl(e: React.MouseEvent<HTMLElement>): string | null {
@@ -64,13 +65,13 @@ export function sanitizeDescription(html: string): string {
   // 5. sm/nm/so/ss で始まる動画 ID をリンク化
   s = s.replace(
     /\b((?:sm|nm|so|ss)\d+)\b/g,
-    `<a data-url="https://www.nicovideo.jp/watch/$1" ${LINK_CLASS}>$1</a>`
+    `<a data-url="${NicoApi.WATCH_PAGE}$1" ${LINK_CLASS}>$1</a>`
   );
 
   // 6. mylist/数字 をマイリストリンクに変換
   s = s.replace(
     /\b(mylist\/(\d+))\b/g,
-    `<a data-url="https://www.nicovideo.jp/my/mylist/$2" ${LINK_CLASS}>$1</a>`
+    `<a data-url="${NicoApi.MYLIST_PAGE}$2" ${LINK_CLASS}>$1</a>`
   );
 
   // 7. プレースホルダーを元のアンカーに戻す

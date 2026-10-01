@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { NNDDREVideo } from '@shared/types';
 import { IpcChannel } from '@shared/types';
+import { watchUrl } from '@shared/utils/nicoUrl';
 import { ContextMenuPopup, MenuItem } from '../common/VideoCard';
 import { useAppStore } from '@renderer/store/useAppStore';
 import { useLibraryVideos } from '@renderer/hooks/library/useLibraryVideos';
@@ -234,7 +235,7 @@ export function LibraryView(): JSX.Element {
     const m = v.videoName.match(/\[((?:sm|nm|so|ax|sd|ca|cd|cw|zb|ze|yo)\d+)\]/);
     const videoId = m ? m[1] : null;
     if (!videoId) return;
-    window.nndd.invoke(window.nndd.channels.SYS_OPEN_PATH, `https://www.nicovideo.jp/watch/${videoId}`);
+    window.nndd.invoke(window.nndd.channels.SYS_OPEN_PATH, watchUrl(videoId));
   };
 
   const handleScan = async (): Promise<void> => {

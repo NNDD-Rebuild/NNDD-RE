@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { MyList, MyListItem, Playlist, PlaylistItem } from '@shared/types';
 import { IpcChannel, RssType } from '@shared/types';
 import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
+import { seriesUrl, watchUrl } from '@shared/utils/nicoUrl';
 import type { VideoCardData } from '../common/VideoCard';
 import { VirtualizedItemList } from '../common/VirtualizedItemList';
 import { useAppStore } from '../../store/useAppStore';
@@ -188,7 +189,7 @@ export function MyListView(): JSX.Element {
     try {
       const result = await window.nndd.invoke<SeriesFetchResult>(IpcChannel.SERIES_FETCH, seriesId).catch(() => null);
       if (!result) return;
-      const url = `https://www.nicovideo.jp/series/${seriesId}`;
+      const url = seriesUrl(seriesId);
       const tempMl: MyList = {
         myListUrl: url,
         myListName: result.name ?? `シリーズ (${seriesId})`,
@@ -272,7 +273,7 @@ export function MyListView(): JSX.Element {
     );
   };
   const handleNiconico = (videoId: string): void => {
-    window.nndd.invoke(window.nndd.channels.SYS_OPEN_PATH, `https://www.nicovideo.jp/watch/${videoId}`);
+    window.nndd.invoke(window.nndd.channels.SYS_OPEN_PATH, watchUrl(videoId));
   };
 
   /** 一時表示中のマイリストを DB に登録 */

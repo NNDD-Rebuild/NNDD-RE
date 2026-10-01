@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { HistoryItem, NicoWatchHistoryItem, ResumePosition } from '@shared/types';
 import { IpcChannel } from '@shared/types';
+import { watchUrl } from '@shared/utils/nicoUrl';
 import { useAppStore } from '@renderer/store/useAppStore';
 
 type HistorySource = 'app' | 'nico';
@@ -73,7 +74,7 @@ export function HistoryView(): JSX.Element {
   const handleOpenNiconico = (videoId: string): void => {
     void window.nndd.invoke(
       window.nndd.channels.SYS_OPEN_PATH,
-      `https://www.nicovideo.jp/watch/${videoId}`
+      watchUrl(videoId)
     );
   };
 

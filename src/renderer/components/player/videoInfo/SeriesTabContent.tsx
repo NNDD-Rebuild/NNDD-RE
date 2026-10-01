@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import type { MyListItem } from '@shared/types';
 import { IpcChannel } from '@shared/types';
+import { seriesUrl } from '@shared/utils/nicoUrl';
 import { LazyThumbnail } from './LazyThumbnail';
 
 /** シリーズタブ: シリーズ内の動画一覧 (ページ送り・後でみる追加・連続再生トグル) */
@@ -81,7 +82,7 @@ export function SeriesTabContent({
   const handleAddToMylist = (): void => {
     window.nndd
       .invoke(IpcChannel.MYLIST_ADD, {
-        myListUrl: `https://www.nicovideo.jp/series/${seriesId}`,
+        myListUrl: seriesUrl(seriesId),
         myListName: seriesTitle,
         isDir: false,
         unPlayVideoCount: 0,

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { LiveCommentLock, LiveProgramInfo as LiveProgramInfoData, LiveStatistics } from '@shared/types';
 import { IpcChannel } from '@shared/types';
+import { liveWatchUrl } from '@shared/utils/nicoUrl';
 import { useConfig } from '../../hooks/useConfig';
 import { descriptionLinkUrl, openDescriptionUrl, sanitizeDescription } from '../player/VideoInfoView';
 import { ContextMenuPopup, MenuItem } from '../common/VideoCard';
@@ -34,7 +35,7 @@ export function LiveProgramInfo({
   const begin = program.beginTimeMs ? new Date(program.beginTimeMs) : null;
   const end = program.endTimeMs ? new Date(program.endTimeMs) : null;
   const pad = (n: number): string => String(n).padStart(2, '0');
-  const liveUrl = `https://live.nicovideo.jp/watch/${program.programId || programId}`;
+  const liveUrl = liveWatchUrl(program.programId || programId);
   const supplier = program.supplier;
   const isUser = supplier?.type === 'user' && Boolean(supplier.id);
   // コメントサーバーから届いた最新値を優先し、届くまでは視聴ページ取得時点の値
