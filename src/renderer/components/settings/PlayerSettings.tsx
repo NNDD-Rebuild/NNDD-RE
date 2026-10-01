@@ -402,7 +402,7 @@ export function PlayerSettings(): JSX.Element {
         </Row>
         <Row label="デフォルト再生速度">
           <div className="flex gap-1">
-            {[0.5, 0.75, 1.0, 1.25, 1.5, 2.0].map((r) => (
+            {[0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0].map((r) => (
               <button
                 key={r}
                 onClick={() => setRate(r)}
