@@ -30,15 +30,20 @@ export function useMylistSearch({
   // 切替前のリストの取得が await から戻ったときに中断を見落とさないよう、世代でも判定する
   const loadAllGenRef = useRef(0);
 
-  /** 検索語・全件キャッシュをクリアし、進行中の全件取得を中断する (リスト切替時) */
-  const resetSearch = (): void => {
-    setSearchText('');
-    setAllItems(null);
+  /** 進行中の全件取得を中断し、次の取得をすぐ開始できる状態に戻す */
+  const cancelLoadAll = (): void => {
     cancelLoadAllRef.current = true;
     isLoadingAllRef.current = false;
     ++loadAllGenRef.current;
     // 中断した取得の完了処理は (世代が古いので) 読込中表示を下げないため、ここで下げる
     setLoadingAll(false);
+  };
+
+  /** 検索語・全件キャッシュをクリアし、進行中の全件取得を中断する (リスト切替時) */
+  const resetSearch = (): void => {
+    setSearchText('');
+    setAllItems(null);
+    cancelLoadAll();
   };
 
   /** 指定マイリストの全ページを取得して1つの配列にまとめる (検索・一括DL共用) */
@@ -90,8 +95,8 @@ export function useMylistSearch({
     if (value.trim()) {
       if (allItems === null) void loadAllPagesForSearch();
     } else {
-      // 検索窓を空にしたら取得を中断
-      cancelLoadAllRef.current = true;
+      // 検索窓を空にしたら取得を中断 (世代も進め、中断が済む前の再入力でも全件取得を再開できるようにする)
+      cancelLoadAll();
     }
   };
 

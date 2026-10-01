@@ -413,6 +413,8 @@ export function MyListView(): JSX.Element {
   const handleBulkDownload = async (subDir?: string): Promise<void> => {
     if (bulkDling) return;
     setBulkDling(true);
+    // 全件取得中に別のリスト・ページへ移動したら、古い実行は toast・読込中表示・allItems を触らない
+    const seqAtStart = itemsSeqRef.current;
     try {
       let candidates: VideoCardData[];
       let dlSet = downloadedIds;
@@ -423,6 +425,7 @@ export function MyListView(): JSX.Element {
         setLoadedCount(0);
         cancelLoadAllRef.current = false;
         const all = await fetchAllMylistPages(selected.mylist).catch(() => null);
+        if (seqAtStart !== itemsSeqRef.current) return;
         setLoadingAll(false);
         if (!all) {
           showToast('全件取得に失敗しました');
