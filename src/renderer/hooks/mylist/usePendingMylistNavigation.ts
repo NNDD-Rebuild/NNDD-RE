@@ -1,4 +1,4 @@
-import { useEffect, type MutableRefObject } from 'react';
+import { useEffect, useRef, type MutableRefObject } from 'react';
 import type { MyList } from '@shared/types';
 import { IpcChannel, RssType } from '@shared/types';
 import { channelUrl, mylistUrl } from '@shared/utils/nicoUrl';
@@ -27,12 +27,15 @@ export function usePendingMylistNavigation({
   const setPendingSeriesId = useAppStore((s) => s.setPendingSeriesId);
   const pendingChannelId = useAppStore((s) => s.pendingChannelId);
   const setPendingChannelId = useAppStore((s) => s.setPendingChannelId);
+  // ナビゲーション要求の連番。名前取得の完了が遅れた古い要求が、新しい要求の表示を上書きしないようにする
+  const navSeqRef = useRef(0);
 
   // pendingMylistId 処理: マイリストを自動選択/追加
   useEffect(() => {
     if (!pendingMylistId) return;
     const mylistId = pendingMylistId;
     setPendingMylistId(null);
+    const seq = ++navSeqRef.current;
 
     const list = mylistsRef.current;
     // 既存から検索 (URLにIDが含まれるものを探す)
@@ -52,6 +55,7 @@ export function usePendingMylistNavigation({
           IpcChannel.MYLIST_FETCH_INFO,
           { url, type: RssType.MY_LIST }
         ).catch(() => null);
+        if (seq !== navSeqRef.current) return;
         const tempMl: MyList = {
           myListUrl: url,
           myListName: info?.name ?? `マイリスト (${mylistId})`,
@@ -72,6 +76,7 @@ export function usePendingMylistNavigation({
     if (!pendingSeriesId) return;
     const seriesId = pendingSeriesId;
     setPendingSeriesId(null);
+    ++navSeqRef.current;
     void showSeries(seriesId);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- showSeries は呼び出し側で安定化されていないため、pending ID が来た時だけ処理する
   }, [pendingSeriesId]);
@@ -81,12 +86,14 @@ export function usePendingMylistNavigation({
     if (!pendingChannelId) return;
     const channelId = pendingChannelId;
     setPendingChannelId(null);
+    const seq = ++navSeqRef.current;
     const url = channelUrl(channelId);
     const fetchAndShow = async (): Promise<void> => {
       const info = await window.nndd.invoke<{ name: string } | null>(
         IpcChannel.MYLIST_FETCH_INFO,
         { url, type: RssType.CHANNEL }
       ).catch(() => null);
+      if (seq !== navSeqRef.current) return;
       const tempMl: MyList = {
         myListUrl: url,
         myListName: info?.name ?? `チャンネル (${channelId})`,
