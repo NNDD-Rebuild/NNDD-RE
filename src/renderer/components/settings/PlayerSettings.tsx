@@ -1,5 +1,6 @@
 import { useConfig } from '@renderer/hooks/useConfig';
 import { COMMENT_FONT_FAMILY } from '@shared/constants';
+import { Section } from './common';
 
 /**
  * 設定 > プレイヤー。
@@ -518,23 +519,6 @@ export function PlayerSettings(): JSX.Element {
           </p>
         </Row>
       </Section>
-    </div>
-  );
-}
-
-function Section({
-  title,
-  children
-}: {
-  title: string;
-  children: React.ReactNode;
-}): JSX.Element {
-  return (
-    <div className="mb-5">
-      <div className="text-sm font-bold mb-2 border-b border-nndd-border pb-1">
-        {title}
-      </div>
-      <div className="pl-3">{children}</div>
     </div>
   );
 }

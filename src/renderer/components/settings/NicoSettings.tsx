@@ -1,5 +1,6 @@
 import { useConfig } from '@renderer/hooks/useConfig';
 import { useAppStore } from '@renderer/store/useAppStore';
+import { Section } from './common';
 
 /**
  * 設定 > ランキング・検索・マイリスト。
@@ -135,23 +136,6 @@ export function NicoSettings(): JSX.Element {
           </select>
         </Row>
       </Section>
-    </div>
-  );
-}
-
-function Section({
-  title,
-  children
-}: {
-  title: string;
-  children: React.ReactNode;
-}): JSX.Element {
-  return (
-    <div className="mb-5">
-      <div className="text-sm font-bold mb-2 border-b border-nndd-border pb-1">
-        {title}
-      </div>
-      <div className="pl-3">{children}</div>
     </div>
   );
 }
