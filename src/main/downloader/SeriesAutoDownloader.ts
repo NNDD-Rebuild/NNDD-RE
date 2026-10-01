@@ -3,6 +3,7 @@ import { LibraryManager } from '../db/LibraryManager';
 import { DownloadManager } from './DownloadManager';
 import { SeriesClient } from '../nicovideo/series/SeriesClient';
 import { createLogger } from '../util/Logger';
+import { extractBracketedVideoId } from '@shared/utils/videoId';
 
 const log = createLogger('SeriesAutoDL');
 
@@ -32,7 +33,7 @@ export class SeriesAutoDownloader {
     const knownKeys = new Set(
       this.library.videoDao
         .list()
-        .map((v: NNDDREVideo) => this.extractVideoId(v.uri))
+        .map((v: NNDDREVideo) => extractBracketedVideoId(v.uri))
         .filter(Boolean)
     );
 
@@ -44,10 +45,5 @@ export class SeriesAutoDownloader {
 
     log.info(`series renew: ${name} fetched=${items.length} queued=${queued}`);
     return { fetched: items.length, queued };
-  }
-
-  private extractVideoId(uri: string): string | null {
-    const m = uri.match(/\[((?:sm|nm|so|ax|sd|ca|cd|cw|zb|ze|yo)\d+)\]/);
-    return m ? m[1] : null;
   }
 }

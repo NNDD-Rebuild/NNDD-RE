@@ -2,6 +2,7 @@ import type { Express, Request, Response } from 'express';
 import path from 'node:path';
 import fs from 'node:fs';
 import { IpcChannel } from '@shared/types';
+import { extractBracketedVideoId } from '@shared/utils/videoId';
 import type { LibraryManager } from '../db/LibraryManager';
 import { PlayerManager } from '../player/PlayerManager';
 import { invokeRegisteredHandler, hasRegisteredHandler } from '../ipc/ipcRegistry';
@@ -64,8 +65,6 @@ function makePathChecker(library: LibraryManager): PathChecker {
   };
 }
 
-const VIDEO_ID_RE = /\[((?:sm|nm|so|ax|sd|ca|cd|cw|zb|ze|yo)\d+)\]/;
-
 export interface WebPlayerBridgeOptions {
   library: LibraryManager;
   /** 動画共有が許可されているか */
@@ -124,7 +123,8 @@ export function registerWebPlayerRoutes(app: Express, opts: WebPlayerBridgeOptio
       return;
     }
 
-    const videoId = qId || localPath.match(VIDEO_ID_RE)?.[1];
+    // 取れないときは null ではなく undefined にして、従来どおり JSON から videoId キーを省く
+    const videoId = qId || (extractBracketedVideoId(localPath) ?? undefined);
     res.json({
       videoId,
       localPath,

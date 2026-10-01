@@ -3,6 +3,7 @@ import { LibraryManager } from '../db/LibraryManager';
 import { DownloadManager } from './DownloadManager';
 import { MyListClient } from '../nicovideo/mylist/MyListClient';
 import { createLogger } from '../util/Logger';
+import { extractBracketedVideoId } from '@shared/utils/videoId';
 
 const log = createLogger('MyListAutoDL');
 
@@ -35,7 +36,7 @@ export class MyListAutoDownloader {
     const knownKeys = new Set(
       this.library.videoDao
         .list()
-        .map((v: NNDDREVideo) => this.extractVideoId(v.uri))
+        .map((v: NNDDREVideo) => extractBracketedVideoId(v.uri))
         .filter(Boolean)
     );
 
@@ -100,17 +101,12 @@ export class MyListAutoDownloader {
     return m ? m[1] : null;
   }
 
-  private extractVideoId(uri: string): string | null {
-    const m = uri.match(/\[((?:sm|nm|so|ax|sd|ca|cd|cw|zb|ze|yo)\d+)\]/);
-    return m ? m[1] : null;
-  }
-
   private countUnplayed(items: MyListItem[]): number {
     // この時点では実際の再生状況は分からないため、ライブラリ未登録のものを未再生とみなす
     const knownKeys = new Set(
       this.library.videoDao
         .list()
-        .map((v: NNDDREVideo) => this.extractVideoId(v.uri))
+        .map((v: NNDDREVideo) => extractBracketedVideoId(v.uri))
         .filter(Boolean)
     );
     return items.filter((it) => !knownKeys.has(it.videoId)).length;
