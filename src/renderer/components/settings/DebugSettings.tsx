@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Section, Btn } from './common';
 
 /**
  * 設定 > デバッグ (開発者モード有効時のみ表示)
@@ -216,34 +217,5 @@ export function DebugSettings(): JSX.Element {
         </div>
       </Section>
     </div>
-  );
-}
-
-function Section({
-  title,
-  children
-}: {
-  title: string;
-  children: React.ReactNode;
-}): JSX.Element {
-  return (
-    <div className="mb-5">
-      <div className="text-sm font-bold mb-2 border-b border-nndd-border pb-1">
-        {title}
-      </div>
-      <div className="pl-3">{children}</div>
-    </div>
-  );
-}
-
-function Btn(props: React.ButtonHTMLAttributes<HTMLButtonElement>): JSX.Element {
-  return (
-    <button
-      {...props}
-      className={[
-        'text-xs px-3 py-1 bg-nndd-border hover:bg-nndd-accent rounded disabled:opacity-50',
-        props.className ?? ''
-      ].join(' ')}
-    />
   );
 }

@@ -1,4 +1,5 @@
-import { exec, execSync, spawn } from 'node:child_process';
+import { exec, execFileSync, spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { promisify } from 'node:util';
 
 const execAsync = promisify(exec);
@@ -146,11 +147,13 @@ export class BinaryInstaller {
     const remoteName = platform === 'win32' ? 'yt-dlp.exe'
       : platform === 'darwin' ? 'yt-dlp_macos'
       : 'yt-dlp_linux';
-    const url = `https://github.com/yt-dlp/yt-dlp/releases/latest/download/${remoteName}`;
+    const releaseBase = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download';
+    const url = `${releaseBase}/${remoteName}`;
     const destPath = this.ytDlpLocalPath();
 
+    const expectedSha256 = await fetchExpectedSha256(`${releaseBase}/SHA2-256SUMS`, remoteName, signal);
     log.verbose(`Downloading yt-dlp from ${url}`);
-    await downloadFile(url, destPath, onProgress, signal);
+    await downloadFile(url, destPath, onProgress, signal, expectedSha256);
     if (platform !== 'win32') fs.chmodSync(destPath, 0o755);
     log.info('yt-dlp download complete:', destPath);
   }
@@ -180,18 +183,32 @@ export class BinaryInstaller {
       }
 
       const archivePath = path.join(tmpDir, archiveName);
-      const url = `https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/${archiveName}`;
+      const releaseBase = 'https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest';
+      const url = `${releaseBase}/${archiveName}`;
 
+      const expectedSha256 = await fetchExpectedSha256(`${releaseBase}/checksums.sha256`, archiveName, signal);
       log.verbose(`Downloading ffmpeg from ${url}`);
-      await downloadFile(url, archivePath, onProgress, signal);
+      await downloadFile(url, archivePath, onProgress, signal, expectedSha256);
 
       if (platform === 'win32') {
-        execSync(
-          `powershell -Command "Expand-Archive -Path '${archivePath}' -DestinationPath '${tmpDir}' -Force"`,
-          { timeout: 120000 }
+        // -Command は後続の引数を連結してスクリプトとして解釈するため、引数配列にしてもパス中の ' や " が構文になる。
+        // パスはスクリプトに埋め込まず環境変数で渡す
+        execFileSync(
+          'powershell.exe',
+          [
+            '-NoProfile',
+            '-NonInteractive',
+            '-Command',
+            'Expand-Archive -LiteralPath $env:NNDD_ARCHIVE_PATH -DestinationPath $env:NNDD_EXTRACT_DIR -Force'
+          ],
+          {
+            timeout: 120000,
+            windowsHide: true,
+            env: { ...process.env, NNDD_ARCHIVE_PATH: archivePath, NNDD_EXTRACT_DIR: tmpDir }
+          }
         );
       } else {
-        execSync(`tar -xf "${archivePath}" -C "${tmpDir}"`, { timeout: 120000 });
+        execFileSync('tar', ['-xf', archivePath, '-C', tmpDir], { timeout: 120000 });
       }
 
       const innerDir = archiveName.replace('.zip', '').replace('.tar.xz', '');
@@ -270,11 +287,57 @@ function runCommand(
   });
 }
 
+/**
+ * 配布元のチェックサム一覧 (`<sha256>  <ファイル名>` 形式) から対象ファイルのハッシュを引く。
+ * 一覧が取れない・該当行がないときは null を返し、検証なしでインストールを続ける
+ * (一覧だけ一時的に取れない程度でインストール全体を止めないため)。
+ */
+async function fetchExpectedSha256(sumsUrl: string, fileName: string, signal?: AbortSignal): Promise<string | null> {
+  try {
+    const text = await fetchText(sumsUrl, signal);
+    for (const line of text.split(/\r?\n/)) {
+      const m = line.trim().match(/^([0-9a-fA-F]{64})\s+\*?(.+)$/);
+      if (m && m[2].trim() === fileName) return m[1].toLowerCase();
+    }
+    log.warn(`checksum for ${fileName} not found in ${sumsUrl}, skip verification`);
+  } catch (e) {
+    if (signal?.aborted) return null;
+    log.warn(`checksum list fetch failed (${sumsUrl}), skip verification:`, e);
+  }
+  return null;
+}
+
+function fetchText(url: string, signal?: AbortSignal, redirectCount = 0): Promise<string> {
+  return new Promise((resolve, reject) => {
+    if (redirectCount > 10) { reject(new Error('Too many redirects')); return; }
+    const req = https.get(url, { signal }, (res) => {
+      const status = res.statusCode ?? 0;
+      if (status === 301 || status === 302 || status === 307 || status === 308) {
+        res.resume();
+        const location = res.headers['location'];
+        if (!location) { reject(new Error('Redirect without location')); return; }
+        fetchText(new URL(location, url).toString(), signal, redirectCount + 1).then(resolve, reject);
+        return;
+      }
+      if (status !== 200) { res.resume(); reject(new Error(`HTTP ${status}`)); return; }
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (chunk: string) => { body += chunk; });
+      res.on('end', () => resolve(body));
+      res.on('error', reject);
+    });
+    req.setTimeout(15000, () => req.destroy(new Error('timeout')));
+    req.on('error', reject);
+  });
+}
+
+/** expectedSha256 を渡すと、保存先へ置く前にハッシュを照合し、不一致なら破棄して失敗にする */
 function downloadFile(
   url: string,
   destPath: string,
   onProgress: (pct: number) => void,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  expectedSha256: string | null = null
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) { reject(new Error('aborted')); return; }
@@ -299,9 +362,11 @@ function downloadFile(
         let received = 0;
         const tmpPath = `${destPath}.tmp`;
         const fileStream = fs.createWriteStream(tmpPath);
+        const hash = createHash('sha256');
 
         res.on('data', (chunk: Buffer) => {
           received += chunk.length;
+          hash.update(chunk);
           if (total > 0) onProgress(received / total);
         });
 
@@ -310,6 +375,15 @@ function downloadFile(
         fileStream.on('finish', () => {
           fileStream.close(() => {
             try {
+              if (expectedSha256) {
+                const actual = hash.digest('hex');
+                if (actual !== expectedSha256) {
+                  try { fs.unlinkSync(tmpPath); } catch { /* ignore */ }
+                  reject(new Error(`チェックサムが一致しません (${path.basename(destPath)}): expected ${expectedSha256}, actual ${actual}`));
+                  return;
+                }
+                log.info(`sha256 verified: ${path.basename(destPath)}`);
+              }
               if (fs.existsSync(destPath)) fs.unlinkSync(destPath);
               fs.renameSync(tmpPath, destPath);
               resolve();

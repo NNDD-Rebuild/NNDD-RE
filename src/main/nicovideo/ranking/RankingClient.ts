@@ -1,9 +1,10 @@
 import type { RankingItem, RankingTermValue, RankingFetchResult, RankingGenreInfo } from '@shared/types';
-import { NicoApi } from '@shared/constants';
+import { NicoEndpoint } from '@shared/constants';
 import { NicoContext } from '../NicoContext';
 import { XMLParser } from 'fast-xml-parser';
 import { createLogger } from '../../util/Logger';
 import { ImageCache } from '../../util/ImageCache';
+import type { NicoBffRankingItem, NicoBffRankingResponse } from '../apiTypes';
 
 const log = createLogger('RankingClient');
 
@@ -20,51 +21,6 @@ const log = createLogger('RankingClient');
  * URL例:
  *   https://www.nicovideo.jp/ranking/genre/{featuredKey}?term={term}&tag={tag}&responseType=json
  */
-interface BffRankingItem {
-  id: string;
-  title: string;
-  registeredAt?: string;
-  duration?: number;
-  thumbnail?: { url?: string; middleUrl?: string; largeUrl?: string };
-  count?: { view?: number; comment?: number; mylist?: number; like?: number };
-  shortDescription?: string;
-  owner?: { id?: string; name?: string; iconUrl?: string; ownerType?: string };
-  isChannelVideo?: boolean;
-  requireSensitiveMasking?: boolean;
-}
-
-interface BffFeaturedKeyItem {
-  featuredKey: string;
-  label: string;
-  isEnabledTrendTag?: boolean;
-  isTopLevel?: boolean;
-  isImmoral?: boolean;
-  isEnabled?: boolean;
-}
-
-interface BffRankingResponse {
-  data?: {
-    response?: {
-      $getTeibanRanking?: {
-        data?: {
-          items?: BffRankingItem[];
-          hasNext?: boolean;
-        };
-      };
-      $getTeibanRankingFeaturedKeyAndTrendTags?: {
-        data?: {
-          trendTags?: string[];
-        };
-      };
-      $getTeibanRankingFeaturedKeys?: {
-        data?: {
-          items?: BffFeaturedKeyItem[];
-        };
-      };
-    };
-  };
-}
-
 export class RankingClient {
   static async fetch(
     featuredKey: string,
@@ -74,9 +30,9 @@ export class RankingClient {
   ): Promise<RankingFetchResult> {
     const params = new URLSearchParams({ term, responseType: 'json' });
     if (tag) params.set('tag', tag);
-    const url = `https://www.nicovideo.jp/ranking/genre/${encodeURIComponent(featuredKey)}?${params.toString()}`;
+    const url = NicoEndpoint.rankingGenre(featuredKey, params);
     log.debug('fetch ranking (bff):', url);
-    const res = await NicoContext.get().http.getJson<BffRankingResponse>(url);
+    const res = await NicoContext.get().http.getJson<NicoBffRankingResponse>(url);
     const rankingData = res?.data?.response?.$getTeibanRanking?.data;
     const rawItems = rankingData?.items ?? [];
     const visibleItems = hideSensitiveContents
@@ -111,9 +67,9 @@ export class RankingClient {
    * 総合ランキング(featuredKey=e9uj2uks)のページを流用して取得する。
    */
   static async fetchGenres(): Promise<RankingGenreInfo[]> {
-    const url = 'https://www.nicovideo.jp/ranking/genre/e9uj2uks?responseType=json';
+    const url = NicoEndpoint.rankingGenre('e9uj2uks', 'responseType=json');
     log.debug('fetch ranking genres (bff):', url);
-    const res = await NicoContext.get().http.getJson<BffRankingResponse>(url);
+    const res = await NicoContext.get().http.getJson<NicoBffRankingResponse>(url);
     const items = res?.data?.response?.$getTeibanRankingFeaturedKeys?.data?.items ?? [];
     return items
       .filter((g) => g.isEnabled !== false)
@@ -125,7 +81,7 @@ export class RankingClient {
   }
 
   private static toAuthorFields(
-    owner: BffRankingItem['owner']
+    owner: NicoBffRankingItem['owner']
   ): Pick<RankingItem, 'authorId' | 'authorNickname' | 'authorIconUrl'> {
     if (!owner?.id || (owner.ownerType !== 'user' && owner.ownerType !== 'channel')) return {};
     return {
@@ -150,8 +106,8 @@ export class RankingClient {
   static async fetchHot(genre: string): Promise<RankingItem[]> {
     let items: RankingItem[];
     try {
-      const url = `https://nvapi.nicovideo.jp/v1/ranking/hot-topic?genre=${encodeURIComponent(genre)}&pageSize=100`;
-      const res = await NicoContext.get().http.getJson<{ data?: { items?: BffRankingItem[] } }>(url);
+      const url = NicoEndpoint.rankingHotTopic(genre);
+      const res = await NicoContext.get().http.getJson<{ data?: { items?: NicoBffRankingItem[] } }>(url);
       items = (res?.data?.items ?? []).map((v, idx) => ({
         rank: idx + 1,
         videoId: v.id,
@@ -170,7 +126,7 @@ export class RankingClient {
       }));
     } catch (e) {
       log.warn('nvapi hot-topic failed, falling back to RSS:', e);
-      const url = `${NicoApi.RANKING_RSS}hot-topic?genre=${encodeURIComponent(genre)}&rss=2.0&lang=ja-jp`;
+      const url = NicoEndpoint.rankingHotTopicRss(genre);
       const xml = await NicoContext.get().http.getText(url);
       items = this.parseRss(xml);
     }

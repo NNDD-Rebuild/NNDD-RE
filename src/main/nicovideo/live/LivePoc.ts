@@ -1,5 +1,5 @@
 import { NicoContext } from '../NicoContext';
-import { NicoHeaders } from '@shared/constants';
+import { NicoApi, NicoHeaders } from '@shared/constants';
 import { createLogger } from '../../util/Logger';
 
 const log = createLogger('LivePoc');
@@ -12,7 +12,7 @@ const log = createLogger('LivePoc');
  * 本実装の方針が固まったら削除する想定。
  */
 
-const LIVE_ORIGIN = 'https://live.nicovideo.jp';
+const LIVE_ORIGIN = NicoApi.LIVE_BASE;
 const WS_WAIT_MS = 20_000;
 
 interface StreamCookie {
@@ -178,7 +178,7 @@ async function runApiProbe(urls: string[], p: (line: string) => void): Promise<v
     try {
       const res = await http.fetch(url, {
         headers: {
-          'X-Frontend-Id': '9',
+          'X-Frontend-Id': NicoHeaders.LIVE_FRONTEND_ID,
           Origin: LIVE_ORIGIN,
           Referer: `${LIVE_ORIGIN}/`,
           Accept: 'application/json, */*;q=0.8'

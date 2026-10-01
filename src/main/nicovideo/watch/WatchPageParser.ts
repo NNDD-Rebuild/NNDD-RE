@@ -3,7 +3,23 @@ import type {
   CommentThreadInfo,
   DomandStreamCandidate
 } from '@shared/types';
+import { NicoApi } from '@shared/constants';
 import { createLogger } from '../../util/Logger';
+import type {
+  NicoWatchV4Root,
+  NicoWatchV4Data,
+  NicoWatchVideoNode,
+  NicoWatchOwnerNode,
+  NicoWatchChannelNode,
+  NicoWatchSeriesNode,
+  NicoWatchMediaNode,
+  NicoWatchCommentNode,
+  NicoWatchTagNode,
+  NicoWatchClientNode,
+  NicoWatchThumbnailNode,
+  NicoWatchCountNode,
+  NicoWatchDomandStreamNode
+} from '../apiTypes';
 
 const log = createLogger('WatchPageParser');
 
@@ -32,7 +48,7 @@ export class WatchPageParser {
       (json as Record<string, unknown>)['data'] ??
       (json as Record<string, unknown>)['response'] ??
       json;
-    return this.parseRoot(root as Record<string, unknown>, videoId, null);
+    return this.parseRoot(root as NicoWatchV4Data, videoId, null);
   }
 
   /**
@@ -47,25 +63,25 @@ export class WatchPageParser {
       (data as Record<string, unknown>)['data'] ??
       (data as Record<string, unknown>)['response'] ??
       data;
-    return this.parseRoot(root as Record<string, unknown>, videoId, actionTrackId);
+    return this.parseRoot(root as NicoWatchV4Data, videoId, actionTrackId);
   }
 
   private static parseRoot(
-    data: Record<string, unknown>,
+    data: NicoWatchV4Data,
     videoId: string,
     actionTrackId: string | null
   ): WatchPageInfo {
-    const videoNode = (data['video'] ?? {}) as Record<string, unknown>;
-    const ownerNode = (data['owner'] ?? null) as Record<string, unknown> | null;
-    const channelNode = (data['channel'] ?? null) as Record<string, unknown> | null;
-    const seriesNode = (data['series'] ?? null) as Record<string, unknown> | null;
-    const mediaNode = (data['media'] ?? {}) as Record<string, unknown>;
-    const commentNode = (data['comment'] ?? {}) as Record<string, unknown>;
-    const tagNode = (data['tag'] ?? {}) as Record<string, unknown>;
-    const clientNode = (data['client'] ?? {}) as Record<string, unknown>;
+    const videoNode: NicoWatchVideoNode = data.video ?? {};
+    const ownerNode: NicoWatchOwnerNode | null = data.owner ?? null;
+    const channelNode: NicoWatchChannelNode | null = data.channel ?? null;
+    const seriesNode: NicoWatchSeriesNode | null = data.series ?? null;
+    const mediaNode: NicoWatchMediaNode = data.media ?? {};
+    const commentNode: NicoWatchCommentNode = data.comment ?? {};
+    const tagNode: NicoWatchTagNode = data.tag ?? {};
+    const clientNode: NicoWatchClientNode = data.client ?? {};
 
-    const thumbnailNode = (videoNode['thumbnail'] ?? {}) as Record<string, unknown>;
-    const countNode = (videoNode['count'] ?? {}) as Record<string, unknown>;
+    const thumbnailNode: NicoWatchThumbnailNode = videoNode.thumbnail ?? {};
+    const countNode: NicoWatchCountNode = videoNode.count ?? {};
 
     const isDMS = this.detectIsDMS(mediaNode);
     const domandInfo = this.parseDomand(mediaNode);
@@ -76,46 +92,46 @@ export class WatchPageParser {
     const userKey = this.findUserKey(commentNode);
     const nvCommentParams = this.findNvCommentParams(commentNode);
 
-    const tags = ((tagNode['items'] ?? []) as Array<Record<string, unknown>>)
-      .map((t) => String(t['name'] ?? ''))
+    const tags = (tagNode.items ?? [])
+      .map((t) => String(t.name ?? ''))
       .filter(Boolean);
 
     return {
-      videoId: String(videoNode['id'] ?? videoId),
-      title: String(videoNode['title'] ?? ''),
-      description: String(videoNode['description'] ?? ''),
-      duration: Number(videoNode['duration'] ?? 0),
+      videoId: String(videoNode.id ?? videoId),
+      title: String(videoNode.title ?? ''),
+      description: String(videoNode.description ?? ''),
+      duration: Number(videoNode.duration ?? 0),
       tags,
       thumbnail: {
-        url: String(thumbnailNode['url'] ?? ''),
+        url: String(thumbnailNode.url ?? ''),
         largeUrl: String(
-          thumbnailNode['largeUrl'] ?? thumbnailNode['middleUrl'] ?? ''
+          thumbnailNode.largeUrl ?? thumbnailNode.middleUrl ?? ''
         ),
-        remoteUrl: String(thumbnailNode['url'] ?? '')
+        remoteUrl: String(thumbnailNode.url ?? '')
       },
       count: {
-        view: Number(countNode['view'] ?? 0),
-        comment: Number(countNode['comment'] ?? 0),
-        mylist: Number(countNode['mylist'] ?? 0),
-        like: Number(countNode['like'] ?? 0)
+        view: Number(countNode.view ?? 0),
+        comment: Number(countNode.comment ?? 0),
+        mylist: Number(countNode.mylist ?? 0),
+        like: Number(countNode.like ?? 0)
       },
-      registeredAt: String(videoNode['registeredAt'] ?? ''),
+      registeredAt: String(videoNode.registeredAt ?? ''),
       owner: ownerNode
         ? {
-            id: Number(ownerNode['id'] ?? 0),
-            nickname: String(ownerNode['nickname'] ?? ''),
-            iconUrl: String(ownerNode['iconUrl'] ?? '')
+            id: Number(ownerNode.id ?? 0),
+            nickname: String(ownerNode.nickname ?? ''),
+            iconUrl: String(ownerNode.iconUrl ?? '')
           }
         : null,
       channel: channelNode
         ? {
-            id: String(channelNode['id'] ?? ''),
-            name: String(channelNode['name'] ?? ''),
-            isOfficialAnime: Boolean(channelNode['isOfficialAnime'])
+            id: String(channelNode.id ?? ''),
+            name: String(channelNode.name ?? ''),
+            isOfficialAnime: Boolean(channelNode.isOfficialAnime)
           }
         : null,
       isDMS,
-      isDownloadable: !Boolean(videoNode['isDeleted']) &&
+      isDownloadable: !Boolean(videoNode.isDeleted) &&
         (domandInfo.accessRightKey !== null || dmcSessionJson !== null),
       isEncrypted: this.detectIsEncrypted(mediaNode),
       isEconomy: false,
@@ -131,8 +147,8 @@ export class WatchPageParser {
       domandAudios: domandInfo.audios,
       dmcSessionRequestJson: dmcSessionJson,
       nvCommentParams,
-      series: seriesNode && seriesNode['id']
-        ? { id: String(seriesNode['id']), title: String(seriesNode['title'] ?? '') }
+      series: seriesNode && seriesNode.id
+        ? { id: String(seriesNode.id), title: String(seriesNode.title ?? '') }
         : null,
       actionTrackId,
       guestFetched: false
@@ -154,11 +170,11 @@ export class WatchPageParser {
         (json as Record<string, unknown>)['data'] ??
         (json as Record<string, unknown>)['response'] ??
         json;
-      const seriesNode = (root as Record<string, unknown>)['series'] ?? null;
+      const seriesNode = (root as NicoWatchV4Data).series ?? null;
       if (seriesNode && typeof seriesNode === 'object') {
-        const s = seriesNode as Record<string, unknown>;
-        if (s['id']) {
-          return { id: String(s['id']), title: String(s['title'] ?? '') };
+        const s: NicoWatchSeriesNode = seriesNode;
+        if (s.id) {
+          return { id: String(s.id), title: String(s.title ?? '') };
         }
       }
     }
@@ -189,7 +205,7 @@ export class WatchPageParser {
    * シリーズ情報は HTML/v3 API には含まれず、POST /v4/watch/lazy/{id} で取得する。
    */
   static parseLazyKey(html: string): { keyToken: string; watchTrackId: string } | null {
-    const json = this.extractEmbeddedJson(html) as Record<string, any> | null;
+    const json = this.extractEmbeddedJson(html) as NicoWatchV4Root | null;
     const data = json?.data?.response?.['$watchV4']?.data;
     const keyToken = data?.lazy?.authKey;
     const watchTrackId = data?.client?.watchTrackId;
@@ -258,72 +274,70 @@ export class WatchPageParser {
    * DMSドメイン (新システム) で配信されているかを判定。
    * media.domand が存在する場合は DMS、media.delivery のみは DMC。
    */
-  private static detectIsDMS(media: Record<string, unknown>): boolean {
-    if (media['domand']) return true;
+  private static detectIsDMS(media: NicoWatchMediaNode): boolean {
+    if (media.domand) return true;
     // 新仕様の watch JSON で session 系プロパティがないものは DMS の場合あり
-    const delivery = (media['delivery'] ?? null) as Record<string, unknown> | null;
+    const delivery = media.delivery ?? null;
     if (!delivery) return true;
     return false;
   }
 
-  private static detectIsEncrypted(media: Record<string, unknown>): boolean {
-    const delivery = (media['delivery'] ?? null) as Record<string, unknown> | null;
+  private static detectIsEncrypted(media: NicoWatchMediaNode): boolean {
+    const delivery = media.delivery ?? null;
     if (!delivery) return false;
-    return Boolean(delivery['encryption']);
+    return Boolean(delivery.encryption);
   }
 
   private static parseCommentThreads(
-    comment: Record<string, unknown>
+    comment: NicoWatchCommentNode
   ): CommentThreadInfo[] {
     // V2 構造: comment.threads (配列)
-    const threadsArr = (comment['threads'] ?? []) as Array<
-      Record<string, unknown>
-    >;
+    const threadsArr = comment.threads ?? [];
     return threadsArr.map((t) => ({
-      id: String(t['id'] ?? ''),
-      fork: String(t['fork'] ?? 'main'),
-      isActive: Boolean(t['isActive']),
-      isDefaultPostTarget: Boolean(t['isDefaultPostTarget']),
-      isEasyCommentPostTarget: Boolean(t['isEasyCommentPostTarget']),
-      isLeafRequired: Boolean(t['isLeafRequired']),
-      isOwnerThread: Boolean(t['isOwnerThread']),
-      isThreadkeyRequired: Boolean(t['isThreadkeyRequired']),
-      threadkey: t['threadkey'] ? String(t['threadkey']) : null,
-      is184Forced: Boolean(t['is184Forced']),
-      label: String(t['label'] ?? '')
+      id: String(t.id ?? ''),
+      fork: String(t.fork ?? 'main'),
+      isActive: Boolean(t.isActive),
+      isDefaultPostTarget: Boolean(t.isDefaultPostTarget),
+      isEasyCommentPostTarget: Boolean(t.isEasyCommentPostTarget),
+      isLeafRequired: Boolean(t.isLeafRequired),
+      isOwnerThread: Boolean(t.isOwnerThread),
+      isThreadkeyRequired: Boolean(t.isThreadkeyRequired),
+      threadkey: t.threadkey ? String(t.threadkey) : null,
+      is184Forced: Boolean(t.is184Forced),
+      label: String(t.label ?? '')
     }));
   }
 
-  private static findThreadKey(comment: Record<string, unknown>): string | null {
+  private static findThreadKey(comment: NicoWatchCommentNode): string | null {
     // 新仕様: nvComment.threadKey
-    const nv = comment['nvComment'] as Record<string, unknown> | undefined;
-    if (nv?.['threadKey']) return String(nv['threadKey']);
+    const nv = comment.nvComment;
+    if (nv?.threadKey) return String(nv.threadKey);
     // V3 トップレベル
-    if (comment['threadKey']) return String(comment['threadKey']);
+    if (comment.threadKey) return String(comment.threadKey);
     // V2 スレッド配列
-    const threads = (comment['threads'] ?? []) as Array<Record<string, unknown>>;
+    const threads = comment.threads ?? [];
     for (const t of threads) {
-      if (t['threadkey']) return String(t['threadkey']);
+      if (t.threadkey) return String(t.threadkey);
     }
     return null;
   }
 
   private static findNvCommentParams(
-    comment: Record<string, unknown>
+    comment: NicoWatchCommentNode
   ): { targets: Array<{ id: string; fork: string }>; language: string } | null {
-    const nv = comment['nvComment'] as Record<string, unknown> | undefined;
+    const nv = comment.nvComment;
     if (!nv) return null;
-    const params = nv['params'] as Record<string, unknown> | undefined;
+    const params = nv.params;
     if (!params) return null;
-    const targets = ((params['targets'] ?? []) as Array<Record<string, unknown>>).map(
-      (t) => ({ id: String(t['id'] ?? ''), fork: String(t['fork'] ?? 'main') })
+    const targets = (params.targets ?? []).map(
+      (t) => ({ id: String(t.id ?? ''), fork: String(t.fork ?? 'main') })
     );
-    return { targets, language: String(params['language'] ?? 'ja-jp') };
+    return { targets, language: String(params.language ?? 'ja-jp') };
   }
 
-  private static findUserKey(comment: Record<string, unknown>): string {
-    const keys = (comment['keys'] ?? {}) as Record<string, unknown>;
-    return String(keys['userKey'] ?? '');
+  private static findUserKey(comment: NicoWatchCommentNode): string {
+    const keys = comment.keys ?? {};
+    return String(keys.userKey ?? '');
   }
 
   /**
@@ -331,39 +345,39 @@ export class WatchPageParser {
    *   - accessRightKey: HLSセッション開始時のヘッダー X-Access-Right-Key
    *   - videos[] / audios[]: ストリーム候補
    */
-  private static parseDomand(media: Record<string, unknown>): {
+  private static parseDomand(media: NicoWatchMediaNode): {
     accessRightKey: string | null;
     videos: DomandStreamCandidate[];
     audios: DomandStreamCandidate[];
   } {
-    const domand = media['domand'] as Record<string, unknown> | undefined;
+    const domand = media.domand;
     if (!domand) {
       return { accessRightKey: null, videos: [], audios: [] };
     }
     const accessRightKey =
-      typeof domand['accessRightKey'] === 'string'
-        ? (domand['accessRightKey'] as string)
+      typeof domand.accessRightKey === 'string'
+        ? domand.accessRightKey
         : null;
-    const videos = ((domand['videos'] ?? []) as Array<Record<string, unknown>>).map(
+    const videos = (domand.videos ?? []).map(
       this.toStreamCandidate
     );
-    const audios = ((domand['audios'] ?? []) as Array<Record<string, unknown>>).map(
+    const audios = (domand.audios ?? []).map(
       this.toStreamCandidate
     );
     return { accessRightKey, videos, audios };
   }
 
   private static toStreamCandidate(
-    n: Record<string, unknown>
+    n: NicoWatchDomandStreamNode
   ): DomandStreamCandidate {
     return {
-      id: String(n['id'] ?? ''),
-      isAvailable: Boolean(n['isAvailable']),
-      qualityLevel: Number(n['qualityLevel'] ?? 0),
-      label: n['label'] ? String(n['label']) : undefined,
-      bitRate: n['bitRate'] ? Number(n['bitRate']) : undefined,
-      width: n['width'] ? Number(n['width']) : undefined,
-      height: n['height'] ? Number(n['height']) : undefined
+      id: String(n.id ?? ''),
+      isAvailable: Boolean(n.isAvailable),
+      qualityLevel: Number(n.qualityLevel ?? 0),
+      label: n.label ? String(n.label) : undefined,
+      bitRate: n.bitRate ? Number(n.bitRate) : undefined,
+      width: n.width ? Number(n.width) : undefined,
+      height: n.height ? Number(n.height) : undefined
     };
   }
 
@@ -373,13 +387,13 @@ export class WatchPageParser {
    * これを元に DMC API へ POST /api/sessions する JSON テンプレートを作る。
    */
   private static extractDmcSessionJson(
-    media: Record<string, unknown>
+    media: NicoWatchMediaNode
   ): string | null {
-    const delivery = media['delivery'] as Record<string, unknown> | undefined;
+    const delivery = media.delivery;
     if (!delivery) return null;
-    const movie = delivery['movie'] as Record<string, unknown> | undefined;
+    const movie = delivery.movie;
     if (!movie) return null;
-    const session = movie['session'];
+    const session = movie.session;
     if (!session) return null;
     try {
       return JSON.stringify(session);
@@ -389,14 +403,14 @@ export class WatchPageParser {
   }
 
   private static findCommentServerUrl(
-    comment: Record<string, unknown>,
-    client: Record<string, unknown>
+    comment: NicoWatchCommentNode,
+    client: NicoWatchClientNode
   ): string {
     // 新仕様で comment.nvComment.server を持つことがある
-    const nv = comment['nvComment'] as Record<string, unknown> | undefined;
-    if (nv && nv['server']) return String(nv['server']);
+    const nv = comment.nvComment;
+    if (nv && nv.server) return String(nv.server);
     // フォールバック: client.nicosid 付近にあるパターン
     void client;
-    return 'https://public.nvcomment.nicovideo.jp';
+    return NicoApi.NVCOMMENT_BASE;
   }
 }

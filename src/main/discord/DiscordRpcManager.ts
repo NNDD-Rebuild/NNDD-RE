@@ -1,16 +1,14 @@
 import { Client } from '@xhayper/discord-rpc';
 import { createLogger } from '../util/Logger';
 import { getConfigStore } from '../config/ConfigStore';
-import { NicoApi } from '@shared/constants';
+import { liveWatchUrl, watchUrl } from '@shared/utils/nicoUrl';
+import { isVideoId } from '@shared/utils/videoId';
 import type { DiscordActivityInfo } from '@shared/types';
 
 const log = createLogger('DiscordRpc');
 /** Discord Developer Portal で発行したNNDD-RE用アプリのClient ID (公開情報。RPC接続のみでClient Secretは使わない) */
 const DISCORD_CLIENT_ID = '1529880212769214575';
 const GITHUB_REPO_URL = 'https://github.com/NNDD-Rebuild/NNDD-RE';
-/** ニコニコ動画IDのパターン。ローカル専用ファイル (LANライブラリ等) はIDが取れないため判定して弾く */
-const VIDEO_ID_PATTERN = /^(?:sm|nm|so|ax|sd|ca|cd|cw|zb|ze|yo)\d+$/;
-const LIVE_WATCH_PAGE = 'https://live.nicovideo.jp/watch/';
 const LIVE_ID_PATTERN = /^lv\d+$/;
 
 /**
@@ -88,10 +86,11 @@ class DiscordRpcManagerImpl {
     const buttons: { label: string; url: string }[] = [];
     if (isLive) {
       if (LIVE_ID_PATTERN.test(info.videoId)) {
-        buttons.push({ label: '生放送を見る', url: `${LIVE_WATCH_PAGE}${info.videoId}` });
+        buttons.push({ label: '生放送を見る', url: liveWatchUrl(info.videoId) });
       }
-    } else if (VIDEO_ID_PATTERN.test(info.videoId)) {
-      buttons.push({ label: '動画を見る', url: `${NicoApi.WATCH_PAGE}${info.videoId}` });
+    } else if (isVideoId(info.videoId)) {
+      // ローカル専用ファイル (LANライブラリ等) は動画IDが取れないため、ボタンを出さない
+      buttons.push({ label: '動画を見る', url: watchUrl(info.videoId) });
     }
     if (cfg.showGithubButton) {
       buttons.push({ label: 'GitHub', url: GITHUB_REPO_URL });

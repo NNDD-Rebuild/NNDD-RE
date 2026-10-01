@@ -1,8 +1,11 @@
 import type { NNDDREComment, WatchPageInfo } from '@shared/types';
+import { NicoEndpoint } from '@shared/constants';
 import { NicoContext } from '../NicoContext';
+import { NicoApiError } from '../NicoHttp';
 import { CommentCommandParser } from './CommentCommandParser';
 import { createLogger } from '../../util/Logger';
 import * as path from 'path';
+import type { NicoV3CommentResponse, NicoV3CommentItem } from '../apiTypes';
 
 const log = createLogger('CommentClient');
 
@@ -32,36 +35,6 @@ class CommentRateLimiter {
 }
 
 const rateLimiter = new CommentRateLimiter(3);
-
-interface V3CommentResponse {
-  data?: {
-    threads?: Array<{
-      id: string;
-      fork: string;
-      commentCount?: number;
-      comments?: V3CommentItem[];
-    }>;
-  };
-  meta?: {
-    status: number;
-    errorCode?: string;
-  };
-}
-
-interface V3CommentItem {
-  id: string;
-  no: number;
-  vposMs: number;
-  body: string;
-  commands?: string[];
-  userId: string;
-  isPremium?: boolean;
-  isMyPost?: boolean;
-  nicoruCount?: number;
-  score?: number;
-  postedAt?: string;
-  source?: string;
-}
 
 /**
  * 新コメントAPI (V3) クライアント。
@@ -100,7 +73,7 @@ export class CommentClient {
       additionals: {}
     };
 
-    const url = `${watch.commentServerUrl.replace(/\/$/, '')}/v1/threads`;
+    const url = NicoEndpoint.commentThreads(watch.commentServerUrl);
     log.debug('POST comments:', url, body);
 
     // debugDumpPath の設定 (設定画面から有効化)
@@ -115,7 +88,7 @@ export class CommentClient {
     }
 
     await rateLimiter.acquire();
-    const res = await NicoContext.get().http.postJson<V3CommentResponse>(url, body, {
+    const res = await NicoContext.get().http.postJson<NicoV3CommentResponse>(url, body, {
       debugDumpPath,
       debugLabel: 'comment'
     });
@@ -190,7 +163,7 @@ export class CommentClient {
       .slice()
       .sort((a, b) => (a.fork === 'owner' ? -1 : 0) - (b.fork === 'owner' ? -1 : 0));
     const language = watch.nvCommentParams?.language ?? 'ja-jp';
-    const url = `${watch.commentServerUrl.replace(/\/$/, '')}/v1/threads`;
+    const url = NicoEndpoint.commentThreads(watch.commentServerUrl);
 
     // debugDumpPath の設定 (設定画面から有効化)
     let debugDumpPath: string | undefined;
@@ -232,17 +205,17 @@ export class CommentClient {
           }
         };
 
-        let res: V3CommentResponse;
+        let res: NicoV3CommentResponse;
         try {
           await rateLimiter.acquire(signal);
           if (signal?.aborted) break;
-          res = await NicoContext.get().http.postJson<V3CommentResponse>(url, body, {
+          res = await NicoContext.get().http.postJson<NicoV3CommentResponse>(url, body, {
             debugDumpPath,
             debugLabel: `comment-${target.fork}-r${round}`
           });
           retries429 = 0;
         } catch (e) {
-          if (String(e).includes('429') && retryWaitSec > 0 && retries429 < MAX_429_RETRIES) {
+          if (e instanceof NicoApiError && e.httpStatus === 429 && retryWaitSec > 0 && retries429 < MAX_429_RETRIES) {
             retries429++;
             onProgress?.(`429 レート制限: ${retryWaitSec}秒待機中... (${retries429}/${MAX_429_RETRIES})`);
             log.warn(`429 rate limit, waiting ${retryWaitSec}s (retry ${retries429}/${MAX_429_RETRIES})`);
@@ -261,7 +234,7 @@ export class CommentClient {
         }
 
         const threads = res?.data?.threads ?? [];
-        const batch: V3CommentItem[] = threads.flatMap((t) => t.comments ?? []);
+        const batch: NicoV3CommentItem[] = threads.flatMap((t) => t.comments ?? []);
 
         if (batch.length === 0) {
           log.debug(`thread=${target.id} round=${round}: no more comments`);
@@ -325,7 +298,7 @@ export class CommentClient {
   }
 
   private static toNNDDREComment(
-    c: V3CommentItem,
+    c: NicoV3CommentItem,
     threadId: string,
     fork: string
   ): NNDDREComment {

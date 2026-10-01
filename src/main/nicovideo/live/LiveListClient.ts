@@ -1,4 +1,5 @@
 import { LIVE_SEARCH_PAGE_SIZE } from '@shared/types';
+import { NicoEndpoint, NicoHeaders } from '@shared/constants';
 import type {
   LiveProgramListResult,
   LiveProgramSummary,
@@ -10,6 +11,15 @@ import type {
 import { NicoContext } from '../NicoContext';
 import { createLogger } from '../../util/Logger';
 import { LIVE_ORIGIN, parseEmbeddedData } from './LiveWatchPage';
+import type {
+  NicoLiveEmbeddedData,
+  NicoLiveEmbeddedProgram,
+  NicoLiveFollowProgram,
+  NicoLiveFollowResponse,
+  NicoLiveRankingItem,
+  NicoLiveRecentResponse,
+  NicoLiveSearchResponse
+} from '../apiTypes';
 
 const log = createLogger('LiveListClient');
 
@@ -20,7 +30,7 @@ const log = createLogger('LiveListClient');
 
 /** live.nicovideo.jp (PC Web) の frontendId。検索 API はこれがヘッダーに無いとエラーになる */
 const LIVE_HEADERS = {
-  'X-Frontend-Id': '9',
+  'X-Frontend-Id': NicoHeaders.LIVE_FRONTEND_ID,
   Origin: LIVE_ORIGIN,
   Referer: `${LIVE_ORIGIN}/`
 };
@@ -48,7 +58,7 @@ function normalizeStatus(v: unknown): string {
 
 /** フォロー中の番組 (live.nicovideo.jp/follow が使う API) */
 /** フォロー中 API (/front/api/pages/follow/v1/programs) 形式の番組 */
-function fromFollowApiProgram(p: any): LiveProgramSummary {
+function fromFollowApiProgram(p: NicoLiveFollowProgram): LiveProgramSummary {
   return {
     programId: str(p.id),
     title: str(p.title),
@@ -77,8 +87,8 @@ export async function fetchFollowingPrograms(
   offset: number
 ): Promise<LiveProgramListResult> {
   if (status === 'reserved') return fetchFollowingComingSoon();
-  const url = `${LIVE_ORIGIN}/front/api/pages/follow/v1/programs?status=${status}&offset=${offset}`;
-  const json = await NicoContext.get().http.getJson<{ data?: { programs?: any[]; total?: number } }>(url, {
+  const url = NicoEndpoint.liveFollowPrograms(status, offset);
+  const json = await NicoContext.get().http.getJson<NicoLiveFollowResponse>(url, {
     headers: LIVE_HEADERS
   });
   const programs = (json.data?.programs ?? []).map(fromFollowApiProgram);
@@ -88,7 +98,7 @@ export async function fetchFollowingPrograms(
 async function fetchFollowingComingSoon(): Promise<LiveProgramListResult> {
   const props = await fetchEmbeddedData('/follow', 'フォロー中の番組');
   const state = props.followedPrograms?.comingsoonProgramListState;
-  const items: any[] = state?.domain?.items ?? [];
+  const items = state?.domain?.items ?? [];
   const programs = items
     // ランキング等と同じ { type, value } 形式と、API と同じ形式の両方に対応する
     .map((item) => item?.value ?? item)
@@ -147,9 +157,7 @@ export async function searchPrograms(params: LiveSearchParams): Promise<LiveProg
   return { programs, total: total ?? programs.length };
 }
 
-type SearchResponse = { meta?: { totalCount?: number }; data?: any[] };
-
-function fetchSearchPage(params: LiveSearchParams, offset: number): Promise<SearchResponse> {
+function fetchSearchPage(params: LiveSearchParams, offset: number): Promise<NicoLiveSearchResponse> {
   const q = new URLSearchParams({
     searchWord: params.keyword,
     searchTargets: 'keyword',
@@ -159,8 +167,8 @@ function fetchSearchPage(params: LiveSearchParams, offset: number): Promise<Sear
     limit: String(SEARCH_LIMIT),
     offset: String(offset)
   });
-  return NicoContext.get().http.getJson<SearchResponse>(
-    `https://api.cas.nicovideo.jp/v2/search/programs.json?${q}`,
+  return NicoContext.get().http.getJson<NicoLiveSearchResponse>(
+    NicoEndpoint.liveSearchPrograms(q),
     { headers: LIVE_HEADERS }
   );
 }
@@ -174,7 +182,7 @@ const toMs = (v: unknown): number => {
 /**
  * live.nicovideo.jp のページ埋め込みデータに含まれる番組 (タイムシフト予約一覧・ランキング等で共通の形式)
  */
-function fromEmbeddedProgram(r: any): LiveProgramSummary {
+function fromEmbeddedProgram(r: NicoLiveEmbeddedProgram): LiveProgramSummary {
   return {
     programId: str(r.nicoliveProgramId),
     title: str(r.title),
@@ -200,7 +208,7 @@ function fromEmbeddedProgram(r: any): LiveProgramSummary {
  * タイムシフトの視聴期限・公開終了の時刻。埋め込みデータのキー名は未確認のため、
  * 想定される候補を順に見る (取れなければ入れない)。タイムシフト予約一覧の取得時に実際の形をログに出す
  */
-function timeshiftDeadlines(r: any): Pick<LiveProgramSummary, 'timeshiftViewingLimitMs' | 'timeshiftPublicationEndMs'> {
+function timeshiftDeadlines(r: NicoLiveEmbeddedProgram): Pick<LiveProgramSummary, 'timeshiftViewingLimitMs' | 'timeshiftPublicationEndMs'> {
   const pick = (...vals: unknown[]): number | undefined => {
     for (const v of vals) {
       const ms = typeof v === 'string' ? isoToMs(v) : toMs(v);
@@ -224,7 +232,7 @@ function timeshiftDeadlines(r: any): Pick<LiveProgramSummary, 'timeshiftViewingL
   };
 }
 
-async function fetchEmbeddedData(path: string, label: string): Promise<Record<string, any>> {
+async function fetchEmbeddedData(path: string, label: string): Promise<NicoLiveEmbeddedData> {
   const html = await NicoContext.get().http.getText(`${LIVE_ORIGIN}${path}`, {
     headers: { Referer: `${LIVE_ORIGIN}/` }
   });
@@ -236,7 +244,7 @@ async function fetchEmbeddedData(path: string, label: string): Promise<Record<st
 /** タイムシフト予約一覧 (live.nicovideo.jp/embed/timeshift-reservations の embedded-data) */
 export async function fetchTimeshiftReservations(): Promise<LiveProgramListResult> {
   const props = await fetchEmbeddedData('/embed/timeshift-reservations', 'タイムシフト予約一覧');
-  const items = (props.reservations?.reservations ?? []) as any[];
+  const items = props.reservations?.reservations ?? [];
   if (items[0]) {
     // 視聴期限などのキー名を確認するため、先頭1件の timeshift 関連を残す
     const { timeshift, reservation } = items[0];
@@ -257,8 +265,8 @@ export async function fetchLiveRanking(params: LiveRankingParams): Promise<LiveR
   const props = await fetchEmbeddedData(`/ranking?${q}`, 'ランキング');
   const pick = (list: unknown): LiveProgramSummary[] =>
     (Array.isArray(list) ? list : [])
-      .map((item: any) => item?.value ?? item)
-      .filter((v: any) => v && v.nicoliveProgramId)
+      .map((item: NicoLiveRankingItem) => item?.value ?? item)
+      .filter((v) => v && v.nicoliveProgramId)
       .map(fromEmbeddedProgram);
   return {
     official: pick(props.ranking?.officialAndChannelPrograms),
@@ -276,8 +284,8 @@ export async function fetchRecentPrograms(params: LiveRecentParams): Promise<Liv
     offset: String(params.page),
     sortOrder: params.sortOrder
   });
-  const json = await NicoContext.get().http.getJson<{ meta?: { totalCount?: number }; data?: any[] }>(
-    `${LIVE_ORIGIN}/front/api/pages/recent/v1/programs?${q}`,
+  const json = await NicoContext.get().http.getJson<NicoLiveRecentResponse>(
+    NicoEndpoint.liveRecentPrograms(q),
     { headers: LIVE_HEADERS }
   );
   const programs = (json.data ?? []).map(

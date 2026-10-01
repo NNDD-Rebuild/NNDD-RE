@@ -2,6 +2,9 @@ import Database from 'better-sqlite3';
 import path from 'node:path';
 import fs from 'node:fs';
 import { CREATE_TABLES, DB_SCHEMA_VERSION, Q } from './schema';
+import { createLogger } from '../util/Logger';
+
+const log = createLogger('DB');
 
 /**
  * better-sqlite3 ラッパー。
@@ -42,12 +45,12 @@ export class NnddDatabase {
   }
 
   private migrate(from: string, _to: string): void {
-    console.log(`[DB] migrating from ${from}`);
+    log.info(`migrating from ${from}`);
     // v4 → v5: isEconomy カラム削除 (SQLite 3.35+)
     if (from === '4') {
       try {
         this.db.exec(`ALTER TABLE NNDDREVideo DROP COLUMN isEconomy;`);
-        console.log('[DB] dropped isEconomy column');
+        log.info('dropped isEconomy column');
       } catch {
         // 古い SQLite か既にカラムなし — 無視
       }
@@ -56,19 +59,19 @@ export class NnddDatabase {
     if (from === '4' || from === '5' || from === '6') {
       try {
         this.db.exec(`ALTER TABLE mylist ADD COLUMN icon TEXT;`);
-        console.log('[DB] added mylist.icon column');
+        log.info('added mylist.icon column');
       } catch {
         // 既にカラムあり — 無視
       }
       try {
         this.db.exec(`ALTER TABLE playlist ADD COLUMN icon TEXT;`);
-        console.log('[DB] added playlist.icon column');
+        log.info('added playlist.icon column');
       } catch {
         // 既にカラムあり — 無視
       }
       try {
         this.db.exec(`ALTER TABLE NNDDREVideo ADD COLUMN isFavorite INTEGER DEFAULT 0;`);
-        console.log('[DB] added NNDDREVideo.isFavorite column');
+        log.info('added NNDDREVideo.isFavorite column');
       } catch {
         // 既にカラムあり — 無視
       }
@@ -77,7 +80,7 @@ export class NnddDatabase {
     if (from === '4' || from === '5' || from === '6') {
       try {
         this.db.exec(`ALTER TABLE NNDDREVideo ADD COLUMN description TEXT;`);
-        console.log('[DB] added NNDDREVideo.description column');
+        log.info('added NNDDREVideo.description column');
       } catch {
         // 既にカラムあり — 無視
       }
@@ -86,7 +89,7 @@ export class NnddDatabase {
     if (from === '4' || from === '5' || from === '6' || from === '7') {
       try {
         this.db.exec(`ALTER TABLE history ADD COLUMN watchSeconds REAL DEFAULT 0;`);
-        console.log('[DB] added history.watchSeconds column');
+        log.info('added history.watchSeconds column');
       } catch {
         // 既にカラムあり — 無視
       }
@@ -98,13 +101,13 @@ export class NnddDatabase {
     ) {
       try {
         this.db.exec(`ALTER TABLE schedule ADD COLUMN targetType TEXT DEFAULT 'mylist';`);
-        console.log('[DB] added schedule.targetType column');
+        log.info('added schedule.targetType column');
       } catch {
         // 既にカラムあり — 無視
       }
       try {
         this.db.exec(`ALTER TABLE schedule ADD COLUMN targetId TEXT;`);
-        console.log('[DB] added schedule.targetId column');
+        log.info('added schedule.targetId column');
       } catch {
         // 既にカラムあり — 無視
       }

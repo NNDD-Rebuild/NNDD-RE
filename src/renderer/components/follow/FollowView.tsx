@@ -6,7 +6,9 @@ import type { VideoCardData } from '../common/VideoCard';
 import { VirtualizedItemList } from '../common/VirtualizedItemList';
 import { useAppStore } from '@renderer/store/useAppStore';
 import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
+import { userUrl, watchUrl } from '@shared/utils/nicoUrl';
 import { useWatchedIds } from '@renderer/hooks/useWatchedIds';
+import { useLibraryCheck } from '@renderer/hooks/useLibraryCheck';
 
 interface FeedResult {
   items: SearchResultItem[];
@@ -92,7 +94,8 @@ export function FollowView(): JSX.Element {
   const [allPageIdx, setAllPageIdx] = useState(0);
   const [allLoading, setAllLoading] = useState(false);
   const [allError, setAllError] = useState<string | null>(null);
-  const allFetchingRef = useRef(false);
+  /** 全体フィード取得の連番。最後に投げた取得の結果だけを反映する */
+  const allSeqRef = useRef(0);
   /** 各ページの開始カーソル (prev戻り用) */
   const allCursorStackRef = useRef<(string | null)[]>([null]);
   /** 現在ページの nextCursor */
@@ -105,7 +108,8 @@ export function FollowView(): JSX.Element {
   const [userApiPage, setUserApiPage] = useState(1);
   const [userLoading, setUserLoading] = useState(false);
   const [userError, setUserError] = useState<string | null>(null);
-  const userFetchingRef = useRef(false);
+  /** 選択ユーザーフィード取得の連番。最後に投げた取得の結果だけを反映する */
+  const userSeqRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // --- フォローユーザー state ---
@@ -117,7 +121,7 @@ export function FollowView(): JSX.Element {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   /** フォロー外ユーザーの一時表示用 (pendingFollowUser経由)。followUsersには追加しない */
   const [extraUser, setExtraUser] = useState<FollowingUser | null>(null);
-  const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
+  const { downloadedIds, checkDownloaded } = useLibraryCheck();
   const globalMode = useAppStore((s) => s.contentViewMode);
   const showToast = useAppStore((s) => s.showToast);
   const pendingFollowUser = useAppStore((s) => s.pendingFollowUser);
@@ -135,6 +139,11 @@ export function FollowView(): JSX.Element {
   const [userSeries, setUserSeries] = useState<UserSeriesSummary[]>([]);
   const [subTabLoading, setSubTabLoading] = useState(false);
   const [subTabError, setSubTabError] = useState<string | null>(null);
+  /** サブタブ一覧取得の連番。読込中表示とエラーは最後に投げた取得のものだけを反映する */
+  const subTabSeqRef = useRef(0);
+  /** 非同期取得の完了時点で選択中のユーザーを判定するための参照 */
+  const selectedUserIdRef = useRef<string | null>(null);
+  selectedUserIdRef.current = selectedUserId;
 
   // グローバル設定変更を即時反映
   useEffect(() => { setDisplayMode(globalMode); }, [globalMode]);
@@ -142,60 +151,61 @@ export function FollowView(): JSX.Element {
   // hasNext 計算
   const userHasNext = userApiPage * LIMIT < userTotalCount;
 
-  // --- ライブラリ済みチェック ---
-  const checkDownloaded = useCallback((items: SearchResultItem[]): void => {
-    const ids = items.map((i) => i.videoId);
-    window.nndd
-      .invoke<string[]>(window.nndd.channels.LIBRARY_CHECK_BATCH, ids)
-      .then((dl) => setDownloadedIds(new Set(dl)))
-      .catch(() => {});
-  }, []);
-
   // --- 全体フィード取得 ---
-  const fetchAll = useCallback(async (untilId: string | null): Promise<void> => {
-    if (allFetchingRef.current) return;
-    allFetchingRef.current = true;
+  // 取得中に再度呼ばれた場合 (取得中のログイン状態確定など) は新しい取得を優先し、古い取得の結果は捨てる。
+  // 戻り値は結果を反映したか (追い越された / 失敗なら false)。先頭取得の反映時はページ位置も先頭に戻す
+  const fetchAll = useCallback(async (untilId: string | null): Promise<boolean> => {
+    const seq = ++allSeqRef.current;
     setAllLoading(true);
     setAllError(null);
     try {
       const r = await apiFetchAllFeed(LIMIT, untilId ?? undefined);
+      if (seq !== allSeqRef.current) return false;
       setAllItems(r.items);
       setAllHasNext(r.hasNext);
       allNextCursorRef.current = r.nextCursor;
-      checkDownloaded(r.items);
+      if (untilId === null) {
+        allCursorStackRef.current = [null];
+        setAllPageIdx(0);
+      }
+      void checkDownloaded(r.items.map((i) => i.videoId));
+      return true;
     } catch (e) {
-      setAllError(toUserFriendlyErrorMessage(e));
+      if (seq === allSeqRef.current) setAllError(toUserFriendlyErrorMessage(e));
+      return false;
     } finally {
-      setAllLoading(false);
-      allFetchingRef.current = false;
-      requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 0 }));
+      if (seq === allSeqRef.current) {
+        setAllLoading(false);
+        requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 0 }));
+      }
     }
   }, [checkDownloaded]);
 
   // マウント時 + ログイン状態変化時に自動読み込み
   useEffect(() => {
     void fetchAll(null);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoggedIn]);
+  }, [isLoggedIn, fetchAll]);
 
   // --- 選択ユーザーフィード取得 (page=1始まり) ---
+  // 取得中にユーザーを切り替えた場合は新しいユーザーの取得を優先し、前のユーザーの結果は捨てる
   const fetchUserPage = async (user: FollowingUser, page: number): Promise<void> => {
-    if (userFetchingRef.current) return;
-    userFetchingRef.current = true;
+    const seq = ++userSeqRef.current;
     setUserLoading(true);
     setUserError(null);
     try {
       const r = await apiFetchUserFeed(LIMIT, user, page);
+      if (seq !== userSeqRef.current) return;
       setUserItems(r.items);
       setUserTotalCount(r.totalCount ?? 0);
       setUserApiPage(page);
-      checkDownloaded(r.items);
+      void checkDownloaded(r.items.map((i) => i.videoId));
     } catch (e) {
-      setUserError(toUserFriendlyErrorMessage(e));
+      if (seq === userSeqRef.current) setUserError(toUserFriendlyErrorMessage(e));
     } finally {
-      setUserLoading(false);
-      userFetchingRef.current = false;
-      requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 0 }));
+      if (seq === userSeqRef.current) {
+        setUserLoading(false);
+        requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 0 }));
+      }
     }
   };
 
@@ -222,6 +232,9 @@ export function FollowView(): JSX.Element {
     setUserSeries([]);
     setSubTabError(null);
     if (!selectedUserId) {
+      // 取得中の前ユーザーの結果が、クリア後の一覧に書き戻されないよう無効化する
+      ++userSeqRef.current;
+      setUserLoading(false);
       setUserItems([]);
       setUserTotalCount(0);
       setUserApiPage(1);
@@ -232,7 +245,7 @@ export function FollowView(): JSX.Element {
     if (!user) return;
     void fetchUserPage(user, 1);
   // isLoggedIn 確定前に空取得で終わった場合、確定後に再取得するため依存に含める
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- resolveUser はフォロー一覧の更新で変わるが、それでは再取得しない
   }, [selectedUserId, isLoggedIn]);
 
   // userSubTab 変化時: マイリスト/シリーズ一覧を取得
@@ -242,17 +255,28 @@ export function FollowView(): JSX.Element {
     if (userSubTab === 'series' && userSeries.length > 0) return;
     setSubTabLoading(true);
     setSubTabError(null);
+    // 取得中にユーザーを切り替えた場合、前のユーザーの一覧を書き込まない
+    // (書き込むと新しいユーザーで件数 > 0 と判定され、再取得されずに前のユーザーの一覧が出る)
+    const seq = ++subTabSeqRef.current;
+    const userId = selectedUserId;
     const channel = userSubTab === 'mylists'
       ? window.nndd.channels.USER_MYLISTS_FETCH
       : window.nndd.channels.USER_SERIES_FETCH;
-    window.nndd.invoke<UserMylistSummary[] | UserSeriesSummary[]>(channel, selectedUserId)
+    window.nndd.invoke<UserMylistSummary[] | UserSeriesSummary[]>(channel, userId)
       .then((list) => {
+        if (selectedUserIdRef.current !== userId) return;
         if (userSubTab === 'mylists') setUserMylists(list as UserMylistSummary[]);
         else setUserSeries(list as UserSeriesSummary[]);
       })
-      .catch((e: unknown) => setSubTabError(toUserFriendlyErrorMessage(e)))
-      .finally(() => setSubTabLoading(false));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+      .catch((e: unknown) => {
+        if (seq === subTabSeqRef.current && selectedUserIdRef.current === userId) {
+          setSubTabError(toUserFriendlyErrorMessage(e));
+        }
+      })
+      .finally(() => {
+        if (seq === subTabSeqRef.current) setSubTabLoading(false);
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- 取得済み一覧の件数変化では再取得しない
   }, [selectedUserId, userSubTab]);
 
   // --- Next/Prev ---
@@ -265,12 +289,12 @@ export function FollowView(): JSX.Element {
     } else {
       const cursor = allNextCursorRef.current;
       if (!allHasNext || allLoading || !cursor) return;
-      const newIdx = allPageIdx + 1;
+      // ページ位置は取得が反映されてから進める (fetchAll(null) に追い越された結果でずらさない)
+      if (!(await fetchAll(cursor))) return;
       const newStack = allCursorStackRef.current.slice(0, allPageIdx + 1);
       newStack.push(cursor);
       allCursorStackRef.current = newStack;
-      setAllPageIdx(newIdx);
-      await fetchAll(cursor);
+      setAllPageIdx(allPageIdx + 1);
     }
   };
 
@@ -306,7 +330,7 @@ export function FollowView(): JSX.Element {
       .then((users) => setFollowUsers(users))
       .catch((e: unknown) => setUsersError(toUserFriendlyErrorMessage(e)))
       .finally(() => setUsersLoading(false));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- 一覧・読込中フラグの変化では発火させず、ログイン状態の変化時だけ取得する
   }, [isLoggedIn]);
 
   // --- ユーザーを最新投稿順にソート ---
@@ -352,10 +376,10 @@ export function FollowView(): JSX.Element {
     );
   };
   const handleNiconico = (videoId: string): void => {
-    window.nndd.invoke(window.nndd.channels.SYS_OPEN_PATH, `https://www.nicovideo.jp/watch/${videoId}`);
+    window.nndd.invoke(window.nndd.channels.SYS_OPEN_PATH, watchUrl(videoId));
   };
   const handleUserPage = (userId: string): void => {
-    window.nndd.invoke(window.nndd.channels.SYS_OPEN_PATH, `https://www.nicovideo.jp/user/${userId}`);
+    window.nndd.invoke(window.nndd.channels.SYS_OPEN_PATH, userUrl(userId));
   };
   const handleOpenMylist = (id: string): void => {
     setPendingMylistId(id);

@@ -11,6 +11,10 @@ const log = createLogger('HlsProxy');
  */
 export type HlsProxyType = 'm3u8' | 'seg' | 'key';
 
+export function isHlsProxyType(value: string): value is HlsProxyType {
+  return value === 'm3u8' || value === 'seg' || value === 'key';
+}
+
 /** 元 URL を base64url エンコードしてプロキシ URL を生成 */
 export function encodeProxyUrl(originalUrl: string, type: HlsProxyType, proxyBase: string): string {
   const encoded = Buffer.from(originalUrl).toString('base64url');
@@ -143,6 +147,9 @@ export async function handleProxyRequest(
   proxyBase: string
 ): Promise<{ body: Buffer; contentType: string; m3u8Meta?: M3u8Meta }> {
   const originalUrl = decodeProxyUrl(encodedUrl);
+  if (!/^https?:\/\//i.test(originalUrl)) {
+    throw new Error('unsupported proxy url scheme');
+  }
   log.verbose(`proxy ${type}: ${originalUrl.slice(0, 120)}`);
 
   const http = NicoContext.get().http;

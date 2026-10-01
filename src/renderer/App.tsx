@@ -36,8 +36,7 @@ export default function App(): JSX.Element {
     window.nndd.invoke<'dark' | 'light'>(window.nndd.channels.CONFIG_GET, 'ui.theme')
       .then((v) => { if (v === 'light') document.documentElement.classList.add('light'); })
       .catch(() => {});
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [setContentViewMode, setLibraryViewMode]);
 
   // 一度アクティブになったタブはアンマウントせず display:none で保持
   const [mountedTabs, setMountedTabs] = useState<Set<MainTab>>(new Set([activeTab]));

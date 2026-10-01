@@ -1,40 +1,13 @@
 import type { MyListItem, MyList, UserMylistSummary } from '@shared/types';
 import { RssType } from '@shared/types';
-import { NicoApi } from '@shared/constants';
+import { NicoEndpoint } from '@shared/constants';
+import { mylistUrl } from '@shared/utils/nicoUrl';
 import { NicoContext } from '../NicoContext';
 import { createLogger } from '../../util/Logger';
 import { ImageCache } from '../../util/ImageCache';
+import type { NicoNvapiMylistResponse } from '../apiTypes';
 
 const log = createLogger('MyListClient');
-
-interface NvApiMylistResponse {
-  meta?: { status?: number; errorCode?: string };
-  data?: {
-    mylist?: {
-      id: string;
-      name: string;
-      description?: string;
-      items?: NvApiMylistItem[];
-      totalItemCount?: number;
-    };
-    // 一部レスポンスは items を data 直下に持つ
-    items?: NvApiMylistItem[];
-  };
-}
-
-interface NvApiMylistItem {
-  watchId: string;
-  itemId: number;
-  description?: string;
-  video: {
-    id: string;
-    title: string;
-    duration: number;
-    thumbnail: { url: string };
-    count: { view: number; comment: number; mylist: number; like?: number };
-    registeredAt: string;
-  };
-}
 
 /**
  * マイリスト API クライアント (V2)。
@@ -57,19 +30,17 @@ export class MyListClient {
     const loggedIn = await ctx.isLoggedIn();
     const candidates = loggedIn
       ? [
-          `https://nvapi.nicovideo.jp/v1/users/me/mylists/${encodeURIComponent(mylistId)}?pageSize=${pageSize}&page=${page}`,
-          `${NicoApi.PUBLIC_MYLIST_API}${encodeURIComponent(mylistId)}?pageSize=${pageSize}&page=${page}`
+          NicoEndpoint.myMylist(mylistId, pageSize, page),
+          NicoEndpoint.publicMylist(mylistId, pageSize, page)
         ]
-      : [
-          `${NicoApi.PUBLIC_MYLIST_API}${encodeURIComponent(mylistId)}?pageSize=${pageSize}&page=${page}`
-        ];
+      : [NicoEndpoint.publicMylist(mylistId, pageSize, page)];
 
-    let res: NvApiMylistResponse | null = null;
+    let res: NicoNvapiMylistResponse | null = null;
     let lastError: unknown = null;
     for (const url of candidates) {
       log.debug('fetch mylist:', url);
       try {
-        res = await ctx.http.getJson<NvApiMylistResponse>(url);
+        res = await ctx.http.getJson<NicoNvapiMylistResponse>(url);
         const status = res.meta?.status;
         if (status && status >= 400) {
           log.warn(`mylist fetch returned status=${status} errorCode=${res.meta?.errorCode}, trying fallback`);
@@ -120,14 +91,14 @@ export class MyListClient {
     const loggedIn = await ctx.isLoggedIn();
     const urls = loggedIn
       ? [
-          `https://nvapi.nicovideo.jp/v1/users/me/mylists/${encodeURIComponent(mylistId)}?pageSize=1&page=1`,
-          `${NicoApi.PUBLIC_MYLIST_API}${encodeURIComponent(mylistId)}?pageSize=1&page=1`
+          NicoEndpoint.myMylist(mylistId, 1, 1),
+          NicoEndpoint.publicMylist(mylistId, 1, 1)
         ]
-      : [`${NicoApi.PUBLIC_MYLIST_API}${encodeURIComponent(mylistId)}?pageSize=1&page=1`];
+      : [NicoEndpoint.publicMylist(mylistId, 1, 1)];
 
     for (const url of urls) {
       try {
-        const res = await ctx.http.getJson<NvApiMylistResponse>(url);
+        const res = await ctx.http.getJson<NicoNvapiMylistResponse>(url);
         if (res.meta?.status && res.meta.status >= 400) continue;
         const name = res.data?.mylist?.name;
         if (name) return { name, description: res.data?.mylist?.description };
@@ -137,8 +108,8 @@ export class MyListClient {
   }
 
   static async fetchWatchLater(pageSize = 100): Promise<MyListItem[]> {
-    const url = `${NicoApi.WATCH_LATER_API}?pageSize=${pageSize}&sortKey=addedAt&sortOrder=desc`;
-    const res = await NicoContext.get().http.getJson<NvApiMylistResponse>(url);
+    const url = NicoEndpoint.watchLaterList(pageSize);
+    const res = await NicoContext.get().http.getJson<NicoNvapiMylistResponse>(url);
     const rawItems = res.data?.mylist?.items ?? res.data?.items ?? [];
     let items = rawItems.map((i) => ({
       videoId: i.video.id,
@@ -178,7 +149,7 @@ export class MyListClient {
     }
 
     const ctx = NicoContext.get();
-    const url = NicoApi.MYLIST_API_BASE;
+    const url = NicoEndpoint.myMylists();
     log.debug('fetch account mylists:', url);
     const res = await ctx.http.getJson<AccountMylistsResponse>(url);
     const status = res.meta?.status;
@@ -187,7 +158,7 @@ export class MyListClient {
     }
     const raw = res.data?.mylists ?? [];
     return raw.map((m) => ({
-      myListUrl: `https://www.nicovideo.jp/my/mylist/${m.id}`,
+      myListUrl: mylistUrl(m.id),
       myListName: m.name,
       isDir: false,
       unPlayVideoCount: 0,
@@ -234,7 +205,7 @@ export class MyListClient {
       // (sensitive は API に無視され、未指定扱い=センシティブ動画が除外される)
       sensitiveContents: 'mask'
     });
-    const url = `https://nvapi.nicovideo.jp/v3/users/${encodeURIComponent(userId)}/videos?${params}`;
+    const url = NicoEndpoint.userVideos(userId, params);
     log.debug('fetch user videos:', url);
     const res = await ctx.http.getJson<NvApiUserVideosResponse>(url);
     const status = res.meta?.status;
@@ -286,7 +257,7 @@ export class MyListClient {
         }>;
       };
     }
-    const url = `https://nvapi.nicovideo.jp/v1/users/${encodeURIComponent(userId)}/mylists`;
+    const url = NicoEndpoint.userMylists(userId);
     log.debug('fetch user mylists:', url);
     const res = await NicoContext.get().http.getJson<NvApiUserMylistsResponse>(url);
     const status = res.meta?.status;
@@ -312,7 +283,7 @@ export class MyListClient {
     }
     try {
       const res = await NicoContext.get().http.getJson<NvApiUserResponse>(
-        `https://nvapi.nicovideo.jp/v1/users/${encodeURIComponent(userId)}`
+        NicoEndpoint.user(userId)
       );
       return res.data?.user?.nickname ?? null;
     } catch (e) {

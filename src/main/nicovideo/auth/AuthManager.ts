@@ -1,5 +1,5 @@
 import { BrowserWindow, safeStorage, session } from 'electron';
-import { NicoApi } from '@shared/constants';
+import { NicoApi, NicoEndpoint } from '@shared/constants';
 import type { AutoReloginResult } from '@shared/types';
 import { NicoContext } from '../NicoContext';
 import { LoginWindow, type SsoProvider } from './LoginWindow';
@@ -49,7 +49,7 @@ export class AuthManager {
     const ctx = NicoContext.get();
     if (!(await ctx.isLoggedIn())) return false;
     try {
-      const res = await ctx.http.fetch(NicoApi.MYLIST_API_BASE);
+      const res = await ctx.http.fetch(NicoEndpoint.myMylists());
       return res.status === 200;
     } catch (e) {
       log.warn('checkLoggedIn failed:', e);
