@@ -38,7 +38,10 @@ export function SeriesTabContent({
     toastTimerRef.current = setTimeout(() => setToastMsg(null), 2500);
   };
 
+  // 取得中に別シリーズの動画へ切り替わった場合、前のシリーズの結果で一覧と連続再生の候補 (onPageLoaded) を上書きしない
+  const fetchSeqRef = useRef(0);
   const fetchSeriesPage = (targetPage?: number): void => {
+    const seq = ++fetchSeqRef.current;
     setLoading(true);
     setError(null);
     window.nndd
@@ -46,14 +49,19 @@ export function SeriesTabContent({
         IpcChannel.SERIES_FETCH, seriesId, targetPage ? undefined : currentVideoId, targetPage
       )
       .then((r) => {
+        if (seq !== fetchSeqRef.current) return;
         setItems(r.items);
         setPage(r.page);
         setTotalPages(r.totalPages);
         onPageLoaded?.(r.items, r.page, r.totalPages, seriesId);
         if (targetPage) listRef.current?.scrollTo(0, 0);
       })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setLoading(false));
+      .catch((e: unknown) => {
+        if (seq === fetchSeqRef.current) setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (seq === fetchSeqRef.current) setLoading(false);
+      });
   };
 
   useEffect(() => {

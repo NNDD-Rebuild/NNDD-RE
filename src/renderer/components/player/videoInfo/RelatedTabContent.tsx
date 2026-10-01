@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { MyListItem } from '@shared/types';
 import { IpcChannel } from '@shared/types';
 import { LazyThumbnail } from './LazyThumbnail';
@@ -18,18 +18,27 @@ export function RelatedTabContent({
   const [items, setItems] = useState<MyListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 取得中に次の動画へ切り替わった場合、前の動画の関連動画で一覧と連続再生の候補 (onLoaded) を上書きしない。
+  // タブを閉じても最新動画の結果は onLoaded へ届けるため、アンマウントでは無効化しない
+  const seqRef = useRef(0);
 
   useEffect(() => {
+    const seq = ++seqRef.current;
     setLoading(true);
     setError(null);
     window.nndd
       .invoke<MyListItem[]>(IpcChannel.VIDEO_GET_RELATED, videoId)
       .then((r) => {
+        if (seq !== seqRef.current) return;
         setItems(r);
         onLoaded?.(r);
       })
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-      .finally(() => setLoading(false));
+      .catch((e: unknown) => {
+        if (seq === seqRef.current) setError(e instanceof Error ? e.message : String(e));
+      })
+      .finally(() => {
+        if (seq === seqRef.current) setLoading(false);
+      });
   // videoId が変わるたびに再取得。onLoaded は親のコールバック(再生成される可能性あり)なので依存に含めない
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoId]);
