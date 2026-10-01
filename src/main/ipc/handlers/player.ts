@@ -85,7 +85,7 @@ export function registerPlayerHandlers(): void {
     if (!win) return;
     const existing = niconicoViews.get(win.id);
     if (existing) {
-      try { win.contentView.removeChildView(existing.view); } catch {}
+      try { win.contentView.removeChildView(existing.view); } catch { /* 既に外れている場合は何もしない */ }
       existing.view.webContents.close();
     }
     const view = new WebContentsView({
@@ -140,7 +140,7 @@ export function registerPlayerHandlers(): void {
 
     // ウィンドウ × 閉じ時に WebContentsView を確実に破棄 (音が残るのを防ぐ)
     win.once('closed', () => {
-      try { entry.view.webContents.close(); } catch {}
+      try { entry.view.webContents.close(); } catch { /* 破棄済みなら何もしない */ }
       niconicoViews.delete(win.id);
     });
   });
@@ -183,7 +183,7 @@ export function registerPlayerHandlers(): void {
     if (!win) return;
     const entry = niconicoViews.get(win.id);
     if (entry) {
-      try { win.contentView.removeChildView(entry.view); } catch {}
+      try { win.contentView.removeChildView(entry.view); } catch { /* 既に外れている場合は何もしない */ }
       entry.view.webContents.close();
       niconicoViews.delete(win.id);
     }

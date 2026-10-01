@@ -328,15 +328,15 @@ function openPlayer(v){
     } else {
       comments = data;
     }
-  }).catch(function(){});
-  player.play().catch(function(){});
+  }).catch(function(e){ console.warn('comments fetch failed', e); });
+  player.play().catch(function(){ /* 自動再生の制限や読み込み中断で拒否されても、操作で再生できるので無視 */ });
 }
 
 function closePlayer(){
   var player = document.getElementById('player');
   player.pause();
   player.src = '';
-  if(document.fullscreenElement) document.exitFullscreen().catch(function(){});
+  if(document.fullscreenElement) document.exitFullscreen().catch(function(){ /* 既に解除済みなら無視 */ });
   document.getElementById('modal').classList.remove('open');
   if (commentRenderer) {
     commentRenderer.stop();
@@ -473,9 +473,9 @@ document.getElementById('btn-comment').onclick = function(){
 document.getElementById('btn-fullscreen').onclick = function(){
   var wrap = document.getElementById('video-wrap');
   if(!document.fullscreenElement){
-    wrap.requestFullscreen().catch(function(){});
+    wrap.requestFullscreen().catch(function(){ /* ブラウザが全画面を拒否した場合はそのまま */ });
   } else {
-    document.exitFullscreen().catch(function(){});
+    document.exitFullscreen().catch(function(){ /* 既に解除済みなら無視 */ });
   }
 };
 document.addEventListener('fullscreenchange', function(){

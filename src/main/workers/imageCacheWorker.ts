@@ -34,9 +34,9 @@ function evictIfNeeded(dir: string, maxBytes: number): string[] {
         fs.unlinkSync(entry.path);
         evicted.push(entry.name);
         total -= entry.size;
-      } catch {}
+      } catch { /* 使用中等で消せないファイルは次回の掃除に回す */ }
     }
-  } catch {}
+  } catch { /* ディレクトリが読めなければ何も消さない */ }
   return evicted;
 }
 
