@@ -5,7 +5,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { NNDDREVideo } from '@shared/types';
 import { VideoFileSuffix } from '@shared/constants/paths';
+import { extractBracketedVideoId } from '@shared/utils/videoId';
 import { LibraryManager } from '../db/LibraryManager';
+import { isPathAllowed } from '../player/LocalVideoProtocol';
 import { getConfigStore } from '../config/ConfigStore';
 import { createLogger } from '../util/Logger';
 import { CommentXmlReader } from '../nicovideo/comment/CommentXmlReader';
@@ -321,8 +323,16 @@ export class NnddHttpServer {
     this.streamFile(req, res, v.uri);
   }
 
-  /** ファイルを Range 対応で配信する */
+  /**
+   * ファイルを Range 対応で配信する。
+   * LAN に公開され得るため、デスクトップのローカル再生と同じ許可ルート配下に限る。
+   */
   private streamFile(req: Request, res: Response, filePath: string): void {
+    if (!isPathAllowed(path.resolve(filePath))) {
+      log.warn('stream access denied:', filePath);
+      res.status(403).send('forbidden');
+      return;
+    }
     const stat = fs.statSync(filePath);
     const size = stat.size;
     const range = req.headers.range;
@@ -483,8 +493,7 @@ export class NnddHttpServer {
   }
 
   private extractVideoId(uri: string): string | null {
-    const m = uri.match(/\[((?:sm|nm|so|ax|sd|ca|cd|cw|zb|ze|yo)\d+)\]/);
-    return m ? m[1] : null;
+    return extractBracketedVideoId(uri);
   }
 
   /** 本家NNDD互換: GET_VIDEO_ID_LIST レスポンス */
