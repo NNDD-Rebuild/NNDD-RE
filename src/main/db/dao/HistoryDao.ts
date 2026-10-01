@@ -63,11 +63,12 @@ export class HistoryDao {
 
   /** 再生済みバッジ表示用バッチ判定 */
   existsBatch(videoIds: string[]): Set<string> {
-    const result = new Set<string>();
-    const stmt = this.db.prepare(Q.SELECT_HISTORY_EXISTS);
-    for (const id of videoIds) {
-      if (stmt.get(id)) result.add(id);
-    }
-    return result;
+    if (videoIds.length === 0) return new Set();
+    // history.videoId には索引が無く、1件ずつ引くと件数分の全表走査になる (履歴は再生のたびに増える)。
+    // 1回の走査で視聴済み集合を作って照合する
+    const watched = new Set(
+      this.db.prepare('SELECT DISTINCT videoId FROM history;').pluck().all() as string[]
+    );
+    return new Set(videoIds.filter((id) => watched.has(id)));
   }
 }
