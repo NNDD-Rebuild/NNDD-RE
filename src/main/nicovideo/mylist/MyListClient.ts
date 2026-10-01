@@ -1,6 +1,6 @@
 import type { MyListItem, MyList, UserMylistSummary } from '@shared/types';
 import { RssType } from '@shared/types';
-import { NicoApi } from '@shared/constants';
+import { NicoEndpoint } from '@shared/constants';
 import { mylistUrl } from '@shared/utils/nicoUrl';
 import { NicoContext } from '../NicoContext';
 import { createLogger } from '../../util/Logger';
@@ -58,12 +58,10 @@ export class MyListClient {
     const loggedIn = await ctx.isLoggedIn();
     const candidates = loggedIn
       ? [
-          `${NicoApi.MYLIST_API_BASE}/${encodeURIComponent(mylistId)}?pageSize=${pageSize}&page=${page}`,
-          `${NicoApi.PUBLIC_MYLIST_API}${encodeURIComponent(mylistId)}?pageSize=${pageSize}&page=${page}`
+          NicoEndpoint.myMylist(mylistId, pageSize, page),
+          NicoEndpoint.publicMylist(mylistId, pageSize, page)
         ]
-      : [
-          `${NicoApi.PUBLIC_MYLIST_API}${encodeURIComponent(mylistId)}?pageSize=${pageSize}&page=${page}`
-        ];
+      : [NicoEndpoint.publicMylist(mylistId, pageSize, page)];
 
     let res: NvApiMylistResponse | null = null;
     let lastError: unknown = null;
@@ -121,10 +119,10 @@ export class MyListClient {
     const loggedIn = await ctx.isLoggedIn();
     const urls = loggedIn
       ? [
-          `${NicoApi.MYLIST_API_BASE}/${encodeURIComponent(mylistId)}?pageSize=1&page=1`,
-          `${NicoApi.PUBLIC_MYLIST_API}${encodeURIComponent(mylistId)}?pageSize=1&page=1`
+          NicoEndpoint.myMylist(mylistId, 1, 1),
+          NicoEndpoint.publicMylist(mylistId, 1, 1)
         ]
-      : [`${NicoApi.PUBLIC_MYLIST_API}${encodeURIComponent(mylistId)}?pageSize=1&page=1`];
+      : [NicoEndpoint.publicMylist(mylistId, 1, 1)];
 
     for (const url of urls) {
       try {
@@ -138,7 +136,7 @@ export class MyListClient {
   }
 
   static async fetchWatchLater(pageSize = 100): Promise<MyListItem[]> {
-    const url = `${NicoApi.WATCH_LATER_API}?pageSize=${pageSize}&sortKey=addedAt&sortOrder=desc`;
+    const url = NicoEndpoint.watchLaterList(pageSize);
     const res = await NicoContext.get().http.getJson<NvApiMylistResponse>(url);
     const rawItems = res.data?.mylist?.items ?? res.data?.items ?? [];
     let items = rawItems.map((i) => ({
@@ -179,7 +177,7 @@ export class MyListClient {
     }
 
     const ctx = NicoContext.get();
-    const url = NicoApi.MYLIST_API_BASE;
+    const url = NicoEndpoint.myMylists();
     log.debug('fetch account mylists:', url);
     const res = await ctx.http.getJson<AccountMylistsResponse>(url);
     const status = res.meta?.status;
@@ -235,7 +233,7 @@ export class MyListClient {
       // (sensitive は API に無視され、未指定扱い=センシティブ動画が除外される)
       sensitiveContents: 'mask'
     });
-    const url = `${NicoApi.USER_VIDEOS_API}${encodeURIComponent(userId)}/videos?${params}`;
+    const url = NicoEndpoint.userVideos(userId, params);
     log.debug('fetch user videos:', url);
     const res = await ctx.http.getJson<NvApiUserVideosResponse>(url);
     const status = res.meta?.status;
@@ -287,7 +285,7 @@ export class MyListClient {
         }>;
       };
     }
-    const url = `${NicoApi.NVAPI_BASE}/v1/users/${encodeURIComponent(userId)}/mylists`;
+    const url = NicoEndpoint.userMylists(userId);
     log.debug('fetch user mylists:', url);
     const res = await NicoContext.get().http.getJson<NvApiUserMylistsResponse>(url);
     const status = res.meta?.status;
@@ -313,7 +311,7 @@ export class MyListClient {
     }
     try {
       const res = await NicoContext.get().http.getJson<NvApiUserResponse>(
-        `${NicoApi.NVAPI_BASE}/v1/users/${encodeURIComponent(userId)}`
+        NicoEndpoint.user(userId)
       );
       return res.data?.user?.nickname ?? null;
     } catch (e) {

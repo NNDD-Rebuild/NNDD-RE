@@ -1,4 +1,5 @@
 import type { NNDDREComment, WatchPageInfo } from '@shared/types';
+import { NicoEndpoint } from '@shared/constants';
 import { NicoContext } from '../NicoContext';
 import { NicoApiError } from '../NicoHttp';
 import { CommentCommandParser } from './CommentCommandParser';
@@ -101,7 +102,7 @@ export class CommentClient {
       additionals: {}
     };
 
-    const url = `${watch.commentServerUrl.replace(/\/$/, '')}/v1/threads`;
+    const url = NicoEndpoint.commentThreads(watch.commentServerUrl);
     log.debug('POST comments:', url, body);
 
     // debugDumpPath の設定 (設定画面から有効化)
@@ -191,7 +192,7 @@ export class CommentClient {
       .slice()
       .sort((a, b) => (a.fork === 'owner' ? -1 : 0) - (b.fork === 'owner' ? -1 : 0));
     const language = watch.nvCommentParams?.language ?? 'ja-jp';
-    const url = `${watch.commentServerUrl.replace(/\/$/, '')}/v1/threads`;
+    const url = NicoEndpoint.commentThreads(watch.commentServerUrl);
 
     // debugDumpPath の設定 (設定画面から有効化)
     let debugDumpPath: string | undefined;

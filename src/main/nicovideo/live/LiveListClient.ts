@@ -1,5 +1,5 @@
 import { LIVE_SEARCH_PAGE_SIZE } from '@shared/types';
-import { NicoApi } from '@shared/constants';
+import { NicoEndpoint, NicoHeaders } from '@shared/constants';
 import type {
   LiveProgramListResult,
   LiveProgramSummary,
@@ -21,7 +21,7 @@ const log = createLogger('LiveListClient');
 
 /** live.nicovideo.jp (PC Web) の frontendId。検索 API はこれがヘッダーに無いとエラーになる */
 const LIVE_HEADERS = {
-  'X-Frontend-Id': '9',
+  'X-Frontend-Id': NicoHeaders.LIVE_FRONTEND_ID,
   Origin: LIVE_ORIGIN,
   Referer: `${LIVE_ORIGIN}/`
 };
@@ -78,7 +78,7 @@ export async function fetchFollowingPrograms(
   offset: number
 ): Promise<LiveProgramListResult> {
   if (status === 'reserved') return fetchFollowingComingSoon();
-  const url = `${LIVE_ORIGIN}/front/api/pages/follow/v1/programs?status=${status}&offset=${offset}`;
+  const url = NicoEndpoint.liveFollowPrograms(status, offset);
   const json = await NicoContext.get().http.getJson<{ data?: { programs?: any[]; total?: number } }>(url, {
     headers: LIVE_HEADERS
   });
@@ -161,7 +161,7 @@ function fetchSearchPage(params: LiveSearchParams, offset: number): Promise<Sear
     offset: String(offset)
   });
   return NicoContext.get().http.getJson<SearchResponse>(
-    `${NicoApi.CAS_API_BASE}/v2/search/programs.json?${q}`,
+    NicoEndpoint.liveSearchPrograms(q),
     { headers: LIVE_HEADERS }
   );
 }
@@ -278,7 +278,7 @@ export async function fetchRecentPrograms(params: LiveRecentParams): Promise<Liv
     sortOrder: params.sortOrder
   });
   const json = await NicoContext.get().http.getJson<{ meta?: { totalCount?: number }; data?: any[] }>(
-    `${LIVE_ORIGIN}/front/api/pages/recent/v1/programs?${q}`,
+    NicoEndpoint.liveRecentPrograms(q),
     { headers: LIVE_HEADERS }
   );
   const programs = (json.data ?? []).map(

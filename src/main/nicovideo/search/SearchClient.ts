@@ -4,7 +4,7 @@ import type {
   NNDDRESearchSortTypeValue
 } from '@shared/types';
 import { NNDDRESearchType } from '@shared/types';
-import { NicoApi } from '@shared/constants';
+import { NicoEndpoint } from '@shared/constants';
 import { NicoContext } from '../NicoContext';
 import { ThumbInfoXmlReader } from '../video/ThumbInfoXmlReader';
 import { createLogger } from '../../util/Logger';
@@ -124,7 +124,7 @@ export class SearchClient {
 
   private static async fetchByVideoId(videoId: string): Promise<SearchResultItem | null> {
     try {
-      const xml = await NicoContext.get().http.getText(`${NicoApi.THUMB_INFO}${videoId}`);
+      const xml = await NicoContext.get().http.getText(NicoEndpoint.thumbInfo(videoId));
       const parsed = ThumbInfoXmlReader.parse(xml);
       if (!parsed) return null;
       const http = NicoContext.get().http;
@@ -171,7 +171,7 @@ export class SearchClient {
     params.set('_offset', String(opts.offset ?? 0));
     params.set('_limit', String(opts.limit ?? 32));
     params.set('_context', 'nndd-electron');
-    return `${NicoApi.SEARCH_API}?${params.toString()}`;
+    return NicoEndpoint.searchSnapshot(params);
   }
 
   private static toSortParam(
@@ -217,7 +217,7 @@ export class SearchClient {
     params.set('sortOrder', sortOrder);
     params.set('page', String(Math.floor((opts.offset ?? 0) / (opts.limit ?? 32)) + 1));
     params.set('pageSize', String(Math.min(opts.limit ?? 32, 100)));
-    return `${NicoApi.SEARCH_API_NVAPI}?${params.toString()}`;
+    return NicoEndpoint.searchNvapi(params);
   }
 
   private static toNvapiSortParam(
@@ -288,7 +288,7 @@ export class SearchClient {
       registeredAt: new Date(d.startTime),
       tags: (d.tags ?? '').split(/\s+/).filter(Boolean),
       author: isChannelVideo
-        ? { id: `ch${d.channelId}`, nickname: '', iconUrl: `https://secure-dcdn.cdn.nimg.jp/comch/channel-icon/128x128/ch${d.channelId}.jpg` }
+        ? { id: `ch${d.channelId}`, nickname: '', iconUrl: NicoEndpoint.channelIcon(d.channelId) }
         : d.userId != null
         ? { id: String(d.userId), nickname: '', iconUrl: '' }
         : undefined,

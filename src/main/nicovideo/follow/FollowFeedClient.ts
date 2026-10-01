@@ -1,5 +1,5 @@
 import type { SearchResultItem } from '@shared/types';
-import { NicoApi } from '@shared/constants/api';
+import { NicoApi, NicoEndpoint } from '@shared/constants/api';
 import { NicoContext } from '../NicoContext';
 import { createLogger } from '../../util/Logger';
 import { ImageCache } from '../../util/ImageCache';
@@ -47,8 +47,6 @@ interface FeedActorsResponse {
   code: string;
   actors: FeedActor[];
 }
-
-const FEED_API = NicoApi.FEED_API_BASE;
 
 interface NicorepoEntry {
   id: string;
@@ -134,7 +132,7 @@ const TERMS = ['last-6-months', 'last-1-month'] as const;
 /** ユーザーID取得 */
 async function getMyUserId(): Promise<string> {
   const http = NicoContext.get().http;
-  const res = await http.fetch(`${NicoApi.NVAPI_BASE}/v1/users/me`, { timeoutMs: 8000 });
+  const res = await http.fetch(NicoEndpoint.me(), { timeoutMs: 8000 });
   if (!res.ok) throw new Error(`user info failed: HTTP ${res.status}`);
   const json = await res.json() as {
     data?: { user?: { id?: string | number } };
@@ -151,7 +149,6 @@ async function getFollowingUsers(maxCount = 30): Promise<FollowingUser[]> {
   const myUserId = await getMyUserId();
   const http = NicoContext.get().http;
   const users: FollowingUser[] = [];
-  const baseUrl = `${NicoApi.NVAPI_BASE}/v1/users/${myUserId}/following/users`;
 
   let cursor: string | undefined;
   while (users.length < maxCount) {
@@ -159,7 +156,7 @@ async function getFollowingUsers(maxCount = 30): Promise<FollowingUser[]> {
     const params = new URLSearchParams({ pageSize: String(need) });
     if (cursor) params.set('cursor', cursor);
 
-    const url = `${baseUrl}?${params}`;
+    const url = NicoEndpoint.followingUsers(myUserId, params);
     try {
       const res = await http.fetch(url, { timeoutMs: 10000 });
       if (!res.ok) {
@@ -223,7 +220,7 @@ async function getUserRecentVideos(
     sensitiveContents: 'mask',
   });
 
-  const url = `${NicoApi.USER_VIDEOS_API}${user.id}/videos?${params}`;
+  const url = NicoEndpoint.userVideos(user.id, params);
   try {
     const res = await http.fetch(url, { timeoutMs: 8000 });
     if (!res.ok) {
@@ -341,7 +338,7 @@ async function enrichVideoInfo(items: SearchResultItem[]): Promise<SearchResultI
   if (items.length === 0) return items;
   const http = NicoContext.get().http;
   const ids = items.map(i => i.videoId).join(',');
-  const url = `${NicoApi.NVAPI_BASE}/v1/videos?ids=${encodeURIComponent(ids)}`;
+  const url = NicoEndpoint.videosByIds(ids);
   try {
     const res = await http.fetch(url, { timeoutMs: 8000 });
     if (!res.ok) { log.debug(`enrichVideoInfo: ${res.status}`); return items; }
@@ -380,7 +377,7 @@ async function tryFeedApi(limit: number, cursor?: string): Promise<FeedResult | 
   const http = NicoContext.get().http;
   const params = new URLSearchParams({ context: 'my_timeline', limit: String(Math.min(limit, 50)) });
   if (cursor) params.set('cursor', cursor);
-  const url = `${FEED_API}/v1/activities/followings/video?${params}`;
+  const url = NicoEndpoint.feedFollowingVideos(params);
   try {
     const res = await http.fetch(url, { timeoutMs: 10000, headers: { 'Accept': 'application/json', 'Origin': NicoApi.WWW_BASE } });
     if (!res.ok) { log.debug(`feed API: ${url} → ${res.status}`); return null; }
@@ -424,7 +421,7 @@ async function tryFeedApi(limit: number, cursor?: string): Promise<FeedResult | 
 /** フォロー中ユーザー一覧を api.feed.nicovideo.jp/v1/actors で取得 */
 async function getFeedActors(): Promise<FollowingUser[]> {
   const http = NicoContext.get().http;
-  const url = `${FEED_API}/v1/actors?limit=100`;
+  const url = NicoEndpoint.feedActors(100);
   try {
     const res = await http.fetch(url, { timeoutMs: 10000, headers: { 'Accept': 'application/json', 'Origin': NicoApi.WWW_BASE } });
     if (!res.ok) return [];
@@ -456,18 +453,16 @@ async function tryNicorepoFeed(limit: number, cursor?: string): Promise<FeedResu
   if (cursor) params.set('maxId', cursor);
 
   // public.api.nicovideo.jp は ENOTFOUND のため api.nicovideo.jp を使用
-  const NICOREPO_API = `${NicoApi.API_BASE}/v1/timelines/nicorepo`;
-
   // 候補A: /my/ パス (ユーザーID不要)
   const candidateUrls: string[] = [
-    `${NICOREPO_API}/last-1-month/my/pc/entries.json?${params}`,
+    NicoEndpoint.nicorepoMy('last-1-month', params),
   ];
   // 候補B/C: /users/{id}/ パス
   let userId: string | null = null;
   try { userId = await getMyUserId(); } catch { /* skip */ }
   if (userId) {
-    candidateUrls.push(`${NICOREPO_API}/last-1-month/users/${userId}/pc/entries.json?${params}`);
-    candidateUrls.push(`${NICOREPO_API}/last-6-months/users/${userId}/pc/entries.json?${params}`);
+    candidateUrls.push(NicoEndpoint.nicorepoUser('last-1-month', userId, params));
+    candidateUrls.push(NicoEndpoint.nicorepoUser('last-6-months', userId, params));
   }
 
   for (const url of candidateUrls) {
@@ -607,7 +602,7 @@ export class FollowFeedClient {
     // Cookie診断
     try {
       const wwwCookie = await ctx.cookieStore.cookieHeader(NicoApi.TOP);
-      const feedCookie = await ctx.cookieStore.cookieHeader(`${FEED_API}/`);
+      const feedCookie = await ctx.cookieStore.cookieHeader(`${NicoApi.FEED_API_BASE}/`);
       results.push({
         url: '--- Cookie診断 ---', status: 0, ok: !!wwwCookie,
         preview: [
@@ -621,7 +616,7 @@ export class FollowFeedClient {
 
     // ログイン確認
     try {
-      const res = await http.fetch(`${NicoApi.NVAPI_BASE}/v1/users/me`, { timeoutMs: 8000 });
+      const res = await http.fetch(NicoEndpoint.me(), { timeoutMs: 8000 });
       const text = await res.text();
       results.push({ url: 'nvapi /v1/users/me', status: res.status, ok: res.ok, preview: text.slice(0, 200) });
     } catch (e) {
@@ -630,9 +625,9 @@ export class FollowFeedClient {
 
     // api.feed.nicovideo.jp テスト (メインAPI)
     for (const [label, url] of [
-      ['feed /v1/activities/followings/video', `${FEED_API}/v1/activities/followings/video?context=my_timeline&limit=2`],
-      ['feed /v1/actors', `${FEED_API}/v1/actors?limit=5`],
-      ['feed /v1/unread', `${FEED_API}/v1/unread`],
+      ['feed /v1/activities/followings/video', NicoEndpoint.feedFollowingVideos('context=my_timeline&limit=2')],
+      ['feed /v1/actors', NicoEndpoint.feedActors(5)],
+      ['feed /v1/unread', NicoEndpoint.feedUnread()],
     ] as [string, string][]) {
       try {
         const res = await http.fetch(url, { timeoutMs: 8000, headers: { 'Accept': 'application/json', 'Origin': NicoApi.WWW_BASE } });

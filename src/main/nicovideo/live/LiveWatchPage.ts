@@ -1,5 +1,5 @@
 import type { LiveProgramInfo, LiveSupplier } from '@shared/types';
-import { NicoApi } from '@shared/constants';
+import { NicoApi, NicoEndpoint, NicoHeaders } from '@shared/constants';
 import { NicoContext } from '../NicoContext';
 import { createLogger } from '../../util/Logger';
 
@@ -146,8 +146,8 @@ export function describeUnavailable(page: LiveWatchPageInfo): string {
  * 視聴開始 (PATCH) で視聴期限のカウントが始まり取り消せないため、必ずユーザー確認後に呼ぶこと。
  */
 export async function activateTimeshift(programId: string): Promise<void> {
-  const url = `${NicoApi.LIVE2_API_BASE}/api/v2/programs/${programId}/timeshift/reservation`;
-  const headers = { 'X-Frontend-Id': '9', Origin: LIVE_ORIGIN, Referer: `${LIVE_ORIGIN}/` };
+  const url = NicoEndpoint.liveTimeshiftReservation(programId);
+  const headers = { 'X-Frontend-Id': NicoHeaders.LIVE_FRONTEND_ID, Origin: LIVE_ORIGIN, Referer: `${LIVE_ORIGIN}/` };
   const http = NicoContext.get().http;
 
   // 予約 (既に予約済みなら errorCode=DUPLICATED が返るので無視する)
@@ -189,8 +189,8 @@ async function timeshiftErrorText(res: Response, action: string): Promise<string
  * 既に予約済み (DUPLICATED) はエラーにしない
  */
 export async function reserveTimeshift(programId: string): Promise<void> {
-  const url = `${NicoApi.LIVE2_API_BASE}/api/v2/programs/${programId}/timeshift/reservation`;
-  const headers = { 'X-Frontend-Id': '9', Origin: LIVE_ORIGIN, Referer: `${LIVE_ORIGIN}/` };
+  const url = NicoEndpoint.liveTimeshiftReservation(programId);
+  const headers = { 'X-Frontend-Id': NicoHeaders.LIVE_FRONTEND_ID, Origin: LIVE_ORIGIN, Referer: `${LIVE_ORIGIN}/` };
   const res = await NicoContext.get().http.fetch(url, { method: 'POST', headers });
   if (res.ok) return;
   const cloned = res.clone();
@@ -203,8 +203,8 @@ export async function reserveTimeshift(programId: string): Promise<void> {
 export async function cancelTimeshiftReservations(programIds: string[]): Promise<void> {
   const ids = programIds.filter((id) => /^lv\d+$/.test(id));
   if (ids.length === 0) throw new Error('解除する番組IDが指定されていません');
-  const url = `${NicoApi.LIVE2_API_BASE}/api/v2/timeshift/reservations?programIds=${ids.join(',')}`;
-  const headers = { 'X-Frontend-Id': '9', Origin: LIVE_ORIGIN, Referer: `${LIVE_ORIGIN}/` };
+  const url = NicoEndpoint.liveTimeshiftReservations(ids);
+  const headers = { 'X-Frontend-Id': NicoHeaders.LIVE_FRONTEND_ID, Origin: LIVE_ORIGIN, Referer: `${LIVE_ORIGIN}/` };
   const res = await NicoContext.get().http.fetch(url, { method: 'DELETE', headers });
   // 応答の形式は未確認なので、成功時も内容をログに残す
   if (res.ok) {

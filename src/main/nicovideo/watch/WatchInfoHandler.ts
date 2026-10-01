@@ -1,5 +1,5 @@
 import type { WatchPageInfo } from '@shared/types';
-import { NicoApi } from '@shared/constants';
+import { NicoApi, NicoEndpoint, NicoHeaders } from '@shared/constants';
 import { NicoContext } from '../NicoContext';
 import { NicoApiError } from '../NicoHttp';
 import { WatchPageParser } from './WatchPageParser';
@@ -184,14 +184,14 @@ export class WatchInfoHandler {
     if (!key) return null;
     try {
       const ctx = NicoContext.get();
-      const url = `${NicoApi.NVAPI_BASE}/v4/watch/lazy/${encodeURIComponent(videoId)}?actionTrackId=${encodeURIComponent(key.watchTrackId)}`;
+      const url = NicoEndpoint.watchLazy(videoId, key.watchTrackId);
       const res = await ctx.http.postJson<{ data?: { series?: { id?: number | string; title?: string } | null } }>(
         url,
         { keyToken: key.keyToken },
         {
           headers: {
-            'X-Frontend-Id': '6',
-            'X-Frontend-Version': '0',
+            'X-Frontend-Id': NicoHeaders.X_FRONTEND_ID,
+            'X-Frontend-Version': NicoHeaders.X_FRONTEND_VERSION,
             'X-Niconico-Language': 'ja-jp',
             'X-Request-With': NicoApi.WWW_BASE
           },
@@ -212,7 +212,7 @@ export class WatchInfoHandler {
   /**
    * nvapi v2/series/{id} からシリーズタイトルだけを取得する。
    * 認証済み HTTP クライアント経由で呼ぶ。
-   * ※ SERIES_API は v1 だが series 詳細は v2 エンドポイントで取得する。
+   * ※ series 詳細は v2 エンドポイントで取得する (NicoEndpoint.series)。
    */
   private static async fetchSeriesTitleFromApi(
     seriesId: string,
@@ -221,7 +221,7 @@ export class WatchInfoHandler {
     try {
       const ctx = NicoContext.get();
       // v2/series/{id} は detail.title を含む (registerIpc.ts と同じエンドポイント)
-      const url = `${NicoApi.NVAPI_BASE}/v2/series/${encodeURIComponent(seriesId)}?pageSize=1&page=1`;
+      const url = NicoEndpoint.series(seriesId, 1, 1);
       log.debug('fetchSeriesTitleFromApi:', url);
       const res = await ctx.http.getJson<{ data?: { detail?: { title?: string } } }>(url, {
         noCookie,
@@ -279,7 +279,7 @@ export class WatchInfoHandler {
     // ログイン: /api/watch/v3 (user-session 必須)
     // 未ログイン: /api/watch/v3_guest
     const endpoint = loggedIn ? 'v3' : 'v3_guest';
-    const url = `${NicoApi.WWW_BASE}/api/watch/${endpoint}/${encodeURIComponent(videoId)}?actionTrackId=${actionTrackId}`;
+    const url = NicoEndpoint.watchApi(endpoint, videoId, actionTrackId);
     log.debug('fetching watch JSON API:', url);
     
     // debugDumpPath の設定 (設定画面から有効化)
@@ -295,8 +295,8 @@ export class WatchInfoHandler {
     
     const json = await ctx.http.getJson<{ data: unknown }>(url, {
       headers: {
-        'X-Frontend-Id': '6',
-        'X-Frontend-Version': '0',
+        'X-Frontend-Id': NicoHeaders.X_FRONTEND_ID,
+        'X-Frontend-Version': NicoHeaders.X_FRONTEND_VERSION,
         'X-Niconico-Language': 'ja-jp',
         'X-Request-With': NicoApi.WWW_BASE
       },

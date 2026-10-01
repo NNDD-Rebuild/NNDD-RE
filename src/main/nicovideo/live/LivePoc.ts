@@ -178,7 +178,7 @@ async function runApiProbe(urls: string[], p: (line: string) => void): Promise<v
     try {
       const res = await http.fetch(url, {
         headers: {
-          'X-Frontend-Id': '9',
+          'X-Frontend-Id': NicoHeaders.LIVE_FRONTEND_ID,
           Origin: LIVE_ORIGIN,
           Referer: `${LIVE_ORIGIN}/`,
           Accept: 'application/json, */*;q=0.8'

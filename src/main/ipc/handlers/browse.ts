@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron';
 import { IpcChannel } from '@shared/types';
 import type { RssTypeValue } from '@shared/types';
-import { NicoApi } from '@shared/constants';
+import { NicoApi, NicoEndpoint, NicoHeaders } from '@shared/constants';
 import { getConfigStore } from '../../config/ConfigStore';
 import {
   SearchClient,
@@ -113,7 +113,7 @@ export function registerBrowseHandlers(ctx: IpcHandlerContext): void {
       meta?: { status?: number };
       data?: { items?: RecommendItem[] };
     }
-    const url = `${NicoApi.NVAPI_BASE}/v1/recommend?recipeId=video_watch_recommendation&videoId=${encodeURIComponent(videoId)}&site=nicovideo&_frontendId=6&_frontendVersion=0`;
+    const url = NicoEndpoint.recommend(videoId);
     log.debug('fetch related videos:', url);
     const res = await ctx.http.getJson<RecommendRes>(url);
     if (res.meta?.status && res.meta.status >= 400) {
@@ -148,9 +148,9 @@ export function registerBrowseHandlers(ctx: IpcHandlerContext): void {
   ipcMain.handle(IpcChannel.MYLIST_ADD_VIDEO_DEFLIST, async (_e, videoId: string) => {
     const ctx = NicoContext.get();
     await ctx.http.postJson(
-      NicoApi.WATCH_LATER_API,
+      NicoEndpoint.watchLater(),
       { watchId: videoId },
-      { headers: { 'X-Frontend-Id': '6', 'X-Frontend-Version': '0', 'X-Request-With': NicoApi.WWW_BASE } }
+      { headers: { 'X-Frontend-Id': NicoHeaders.X_FRONTEND_ID, 'X-Frontend-Version': NicoHeaders.X_FRONTEND_VERSION, 'X-Request-With': NicoApi.WWW_BASE } }
     );
     return true;
   });
@@ -221,7 +221,7 @@ export function registerBrowseHandlers(ctx: IpcHandlerContext): void {
     let result: CachedUserInfo | null = null;
     try {
       const ctx = NicoContext.get();
-      const url = `${NicoApi.NVAPI_BASE}/v1/users/${encodeURIComponent(key)}`;
+      const url = NicoEndpoint.user(key);
       interface UserRes {
         meta?: { status?: number };
         data?: { user?: { nickname?: string; icons?: { small?: string; large?: string } } };
@@ -257,7 +257,7 @@ export function registerBrowseHandlers(ctx: IpcHandlerContext): void {
 
   ipcMain.handle(IpcChannel.USER_SERIES_FETCH, async (_e, userId: string) => {
     const ctx = NicoContext.get();
-    const url = `${NicoApi.NVAPI_BASE}/v1/users/${encodeURIComponent(userId)}/series`;
+    const url = NicoEndpoint.userSeries(userId);
     interface NvApiUserSeriesResponse {
       meta?: { status?: number };
       data?: {

@@ -1,4 +1,4 @@
-import { NicoApi } from '@shared/constants';
+import { NicoApi, NicoEndpoint } from '@shared/constants';
 import { NicoContext } from './NicoContext';
 import { AuthManager } from './auth/AuthManager';
 
@@ -31,19 +31,19 @@ export class ConnectionDiag {
       { name: 'ログインページ', url: NicoApi.LOGIN },
       {
         name: '検索API (snapshot)',
-        url: `${NicoApi.SEARCH_API}?q=test&targets=title&_offset=0&_limit=1&_context=nndd-diag`
+        url: NicoEndpoint.searchSnapshot('q=test&targets=title&_offset=0&_limit=1&_context=nndd-diag')
       },
       {
         // nvComment は HEAD/GET 単体には 4xx/405 を返すため、
         // 実運用と同じ POST + 空 JSON で叩く (認証/threadKey 不要で接続性のみ判定する)。
         name: 'コメントサーバー',
-        url: NicoApi.COMMENT_THREADS_V3,
+        url: NicoEndpoint.commentThreads(NicoApi.NVCOMMENT_BASE),
         method: 'POST',
         body: '{}'
       },
       {
         name: 'マイリストAPI',
-        url: NicoApi.MYLIST_API_BASE
+        url: NicoEndpoint.myMylists()
       }
     ];
 

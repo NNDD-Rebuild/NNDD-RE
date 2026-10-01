@@ -1,11 +1,12 @@
 import type { Session } from 'electron';
+import { NicoApi } from '@shared/constants';
 import { NicoContext } from '../nicovideo/NicoContext';
 
 const NICO_URL_PATTERNS = [
   'https://*.nicovideo.jp/*',
   'https://*.dmc.nico/*',
   'https://dmc.nico/*',
-  'https://nvapi.nicovideo.jp/*',
+  `${NicoApi.NVAPI_BASE}/*`,
   'https://*.nimg.jp/*',
 ];
 

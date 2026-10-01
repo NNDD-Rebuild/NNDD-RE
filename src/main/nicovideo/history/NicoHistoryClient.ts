@@ -1,5 +1,5 @@
 import type { NicoWatchHistoryItem } from '@shared/types';
-import { NicoApi } from '@shared/constants';
+import { NicoEndpoint } from '@shared/constants';
 import { NicoContext } from '../NicoContext';
 import { createLogger } from '../../util/Logger';
 import type { NicoWatchHistoryDao } from '../../db/dao/NicoWatchHistoryDao';
@@ -37,7 +37,7 @@ export class NicoHistoryClient {
     const ctx = NicoContext.get();
     const params = new URLSearchParams({ selectContentType: 'long', limit: String(limit) });
     if (cursor) params.set('cursor', cursor);
-    const url = `${NicoApi.NVAPI_BASE}/v2/users/me/watch/history?${params.toString()}`;
+    const url = NicoEndpoint.watchHistory(params);
     const res = await ctx.http.getJson<NvApiWatchHistoryResponse>(url);
     if (res.meta?.status && res.meta.status >= 400) {
       throw new Error(`視聴履歴取得に失敗: status=${res.meta.status} errorCode=${res.meta.errorCode}`);
