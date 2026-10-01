@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { NNDDREComment, WatchPageInfo, DomandStreamCandidate, NicowariContent } from '@shared/types';
+import type { NNDDREComment, WatchPageInfo, DomandStreamCandidate, NicowariContent, OpenPlayerParams } from '@shared/types';
 import { IpcChannel } from '@shared/types';
 import { buildLocalUrl, isLocalMediaUrl, COMMENT_FONT_FAMILY } from '@shared/constants';
 import { VideoPlayer, type VideoPlayerHandle } from './components/player/VideoPlayer';
@@ -23,29 +23,7 @@ interface StreamProgress {
   message?: string;
 }
 
-interface InitParams {
-  videoId?: string;
-  localPath?: string;
-  /** LANライブラリのHTTPストリーミングURL */
-  streamUrl?: string;
-  folderPlaylist?: string[];
-  searchPlaylist?: string[];
-  localFiles?: {
-    commentXml?: string;
-    ownerCommentXml?: string;
-    thumbInfoXml?: string;
-    thumbImage?: string;
-    ichibaHtml?: string;
-    /** ユーザーニコ割SWF */
-    nicowari?: string[];
-  };
-  /** 音声のみ再生モード */
-  audioOnly?: boolean;
-  /** 自動再生による遷移か */
-  autoNext?: boolean;
-  /** レジューム再生開始秒数 */
-  resumeSec?: number;
-}
+type InitParams = OpenPlayerParams;
 
 /** 視聴履歴記録: 再生開始から 10 秒経過した時点で 1 度だけ書き込む */
 const HISTORY_RECORD_THRESHOLD_SEC = 10;

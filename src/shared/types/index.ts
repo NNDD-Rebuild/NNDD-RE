@@ -11,4 +11,5 @@ export * from './discordRpc';
 export * from './notification';
 export * from './live';
 export * from './nicowari';
+export * from './player';
 export * from './ipc';

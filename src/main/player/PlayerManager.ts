@@ -5,6 +5,7 @@ import { CommentWindowManager } from './CommentWindowManager';
 import { is } from '@electron-toolkit/utils';
 import { getConfigStore } from '../config/ConfigStore';
 import { VideoFileSuffix } from '@shared/constants';
+import type { OpenPlayerParams, PlayerLocalFiles } from '@shared/types';
 import { createLogger } from '../util/Logger';
 import { setupHlsSessionInterceptor } from './HlsSessionInterceptor';
 import { registerProtocolHandlerForSession } from './LocalVideoProtocol';
@@ -13,50 +14,15 @@ import { getDiscordRpcManager } from '../discord/DiscordRpcManager';
 
 const log = createLogger('PlayerManager');
 
-/**
- * 動画プレイヤー起動情報。
- *  - videoId 指定: ニコニコの動画をストリーミングする (master.m3u8経由)
- *  - localPath 指定: ローカルファイルを再生
- */
-export interface OpenPlayerParams {
-  /** ニコニコ動画ID (sm12345 等) — オンライン再生時のみ */
-  videoId?: string;
-  /** ローカル動画ファイルパス — ローカル再生時 */
-  localPath?: string;
-  /** フォルダ連続再生用: ソート済みローカルパス一覧 */
-  folderPlaylist?: string[];
-  /** 検索結果連続再生用: videoId の配列 */
-  searchPlaylist?: string[];
-  /** LANライブラリのHTTPストリーミングURL (例: http://192.168.x.x:12345/NNDDServer/sm123) */
-  streamUrl?: string;
-  /** ローカル再生時の付帯ファイル群 (コメントXML, サムネ画像など) */
-  localFiles?: {
-    commentXml?: string;
-    ownerCommentXml?: string;
-    thumbInfoXml?: string;
-    thumbImage?: string;
-    /** ニコニコ市場情報HTML (廃止済み、旧NNDDからの互換ファイル) */
-    ichibaHtml?: string;
-    /** 今コメント no 配列JSON (ストリーミング時と同等の今コメ再現用) */
-    nowCommentJson?: string;
-    /** ユーザーニコ割SWF (`[id][Nicowari][nm12345].swf`)。投稿者コメントの ＠CM で再生する */
-    nicowari?: string[];
-  };
-  /** 自動再生による遷移か (true なら最小化中のウィンドウを前面に出さない) */
-  autoNext?: boolean;
-  /** 音声のみ再生モード */
-  audioOnly?: boolean;
-  /** レジューム再生開始秒数 (VIDEO_OPEN_PLAYER ハンドラが DB から解決してセット) */
-  resumeSec?: number;
-}
+export type { OpenPlayerParams };
 
 /**
  * 動画プレイヤーウィンドウの管理。
  * 元: src/org/mineap/nndd/player/PlayerManager.as
- *   最大 10 プレイヤーまで同時起動可能 (元AS3版と同じ上限)。
+ *   プレイヤーは 1 ウィンドウのみ。開いていれば常にそれを再利用する
+ *   (hideWatchHistory の切替時だけ partition が変わるため作り直す)。
  */
 export class PlayerManager {
-  private static MAX_WINDOWS = 10;
   private static instance: PlayerManager | null = null;
 
   private windows = new Map<number, BrowserWindow>();
@@ -223,7 +189,7 @@ export class PlayerManager {
    *     `title - [id].jpg` (サムネ)
    *   旧形式 `[id]title.mp4` も後方互換で対応。
    */
-  resolveLocalFiles(videoPath: string): OpenPlayerParams['localFiles'] {
+  resolveLocalFiles(videoPath: string): PlayerLocalFiles {
     const dir = path.dirname(videoPath);
     const base = path.basename(videoPath).replace(/\.[^.]+$/, '');
     const pick = (suffix: string): string | undefined => {
