@@ -22,6 +22,7 @@ import {
 } from './hooks/player/playerUtils';
 import { usePlaylist } from './hooks/player/usePlaylist';
 import { useSidebarResize } from './hooks/player/useSidebarResize';
+import { useApplyTheme } from './hooks/useApplyTheme';
 import { useCommentRenderSettings } from './hooks/player/useCommentRenderSettings';
 import { useNiconicoEmbed } from './hooks/player/useNiconicoEmbed';
 import { useHistoryBlockedPrompt } from './hooks/player/useHistoryBlockedPrompt';
@@ -139,12 +140,7 @@ export default function PlayerApp(): JSX.Element {
     audioOnlyRef
   });
 
-  // テーマ適用
-  useEffect(() => {
-    window.nndd.invoke<'dark' | 'light'>(window.nndd.channels.CONFIG_GET, 'ui.theme')
-      .then((v) => { if (v === 'light') document.documentElement.classList.add('light'); })
-      .catch(() => {});
-  }, []);
+  useApplyTheme();
 
   const { sidebarWidth, isSidebarDragging, handleTabsOverflow, onSidebarDividerMouseDown } =
     useSidebarResize();

@@ -32,7 +32,8 @@ import { useLiveCommentRenderer } from './hooks/live/useLiveCommentRenderer';
 import { useLiveAroundFetch } from './hooks/live/useLiveAroundFetch';
 import { useLiveDiscordPresence } from './hooks/live/useLiveDiscordPresence';
 import { useLiveCommentWindow } from './hooks/live/useLiveCommentWindow';
-import { useLiveSidebarResize } from './hooks/live/useLiveSidebarResize';
+import { useSidebarResize } from './hooks/player/useSidebarResize';
+import { useApplyTheme } from './hooks/useApplyTheme';
 import { useLiveMoveOrder } from './hooks/live/useLiveMoveOrder';
 
 /** タイムシフト予約・視聴開始が必要なときに main から返るエラーコード (LiveWatchPage.ts) */
@@ -48,7 +49,7 @@ const TIMESHIFT_ACTIVATION_REQUIRED = '[TIMESHIFT_ACTIVATION_REQUIRED]';
  * - useLiveCommentFeed: 生コメント・過去コメントを描画エンジンとコメントリストへ流す
  * - useLiveHls / useLiveCommentRenderer: 映像の再生とコメント描画
  * - useLiveAroundFetch: 周辺取得モードのコメント取得
- * - useLiveDiscordPresence / useLiveCommentWindow / useLiveSidebarResize / useLiveMoveOrder
+ * - useLiveDiscordPresence / useLiveCommentWindow / useLiveMoveOrder
  * useEffect の実行順は分割前と同じになるよう、フックの呼び出し順を保っている。
  */
 export default function LivePlayerApp(): JSX.Element {
@@ -122,7 +123,8 @@ export default function LivePlayerApp(): JSX.Element {
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
   const [ngList, setNgList] = useState<NgListItem[]>([]);
   const [ssngList, setSsngList] = useState<NgListItem[]>([]);
-  const { sidebarWidth, setSidebarWidth, isSidebarDragging, onSidebarDividerMouseDown } = useLiveSidebarResize();
+  const { sidebarWidth, isSidebarDragging, onSidebarDividerMouseDown } = useSidebarResize();
+  useApplyTheme();
   const [quality, setQuality] = useState('abr');
   const [qualities, setQualities] = useState<string[]>([]);
   const [streamUri, setStreamUri] = useState('');
@@ -399,23 +401,11 @@ export default function LivePlayerApp(): JSX.Element {
     if (video?.paused) void video.play().catch(() => {});
   };
 
-  // ---- テーマ・NGリスト・サイドパネル幅 (通常プレイヤーと共通の設定) ----
+  // ---- NGリスト ----
   useEffect(() => {
-    window.nndd
-      .invoke<'dark' | 'light'>(IpcChannel.CONFIG_GET, 'ui.theme')
-      .then((v) => {
-        if (v === 'light') document.documentElement.classList.add('light');
-      })
-      .catch(() => {});
     window.nndd
       .invoke<NgListItem[]>(IpcChannel.NG_LIST_COMMENT)
       .then(setNgList)
-      .catch(() => {});
-    window.nndd
-      .invoke<number>(IpcChannel.CONFIG_GET, 'player.sidebarWidth')
-      .then((w) => {
-        if (w && w > 0) setSidebarWidth(w);
-      })
       .catch(() => {});
   }, []);
 
