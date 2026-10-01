@@ -11,6 +11,7 @@ import { ensureCommandResolved } from './util/commentCommands';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useConfig } from './hooks/useConfig';
 import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
+import { extractBracketedVideoId } from '@shared/utils/videoId';
 import {
   pickDefaultQualityId,
   readLocalComments,
@@ -444,8 +445,8 @@ export default function PlayerApp(): JSX.Element {
     setIsHls(false);
     resumeFinishedRef.current = false;
     // ローカルの場合 videoId はファイル名から推測 (例: [sm12345]タイトル.mp4)
-    const m = localPath.match(/\[((?:sm|nm|so|ax|sd|ca|cd|cw|zb|ze|yo)\d+)\]/);
-    const guessId = m ? m[1] : localPath;
+    const extractedId = extractBracketedVideoId(localPath);
+    const guessId = extractedId ?? localPath;
     const titleGuess =
       localPath
         .split(/[\\/]/)
@@ -497,7 +498,7 @@ export default function PlayerApp(): JSX.Element {
     ]);
 
     // ローカルXMLにはシリーズ情報がないため、ニコニコIDが特定できる場合はAPIから非同期補完
-    if (m) {
+    if (extractedId) {
       window.nndd
         .invoke<WatchPageInfo | null>(window.nndd.channels.VIDEO_GET_WATCH_INFO, guessId)
         .then((online) => {

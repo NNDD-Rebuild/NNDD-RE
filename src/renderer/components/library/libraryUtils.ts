@@ -1,5 +1,6 @@
 import type { NNDDREVideo } from '@shared/types';
 import { buildLocalUrl } from '@shared/constants';
+import { extractBracketedVideoId } from '@shared/utils/videoId';
 
 export type ViewMode = 'tag' | 'folder';
 export type LibraryDisplayMode = 'table' | 'grid';
@@ -27,9 +28,9 @@ export interface LibraryItemHandlers {
   onDelete: (v: NNDDREVideo) => void;
 }
 
+/** ライブラリ動画名 (`タイトル - [sm12345]`) から動画IDを取り出す。無ければ null */
 export function extractVideoId(videoName: string): string | null {
-  const m = videoName.match(/\[((?:sm|nm|so|ax|sd|ca|cd|cw|zb|ze|yo)\d+)\]/);
-  return m ? m[1] : null;
+  return extractBracketedVideoId(videoName);
 }
 
 export function thumbPrimaryUrl(v: NNDDREVideo): string {

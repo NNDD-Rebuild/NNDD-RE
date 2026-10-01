@@ -232,8 +232,7 @@ export function LibraryView(): JSX.Element {
   };
 
   const handleOpenNiconico = (v: NNDDREVideo): void => {
-    const m = v.videoName.match(/\[((?:sm|nm|so|ax|sd|ca|cd|cw|zb|ze|yo)\d+)\]/);
-    const videoId = m ? m[1] : null;
+    const videoId = extractVideoId(v.videoName);
     if (!videoId) return;
     window.nndd.invoke(window.nndd.channels.SYS_OPEN_PATH, watchUrl(videoId));
   };
