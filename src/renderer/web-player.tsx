@@ -13,7 +13,8 @@ import './styles/global.css';
 ReactDOM.createRoot(document.getElementById('player-root')!).render(
   <React.StrictMode>
     <PlayerApp />
-    <WebBackButton />
+    {/* 単独ページなのでアプリ内履歴は無い。web-app.tsx の goLibrary の非 inApp 時と同じくライブラリへ */}
+    <WebBackButton onBack={() => location.assign('/library')} />
     <WebAutoPlay />
   </React.StrictMode>
 );
