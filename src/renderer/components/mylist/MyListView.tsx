@@ -8,6 +8,7 @@ import { VirtualizedItemList } from '../common/VirtualizedItemList';
 import { ContinuousPlayButton } from '../common/ContinuousPlayButton';
 import { useAppStore } from '../../store/useAppStore';
 import { useWatchedIds } from '@renderer/hooks/useWatchedIds';
+import { useLibraryCheck } from '@renderer/hooks/useLibraryCheck';
 
 type Selected =
   | { kind: 'mylist'; mylist: MyList }
@@ -83,7 +84,7 @@ export function MyListView(): JSX.Element {
   const [bulkDling, setBulkDling] = useState(false);
   const [bulkMenuOpen, setBulkMenuOpen] = useState(false);
   const bulkMenuRef = useRef<HTMLDivElement>(null);
-  const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
+  const { downloadedIds, checkDownloaded } = useLibraryCheck();
   const videoIds = useMemo(() => items.map((it) => it.videoId), [items]);
   const watchedIds = useWatchedIds(videoIds);
 
@@ -198,11 +199,7 @@ export function MyListView(): JSX.Element {
           pubDate: new Date(it.pubDate),
         }));
         setItems(seriesMapped.map(mylistItemToCard));
-        const seriesIds = seriesMapped.map((i) => i.videoId);
-        window.nndd
-          .invoke<string[]>(IpcChannel.LIBRARY_CHECK_BATCH, seriesIds)
-          .then((dl) => setDownloadedIds(new Set(dl)))
-          .catch(() => {});
+        void checkDownloaded(seriesMapped.map((i) => i.videoId));
       } finally {
         setLoading(false);
       }
@@ -263,10 +260,7 @@ export function MyListView(): JSX.Element {
         const mapped = result.items.map((it) => ({ ...it, pubDate: new Date(it.pubDate) }));
         setItems(mapped.map(mylistItemToCard));
         setTotalItems(mapped.length);
-        window.nndd
-          .invoke<string[]>(IpcChannel.LIBRARY_CHECK_BATCH, mapped.map((i) => i.videoId))
-          .then((dl) => setDownloadedIds(new Set(dl)))
-          .catch(() => {});
+        void checkDownloaded(mapped.map((i) => i.videoId));
       } else {
         const data = await window.nndd.invoke<{ items: MyListItem[]; total: number }>(
           IpcChannel.MYLIST_FETCH_PAGE,
@@ -275,10 +269,7 @@ export function MyListView(): JSX.Element {
         const mapped = data.items.map((d) => ({ ...d, pubDate: new Date(d.pubDate) }));
         setItems(mapped.map(mylistItemToCard));
         setTotalItems(data.total);
-        window.nndd
-          .invoke<string[]>(IpcChannel.LIBRARY_CHECK_BATCH, mapped.map((i) => i.videoId))
-          .then((dl) => setDownloadedIds(new Set(dl)))
-          .catch(() => {});
+        void checkDownloaded(mapped.map((i) => i.videoId));
       }
     } catch (e) {
       setError(toUserFriendlyErrorMessage(e));
@@ -304,10 +295,7 @@ export function MyListView(): JSX.Element {
       const list = await window.nndd.invoke<PlaylistItem[]>(IpcChannel.PLAYLIST_GET_ITEMS, pl.id);
       setItems(list.map(playlistItemToCard));
       setTotalItems(list.length);
-      window.nndd
-        .invoke<string[]>(IpcChannel.LIBRARY_CHECK_BATCH, list.map((it) => it.videoId))
-        .then((dl) => setDownloadedIds(new Set(dl)))
-        .catch(() => {});
+      void checkDownloaded(list.map((it) => it.videoId));
     } catch (e) {
       setError(toUserFriendlyErrorMessage(e));
       setItems([]);
@@ -687,11 +675,7 @@ export function MyListView(): JSX.Element {
         }
         setAllItems(all);
         candidates = all;
-        const dl = await window.nndd
-          .invoke<string[]>(IpcChannel.LIBRARY_CHECK_BATCH, all.map((i) => i.videoId))
-          .catch(() => []);
-        dlSet = new Set(dl);
-        setDownloadedIds(dlSet);
+        dlSet = (await checkDownloaded(all.map((i) => i.videoId))) ?? new Set();
       } else {
         candidates = filteredItems;
       }

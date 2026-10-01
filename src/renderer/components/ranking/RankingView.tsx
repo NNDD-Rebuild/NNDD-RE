@@ -6,6 +6,7 @@ import { VirtualizedItemList } from '../common/VirtualizedItemList';
 import { useAppStore } from '@renderer/store/useAppStore';
 import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
 import { useWatchedIds } from '@renderer/hooks/useWatchedIds';
+import { useLibraryCheck } from '@renderer/hooks/useLibraryCheck';
 
 const ALL_TAG = '';
 
@@ -22,7 +23,7 @@ export function RankingView(): JSX.Element {
   const [items, setItems] = useState<RankingItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
+  const { downloadedIds, checkDownloaded } = useLibraryCheck();
   const videoIds = useMemo(() => items.map((i) => i.videoId), [items]);
   const watchedIds = useWatchedIds(videoIds);
   const globalMode = useAppStore((s) => s.contentViewMode);
@@ -60,11 +61,7 @@ export function RankingView(): JSX.Element {
       const mapped = res.items.map((d) => ({ ...d, registeredAt: new Date(d.registeredAt) }));
       setItems(mapped);
       setTrendTags(res.trendTags ?? []);
-      const ids = mapped.map((d) => d.videoId);
-      window.nndd
-        .invoke<string[]>(window.nndd.channels.LIBRARY_CHECK_BATCH, ids)
-        .then((dl) => setDownloadedIds(new Set(dl)))
-        .catch(() => {});
+      void checkDownloaded(mapped.map((d) => d.videoId));
     } catch (e) {
       setError(toUserFriendlyErrorMessage(e));
     } finally {

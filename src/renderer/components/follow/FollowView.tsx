@@ -7,6 +7,7 @@ import { VirtualizedItemList } from '../common/VirtualizedItemList';
 import { useAppStore } from '@renderer/store/useAppStore';
 import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
 import { useWatchedIds } from '@renderer/hooks/useWatchedIds';
+import { useLibraryCheck } from '@renderer/hooks/useLibraryCheck';
 
 interface FeedResult {
   items: SearchResultItem[];
@@ -117,7 +118,7 @@ export function FollowView(): JSX.Element {
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   /** フォロー外ユーザーの一時表示用 (pendingFollowUser経由)。followUsersには追加しない */
   const [extraUser, setExtraUser] = useState<FollowingUser | null>(null);
-  const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
+  const { downloadedIds, checkDownloaded } = useLibraryCheck();
   const globalMode = useAppStore((s) => s.contentViewMode);
   const showToast = useAppStore((s) => s.showToast);
   const pendingFollowUser = useAppStore((s) => s.pendingFollowUser);
@@ -142,15 +143,6 @@ export function FollowView(): JSX.Element {
   // hasNext 計算
   const userHasNext = userApiPage * LIMIT < userTotalCount;
 
-  // --- ライブラリ済みチェック ---
-  const checkDownloaded = useCallback((items: SearchResultItem[]): void => {
-    const ids = items.map((i) => i.videoId);
-    window.nndd
-      .invoke<string[]>(window.nndd.channels.LIBRARY_CHECK_BATCH, ids)
-      .then((dl) => setDownloadedIds(new Set(dl)))
-      .catch(() => {});
-  }, []);
-
   // --- 全体フィード取得 ---
   const fetchAll = useCallback(async (untilId: string | null): Promise<void> => {
     if (allFetchingRef.current) return;
@@ -162,7 +154,7 @@ export function FollowView(): JSX.Element {
       setAllItems(r.items);
       setAllHasNext(r.hasNext);
       allNextCursorRef.current = r.nextCursor;
-      checkDownloaded(r.items);
+      void checkDownloaded(r.items.map((i) => i.videoId));
     } catch (e) {
       setAllError(toUserFriendlyErrorMessage(e));
     } finally {
@@ -189,7 +181,7 @@ export function FollowView(): JSX.Element {
       setUserItems(r.items);
       setUserTotalCount(r.totalCount ?? 0);
       setUserApiPage(page);
-      checkDownloaded(r.items);
+      void checkDownloaded(r.items.map((i) => i.videoId));
     } catch (e) {
       setUserError(toUserFriendlyErrorMessage(e));
     } finally {

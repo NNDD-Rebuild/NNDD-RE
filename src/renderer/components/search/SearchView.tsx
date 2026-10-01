@@ -12,6 +12,7 @@ import { ContinuousPlayButton } from '../common/ContinuousPlayButton';
 import { useAppStore } from '@renderer/store/useAppStore';
 import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
 import { useWatchedIds } from '@renderer/hooks/useWatchedIds';
+import { useLibraryCheck } from '@renderer/hooks/useLibraryCheck';
 
 /**
  * 検索タブ。
@@ -61,7 +62,7 @@ export function SearchView(): JSX.Element {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedSearches, setSavedSearches] = useState<SearchItem[]>([]);
-  const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
+  const { downloadedIds, checkDownloaded } = useLibraryCheck();
   const videoIds = useMemo(() => results.map((r) => r.videoId), [results]);
   const watchedIds = useWatchedIds(videoIds);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -114,11 +115,7 @@ export function SearchView(): JSX.Element {
       .then((r) => {
         setResults(r.items);
         setTotal(r.totalCount);
-        const ids = r.items.map((i) => i.videoId);
-        window.nndd
-          .invoke<string[]>(window.nndd.channels.LIBRARY_CHECK_BATCH, ids)
-          .then((dl) => setDownloadedIds(new Set(dl)))
-          .catch(() => {});
+        void checkDownloaded(r.items.map((i) => i.videoId));
       })
       .catch((e) => setError(toUserFriendlyErrorMessage(e)))
       .finally(() => setLoading(false));
@@ -172,11 +169,7 @@ export function SearchView(): JSX.Element {
       setTotal(r.totalCount);
       setPage(targetPage);
       scrollRef.current?.scrollTo({ top: 0 });
-      const ids = r.items.map((i) => i.videoId);
-      window.nndd
-        .invoke<string[]>(window.nndd.channels.LIBRARY_CHECK_BATCH, ids)
-        .then((dl) => setDownloadedIds(new Set(dl)))
-        .catch(() => {});
+      void checkDownloaded(r.items.map((i) => i.videoId));
     } catch (e) {
       setError(toUserFriendlyErrorMessage(e));
     } finally {
