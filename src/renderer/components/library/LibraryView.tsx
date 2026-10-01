@@ -1,156 +1,28 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { NNDDREVideo } from '@shared/types';
 import { IpcChannel } from '@shared/types';
-import { buildLocalUrl } from '@shared/constants';
-import { ContinuousPlayButton } from '../common/ContinuousPlayButton';
 import { ContextMenuPopup, MenuItem } from '../common/VideoCard';
 import { useAppStore } from '@renderer/store/useAppStore';
-
-type ViewMode = 'tag' | 'folder';
-type LibraryDisplayMode = 'table' | 'grid';
-type SortCol = 'videoName' | 'time' | 'playCount' | 'pubDate' | 'creationDate';
-type SortDir = 'asc' | 'desc';
-
-interface LanVideo {
-  videoId: string;
-  filename: string;
-  isEconomy: boolean;
-}
-
-const LAN_FOLDER = '__lan__';
-
-interface FolderNode {
-  path: string;
-  name: string;
-  children: FolderNode[];
-}
-
-/**
- * フルパスのフラットな一覧をprefix関係から親子ツリーに組み立てる。
- * DB/ファイル一覧はフラットなまま(パス文字列)保持し、表示時にのみツリー化する。
- */
-function buildFolderTree(paths: string[]): FolderNode[] {
-  const sorted = [...paths].sort((a, b) => a.length - b.length);
-  const nodeByPath = new Map<string, FolderNode>();
-  const roots: FolderNode[] = [];
-  for (const p of sorted) {
-    const node: FolderNode = { path: p, name: p.split(/[/\\]/).pop() || p, children: [] };
-    nodeByPath.set(p, node);
-    let parent: FolderNode | undefined;
-    let bestLen = -1;
-    for (const [candPath, candNode] of nodeByPath) {
-      if (candPath === p) continue;
-      if ((p.startsWith(candPath + '/') || p.startsWith(candPath + '\\')) && candPath.length > bestLen) {
-        parent = candNode;
-        bestLen = candPath.length;
-      }
-    }
-    if (parent) parent.children.push(node);
-    else roots.push(node);
-  }
-  const sortChildren = (nodes: FolderNode[]): void => {
-    nodes.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
-    for (const n of nodes) sortChildren(n.children);
-  };
-  sortChildren(roots);
-  return roots;
-}
-
-function FolderTreeItem({
-  node,
-  depth,
-  selectedFolder,
-  dragOverFolder,
-  expanded,
-  videoCounts,
-  onSelect,
-  onToggleExpand,
-  onDelete,
-  onDragOverFolder,
-  onDragLeaveFolder,
-  onDropFolder
-}: {
-  node: FolderNode;
-  depth: number;
-  selectedFolder: string | null;
-  dragOverFolder: string | null;
-  expanded: Set<string>;
-  videoCounts: Map<string, number>;
-  onSelect: (path: string) => void;
-  onToggleExpand: (path: string) => void;
-  onDelete: (path: string) => void;
-  onDragOverFolder: (path: string, e: React.DragEvent) => void;
-  onDragLeaveFolder: () => void;
-  onDropFolder: (e: React.DragEvent, path: string) => void;
-}): JSX.Element {
-  const isOpen = expanded.has(node.path);
-  const count = videoCounts.get(node.path) ?? 0;
-  const hasChildren = node.children.length > 0;
-  return (
-    <div>
-      <div
-        className={[
-          'flex items-center gap-1 rounded text-xs group',
-          selectedFolder === node.path
-            ? 'bg-nndd-accent text-white'
-            : dragOverFolder === node.path
-            ? 'bg-nndd-accent/50 ring-1 ring-nndd-accent'
-            : 'hover:bg-nndd-border'
-        ].join(' ')}
-        style={{ paddingLeft: depth * 12 }}
-        onDragOver={(e) => onDragOverFolder(node.path, e)}
-        onDragLeave={onDragLeaveFolder}
-        onDrop={(e) => void onDropFolder(e, node.path)}
-      >
-        <button
-          onClick={() => onToggleExpand(node.path)}
-          className="shrink-0 w-3 text-center opacity-70"
-        >
-          {hasChildren ? (isOpen ? '▾' : '▸') : ''}
-        </button>
-        <button
-          onClick={() => onSelect(node.path)}
-          className="flex-1 text-left px-1 py-0.5 truncate"
-          title={node.path}
-        >
-          {node.name} <span className="text-[10px] opacity-70">({count})</span>
-        </button>
-        <button
-          onClick={(e) => { e.stopPropagation(); onDelete(node.path); }}
-          className="shrink-0 px-1 py-0.5 opacity-0 group-hover:opacity-100 hover:text-red-500 dark:hover:text-red-400 transition-opacity"
-          title="フォルダ削除"
-        >
-          🗑
-        </button>
-      </div>
-      {hasChildren && isOpen && (
-        <div>
-          {node.children.map((child) => (
-            <FolderTreeItem
-              key={child.path}
-              node={child}
-              depth={depth + 1}
-              selectedFolder={selectedFolder}
-              dragOverFolder={dragOverFolder}
-              expanded={expanded}
-              videoCounts={videoCounts}
-              onSelect={onSelect}
-              onToggleExpand={onToggleExpand}
-              onDelete={onDelete}
-              onDragOverFolder={onDragOverFolder}
-              onDragLeaveFolder={onDragLeaveFolder}
-              onDropFolder={onDropFolder}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+import { useLibraryVideos } from '@renderer/hooks/library/useLibraryVideos';
+import { useLibraryFolderTree } from '@renderer/hooks/library/useLibraryFolderTree';
+import { useLanLibrary } from '@renderer/hooks/library/useLanLibrary';
+import { useLibraryFolderCreate } from '@renderer/hooks/library/useLibraryFolderCreate';
+import {
+  LAN_FOLDER,
+  extractVideoId,
+  type LibraryDisplayMode,
+  type LibraryItemHandlers,
+  type SortCol,
+  type SortDir,
+  type ViewMode
+} from './libraryUtils';
+import { FolderCreateArea, LibraryFolderList, LibraryTagList, TabBtn } from './LibrarySidebarParts';
+import { LanLibraryPane } from './LanLibraryPane';
+import { LibraryToolbar } from './LibraryToolbar';
+import { LibraryGridView } from './LibraryGridView';
+import { LibraryTableView } from './LibraryTableView';
 
 export function LibraryView(): JSX.Element {
-  const [videos, setVideos] = useState<NNDDREVideo[]>([]);
-  const [loading, setLoading] = useState(true);
   const [scanning, setScanning] = useState(false);
   const [selected, setSelected] = useState<number | null>(null);
   const [mode, setMode] = useState<ViewMode>('folder');
@@ -166,11 +38,7 @@ export function LibraryView(): JSX.Element {
 
   // LAN
   const [lanEnabled, setLanEnabled] = useState(false);
-  const [lanVideos, setLanVideos] = useState<LanVideo[]>([]);
-  const [lanReachable, setLanReachable] = useState<boolean | null>(null);
-  const [lanLoading, setLanLoading] = useState(false);
-  const [playingLanId, setPlayingLanId] = useState<string | null>(null);
-  const [lanSearchText, setLanSearchText] = useState('');
+  const lan = useLanLibrary();
 
   useEffect(() => {
     window.nndd.invoke<SortCol>(window.nndd.channels.CONFIG_GET, 'ui.librarySortCol')
@@ -188,111 +56,16 @@ export function LibraryView(): JSX.Element {
 
   useEffect(() => { setDisplayMode(globalLibraryMode); }, [globalLibraryMode]);
 
-  const [showFolderInput, setShowFolderInput] = useState(false);
-  const [newFolderName, setNewFolderName] = useState('');
-  const [folderCreateError, setFolderCreateError] = useState<string | null>(null);
-  const [fsFolders, setFsFolders] = useState<string[]>([]);
-  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
-
   const [selectedVideoIds, setSelectedVideoIds] = useState<Set<number>>(new Set());
   const lastClickedIdRef = useRef<number | null>(null);
   const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
   const [moveError, setMoveError] = useState<string | null>(null);
   const [moving, setMoving] = useState(false);
 
-  // 再読み込みは表示中の一覧を残したまま裏で差し替える (「読み込み中…」表示にすると
-  // 一覧がアンマウントされスクロール位置が失われるため、それは初回ロード時だけ)。
-  // 連続で呼ばれた場合は最後に投げた要求の結果だけを反映する。
-  const reloadSeqRef = useRef(0);
-  const reload = (): void => {
-    const seq = ++reloadSeqRef.current;
-    Promise.all([
-      window.nndd.invoke<NNDDREVideo[]>(window.nndd.channels.LIBRARY_LIST),
-      window.nndd.invoke<string[]>(window.nndd.channels.LIBRARY_FOLDER_LIST)
-    ])
-      .then(([rows, dirs]) => {
-        if (seq !== reloadSeqRef.current) return;
-        const fixed = rows.map((v) => ({
-          ...v,
-          modificationDate: new Date(v.modificationDate),
-          creationDate: new Date(v.creationDate),
-          lastPlayDate: v.lastPlayDate ? new Date(v.lastPlayDate) : null,
-          pubDate: v.pubDate ? new Date(v.pubDate) : null
-        }));
-        setVideos(fixed);
-        setFsFolders(dirs);
-        setLoading(false);
-      })
-      .catch(() => {
-        if (seq === reloadSeqRef.current) setLoading(false);
-      });
-  };
+  // 動画一覧の読み込み (初回・タブ復帰時・DL 完了時に reload)
+  const { videos, setVideos, loading, fsFolders, reload } = useLibraryVideos();
 
-  useEffect(reload, []);
-
-  // タブ切替ではアンマウントせず状態 (選択フォルダ・検索語・スクロール位置等) を保持する。
-  // 非表示中にプレイヤー側で再生回数・お気に入り等が変わっている可能性があるため、
-  // ライブラリタブに戻ったときは裏で最新の一覧を取り直す。
-  const activeTab = useAppStore((s) => s.activeTab);
-  const wasActiveRef = useRef(activeTab === 'library');
-  useEffect(() => {
-    const isActive = activeTab === 'library';
-    if (isActive && !wasActiveRef.current) reload();
-    wasActiveRef.current = isActive;
-  }, [activeTab]);
-
-  useEffect(() => {
-    const off = window.nndd.on(
-      window.nndd.channels.DOWNLOAD_PROGRESS_EVENT,
-      (...args: unknown[]) => {
-        const item = args[0] as { status?: string } | null;
-        if (item?.status === 'success') reload();
-      }
-    );
-    return off;
-  }, []);
-
-  const loadLan = async (): Promise<void> => {
-    setLanLoading(true);
-    try {
-      const status = await window.nndd.invoke<{ reachable: boolean }>(window.nndd.channels.LAN_STATUS);
-      setLanReachable(status.reachable);
-      if (status.reachable) {
-        const list = await window.nndd.invoke<LanVideo[]>(window.nndd.channels.LAN_LIBRARY_LIST);
-        setLanVideos(list);
-      } else {
-        setLanVideos([]);
-      }
-    } catch {
-      setLanReachable(false);
-      setLanVideos([]);
-    } finally {
-      setLanLoading(false);
-    }
-  };
-
-  const handleLanPlay = async (videoId: string): Promise<void> => {
-    setPlayingLanId(videoId);
-    try {
-      const detail = await window.nndd.invoke<{
-        videoId: string;
-        videoUrl: string;
-        extension: string;
-        filename: string;
-      } | null>(window.nndd.channels.LAN_VIDEO_STREAM, videoId);
-      if (!detail) {
-        alert('動画情報の取得に失敗しました');
-        return;
-      }
-      await window.nndd.invoke(window.nndd.channels.VIDEO_OPEN_PLAYER, {
-        streamUrl: detail.videoUrl
-      });
-    } catch (e) {
-      alert(e instanceof Error ? e.message : String(e));
-    } finally {
-      setPlayingLanId(null);
-    }
-  };
+  const folderCreate = useLibraryFolderCreate(reload);
 
   const tagStats = useMemo(() => {
     const map = new Map<string, number>();
@@ -304,48 +77,8 @@ export function LibraryView(): JSX.Element {
     return [...map.entries()].sort((a, b) => b[1] - a[1]);
   }, [videos]);
 
-  const folders = useMemo(() => {
-    const set = new Set<string>();
-    for (const v of videos) {
-      const d = v.uri.replace(/[/\\][^/\\]+$/, '');
-      set.add(d);
-    }
-    for (const d of fsFolders) {
-      set.add(d);
-    }
-    return [...set].sort();
-  }, [videos, fsFolders]);
-
-  const folderTree = useMemo(() => buildFolderTree(folders), [folders]);
-
-  // 初回ロード時のみ第一階層 (ツリーのルート) を展開状態にする
-  const initialExpandDoneRef = useRef(false);
-  useEffect(() => {
-    if (initialExpandDoneRef.current || folderTree.length === 0) return;
-    initialExpandDoneRef.current = true;
-    setExpandedFolders((prev) => {
-      const next = new Set(prev);
-      for (const n of folderTree) next.add(n.path);
-      return next;
-    });
-  }, [folderTree]);
-
-  const folderVideoCounts = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const v of videos) {
-      const d = v.uri.replace(/[/\\][^/\\]+$/, '');
-      map.set(d, (map.get(d) ?? 0) + 1);
-    }
-    return map;
-  }, [videos]);
-
-  const toggleFolderExpand = (path: string): void => {
-    setExpandedFolders((prev) => {
-      const next = new Set(prev);
-      if (next.has(path)) next.delete(path); else next.add(path);
-      return next;
-    });
-  };
+  const { folderTree, folderVideoCounts, expandedFolders, toggleFolderExpand } =
+    useLibraryFolderTree(videos, fsFolders);
 
   const handleFolderDragOver = (path: string, e: React.DragEvent): void => {
     if (e.dataTransfer.types.includes('application/nndd-video-ids')) {
@@ -504,11 +237,6 @@ export function LibraryView(): JSX.Element {
     window.nndd.invoke(window.nndd.channels.SYS_OPEN_PATH, `https://www.nicovideo.jp/watch/${videoId}`);
   };
 
-  const extractVideoId = (videoName: string): string | null => {
-    const m = videoName.match(/\[((?:sm|nm|so|ax|sd|ca|cd|cw|zb|ze|yo)\d+)\]/);
-    return m ? m[1] : null;
-  };
-
   const handleScan = async (): Promise<void> => {
     setScanning(true);
     try {
@@ -516,20 +244,6 @@ export function LibraryView(): JSX.Element {
       reload();
     } finally {
       setScanning(false);
-    }
-  };
-
-  const handleFolderCreate = async (): Promise<void> => {
-    const name = newFolderName.trim();
-    if (!name) return;
-    setFolderCreateError(null);
-    try {
-      await window.nndd.invoke(IpcChannel.LIBRARY_FOLDER_CREATE, name);
-      setNewFolderName('');
-      setShowFolderInput(false);
-      reload();
-    } catch (e) {
-      setFolderCreateError(e instanceof Error ? e.message : String(e));
     }
   };
 
@@ -544,13 +258,33 @@ export function LibraryView(): JSX.Element {
     reload();
   };
 
-  const thumbPrimaryUrl = (v: NNDDREVideo): string => {
-    const base = v.uri.replace(/\.[^.]+$/, '');
-    return buildLocalUrl(base + '[ThumbImg].jpeg');
+  /** 表示中の一覧を連続再生 (選択中の動画、なければクリック中の動画、なければ先頭から) */
+  const handleContinuousPlay = (audioOnly: boolean): void => {
+    if (sorted.length === 0) return;
+    const paths = sorted.map((x) => x.uri);
+    const startIdx = selectedVideoIds.size > 0
+      ? sorted.findIndex((x) => selectedVideoIds.has(x.id))
+      : selected !== null
+      ? sorted.findIndex((x) => x.id === selected)
+      : 0;
+    const startVideo = sorted[startIdx >= 0 ? startIdx : 0];
+    window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
+      localPath: startVideo.uri,
+      videoId: extractVideoId(startVideo.videoName) ?? undefined,
+      folderPlaylist: paths,
+      audioOnly: audioOnly || undefined,
+    });
   };
-  const thumbFallbackUrl = (v: NNDDREVideo): string => {
-    const base = v.uri.replace(/\.[^.]+$/, '');
-    return buildLocalUrl(base + '.jpg');
+
+  const itemHandlers: LibraryItemHandlers = {
+    onClick: handleVideoClick,
+    onPlay: handlePlay,
+    onDragStart: handleVideoDragStart,
+    onContextMenu: handleVideoContextMenu,
+    onToggleFavorite: handleToggleFavorite,
+    onOpenFolder: handleOpenFolder,
+    onOpenNiconico: handleOpenNiconico,
+    onDelete: handleDelete
   };
 
   const isLanTab = selectedFolder === LAN_FOLDER;
@@ -566,141 +300,45 @@ export function LibraryView(): JSX.Element {
 
         <div className="flex-1 overflow-auto p-2 text-sm">
           {mode === 'tag' && (
-            <>
-              {tagStats.length === 0 && (
-                <div className="text-xs text-nndd-subtext">タグなし</div>
-              )}
-              {tagStats.map(([t, n]) => (
-                <button
-                  key={t}
-                  onClick={() => setSelectedTag(t)}
-                  className={[
-                    'block w-full text-left px-2 py-0.5 rounded text-xs',
-                    selectedTag === t
-                      ? 'bg-nndd-accent text-white'
-                      : 'hover:bg-nndd-border'
-                  ].join(' ')}
-                >
-                  {t}{' '}
-                  <span className="text-nndd-subtext text-[10px]">({n})</span>
-                </button>
-              ))}
-            </>
+            <LibraryTagList tagStats={tagStats} selectedTag={selectedTag} onSelectTag={setSelectedTag} />
           )}
 
           {mode === 'folder' && (
-            <>
-              {/* すべて */}
-              <button
-                onClick={() => setSelectedFolder(null)}
-                className={[
-                  'block w-full text-left px-2 py-0.5 rounded text-xs mb-1',
-                  selectedFolder === null
-                    ? 'bg-nndd-accent text-white'
-                    : 'hover:bg-nndd-border'
-                ].join(' ')}
-              >
-                すべて <span className="text-[10px] opacity-70">({videos.length})</span>
-              </button>
-
-              {folderTree.length === 0 && (
-                <div className="text-xs text-nndd-subtext">フォルダなし</div>
-              )}
-              {folderTree.map((node) => (
-                <FolderTreeItem
-                  key={node.path}
-                  node={node}
-                  depth={0}
-                  selectedFolder={selectedFolder}
-                  dragOverFolder={dragOverFolder}
-                  expanded={expandedFolders}
-                  videoCounts={folderVideoCounts}
-                  onSelect={setSelectedFolder}
-                  onToggleExpand={toggleFolderExpand}
-                  onDelete={(path) => void handleFolderDelete(path)}
-                  onDragOverFolder={handleFolderDragOver}
-                  onDragLeaveFolder={() => setDragOverFolder(null)}
-                  onDropFolder={handleFolderDrop}
-                />
-              ))}
-
-              {/* LANライブラリ */}
-              {lanEnabled && (
-                <div className="mt-2 pt-2 border-t border-nndd-border">
-                  <button
-                    onClick={() => {
-                      setSelectedFolder(LAN_FOLDER);
-                      void loadLan();
-                    }}
-                    className={[
-                      'flex items-center gap-1 w-full text-left px-2 py-0.5 rounded text-xs',
-                      isLanTab
-                        ? 'bg-nndd-accent text-white'
-                        : 'hover:bg-nndd-border'
-                    ].join(' ')}
-                  >
-                    <span>LANライブラリ</span>
-                    {lanReachable === true && (
-                      <span className={isLanTab ? 'text-green-200' : 'text-green-400'}>●</span>
-                    )}
-                    {lanReachable === false && (
-                      <span className={isLanTab ? 'text-red-200' : 'text-red-400'}>●</span>
-                    )}
-                    {isLanTab && !lanLoading && (
-                      <span className="text-[10px] opacity-70">({lanVideos.length})</span>
-                    )}
-                    {lanLoading && <span className="text-[10px] opacity-70">…</span>}
-                  </button>
-                </div>
-              )}
-            </>
+            <LibraryFolderList
+              totalCount={videos.length}
+              selectedFolder={selectedFolder}
+              onSelectFolder={setSelectedFolder}
+              folderTree={folderTree}
+              dragOverFolder={dragOverFolder}
+              expandedFolders={expandedFolders}
+              folderVideoCounts={folderVideoCounts}
+              onToggleExpand={toggleFolderExpand}
+              onDeleteFolder={(path) => void handleFolderDelete(path)}
+              onDragOverFolder={handleFolderDragOver}
+              onDragLeaveFolder={() => setDragOverFolder(null)}
+              onDropFolder={handleFolderDrop}
+              lanEnabled={lanEnabled}
+              lanReachable={lan.lanReachable}
+              lanLoading={lan.lanLoading}
+              lanVideoCount={lan.lanVideos.length}
+              onSelectLan={() => {
+                setSelectedFolder(LAN_FOLDER);
+                void lan.loadLan();
+              }}
+            />
           )}
         </div>
 
         {/* フォルダ追加エリア */}
         {mode === 'folder' && !isLanTab && (
-          <div className="shrink-0 border-t border-nndd-border p-2">
-            {folderCreateError && (
-              <div className="text-xs text-red-500 dark:text-red-400 mb-1 break-all" title={folderCreateError}>
-                ⚠ {folderCreateError}
-              </div>
-            )}
-            {showFolderInput ? (
-              <div className="flex gap-1">
-                <input
-                  autoFocus
-                  value={newFolderName}
-                  onChange={(e) => setNewFolderName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') void handleFolderCreate();
-                    if (e.key === 'Escape') { setShowFolderInput(false); setNewFolderName(''); }
-                  }}
-                  placeholder="フォルダ名"
-                  className="flex-1 bg-nndd-bg border border-nndd-border px-1 py-0.5 text-xs"
-                />
-                <button
-                  onClick={() => void handleFolderCreate()}
-                  disabled={!newFolderName.trim()}
-                  className="text-xs px-2 py-0.5 bg-nndd-accent text-white rounded disabled:opacity-50"
-                >
-                  作成
-                </button>
-                <button
-                  onClick={() => { setShowFolderInput(false); setNewFolderName(''); }}
-                  className="text-xs px-1 py-0.5 bg-nndd-border rounded"
-                >
-                  ×
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setShowFolderInput(true)}
-                className="w-full text-xs px-2 py-1 bg-nndd-border rounded hover:bg-nndd-accent/70 text-left"
-              >
-                + フォルダ追加
-              </button>
-            )}
-          </div>
+          <FolderCreateArea
+            folderCreateError={folderCreate.folderCreateError}
+            showFolderInput={folderCreate.showFolderInput}
+            setShowFolderInput={folderCreate.setShowFolderInput}
+            newFolderName={folderCreate.newFolderName}
+            setNewFolderName={folderCreate.setNewFolderName}
+            onCreate={folderCreate.handleFolderCreate}
+          />
         )}
       </aside>
 
@@ -708,144 +346,35 @@ export function LibraryView(): JSX.Element {
       <main className="flex-1 flex flex-col">
         {isLanTab ? (
           /* LANライブラリペイン */
-          <>
-            <div className="flex items-center gap-2 p-2 border-b border-nndd-border bg-nndd-panel">
-              <input
-                value={lanSearchText}
-                onChange={(e) => setLanSearchText(e.target.value)}
-                placeholder="タイトルで絞り込み"
-                className="flex-1 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
-              />
-              {lanReachable === true && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-green-600/20 text-green-400">接続中</span>
-              )}
-              {lanReachable === false && (
-                <span className="text-xs px-2 py-0.5 rounded-full bg-red-600/20 text-red-400">接続失敗</span>
-              )}
-              <button
-                onClick={() => void loadLan()}
-                disabled={lanLoading}
-                className="text-xs px-3 py-1 bg-nndd-accent text-white rounded hover:opacity-80 disabled:opacity-50"
-              >
-                {lanLoading ? '読込中…' : '更新'}
-              </button>
-            </div>
-            <div className="flex-1 overflow-auto">
-              {lanLoading ? (
-                <div className="p-4 text-nndd-subtext">読み込み中…</div>
-              ) : lanReachable === false ? (
-                <div className="p-4 text-nndd-subtext">接続できませんでした</div>
-              ) : lanVideos.length === 0 ? (
-                <div className="p-4 text-nndd-subtext">動画がありません</div>
-              ) : (() => {
-                const q = lanSearchText.trim().toLowerCase();
-                const filtered = q
-                  ? lanVideos.filter((v) => v.filename.toLowerCase().includes(q) || v.videoId.toLowerCase().includes(q))
-                  : lanVideos;
-                return filtered.length === 0 ? (
-                  <div className="p-4 text-nndd-subtext">該当する動画はありません</div>
-                ) : (
-                  <table className="nndd-datagrid">
-                    <thead>
-                      <tr>
-                        <th className="w-28">動画ID</th>
-                        <th>タイトル</th>
-                        <th className="w-24">操作</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {filtered.map((v) => (
-                        <tr key={v.videoId}>
-                          <td className="text-xs text-nndd-subtext">{v.videoId}</td>
-                          <td>
-                            <span className="inline-block text-[10px] px-1 py-0.5 rounded bg-blue-600/20 text-blue-400 mr-1.5 align-middle">LAN</span>
-                            {v.filename || v.videoId}
-                          </td>
-                          <td>
-                            <button
-                              onClick={() => void handleLanPlay(v.videoId)}
-                              disabled={playingLanId === v.videoId}
-                              className="text-xs px-2 py-0.5 bg-nndd-accent text-white rounded disabled:opacity-50"
-                            >
-                              {playingLanId === v.videoId ? '…' : '再生'}
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                );
-              })()}
-            </div>
-          </>
+          <LanLibraryPane
+            lanSearchText={lan.lanSearchText}
+            onLanSearchTextChange={lan.setLanSearchText}
+            lanReachable={lan.lanReachable}
+            lanLoading={lan.lanLoading}
+            lanVideos={lan.lanVideos}
+            playingLanId={lan.playingLanId}
+            onReload={lan.loadLan}
+            onPlay={lan.handleLanPlay}
+          />
         ) : (
           /* ローカルライブラリペイン */
           <>
-            <div className="flex items-center gap-2 p-2 border-b border-nndd-border bg-nndd-panel">
-              <input
-                value={searchText}
-                onChange={(e) => setSearchText(e.target.value)}
-                placeholder="タイトル・説明文・タグで絞り込み"
-                className="flex-1 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
-              />
-              <button
-                onClick={() => setFavoriteOnly((v) => !v)}
-                title="お気に入りのみ表示"
-                className={[
-                  'text-xs px-2 py-1 rounded',
-                  favoriteOnly ? 'bg-yellow-500 text-black' : 'bg-nndd-border hover:opacity-80'
-                ].join(' ')}
-              >
-                ★ お気に入りのみ
-              </button>
-              <span className="text-xs text-nndd-subtext">{filtered.length} 件</span>
-              {moving && (
-                <span className="text-xs text-nndd-accent animate-pulse">移動中…</span>
-              )}
-              {!moving && selectedVideoIds.size > 0 && (
-                <span className="text-xs text-nndd-accent font-bold">
-                  {selectedVideoIds.size} 件選択中 (フォルダへドロップで移動)
-                </span>
-              )}
-              {moveError && (
-                <span className="text-xs text-red-500 dark:text-red-400 truncate max-w-xs" title={moveError}>
-                  ⚠ {moveError}
-                </span>
-              )}
-              <button
-                onClick={() => setDisplayMode(displayMode === 'table' ? 'grid' : 'table')}
-                title={displayMode === 'table' ? 'グリッド表示に切り替え' : 'リスト表示に切り替え'}
-                className="text-xs px-2 py-1 bg-nndd-border rounded hover:opacity-80"
-              >
-                {displayMode === 'table' ? '⊞' : '☰'}
-              </button>
-              <ContinuousPlayButton
-                disabled={sorted.length === 0}
-                onPlay={(audioOnly) => {
-                  if (sorted.length === 0) return;
-                  const paths = sorted.map((x) => x.uri);
-                  const startIdx = selectedVideoIds.size > 0
-                    ? sorted.findIndex((x) => selectedVideoIds.has(x.id))
-                    : selected !== null
-                    ? sorted.findIndex((x) => x.id === selected)
-                    : 0;
-                  const startVideo = sorted[startIdx >= 0 ? startIdx : 0];
-                  window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
-                    localPath: startVideo.uri,
-                    videoId: extractVideoId(startVideo.videoName) ?? undefined,
-                    folderPlaylist: paths,
-                    audioOnly: audioOnly || undefined,
-                  });
-                }}
-              />
-              <button
-                onClick={handleScan}
-                disabled={scanning}
-                className="text-xs px-3 py-1 bg-nndd-accent text-white rounded hover:opacity-80 disabled:opacity-50"
-              >
-                {scanning ? 'スキャン中…' : 'ライブラリを更新'}
-              </button>
-            </div>
+            <LibraryToolbar
+              searchText={searchText}
+              onSearchTextChange={setSearchText}
+              favoriteOnly={favoriteOnly}
+              onToggleFavoriteOnly={() => setFavoriteOnly((v) => !v)}
+              filteredCount={filtered.length}
+              moving={moving}
+              selectedCount={selectedVideoIds.size}
+              moveError={moveError}
+              displayMode={displayMode}
+              onToggleDisplayMode={() => setDisplayMode(displayMode === 'table' ? 'grid' : 'table')}
+              continuousPlayDisabled={sorted.length === 0}
+              onContinuousPlay={handleContinuousPlay}
+              scanning={scanning}
+              onScan={handleScan}
+            />
             <div className="flex-1 overflow-auto">
               {loading ? (
                 <div className="p-4 text-nndd-subtext">読み込み中…</div>
@@ -856,153 +385,21 @@ export function LibraryView(): JSX.Element {
                     : '該当する動画はありません。'}
                 </div>
               ) : displayMode === 'grid' ? (
-                <div className="p-3 grid grid-cols-6 gap-3">
-                  {sorted.map((v) => (
-                    <div
-                      key={v.id}
-                      draggable
-                      className={[
-                        'flex flex-col cursor-pointer rounded overflow-hidden border',
-                        selectedVideoIds.has(v.id)
-                          ? 'border-nndd-accent ring-2 ring-nndd-accent'
-                          : selected === v.id
-                          ? 'border-nndd-accent'
-                          : 'border-nndd-border hover:border-nndd-accent'
-                      ].join(' ')}
-                      onClick={(e) => handleVideoClick(v, e)}
-                      onDoubleClick={() => handlePlay(v)}
-                      onDragStart={(e) => handleVideoDragStart(e, v)}
-                      onContextMenu={(e) => handleVideoContextMenu(e, v)}
-                    >
-                      <div className="relative bg-black aspect-video overflow-hidden w-full">
-                        <img
-                          src={thumbPrimaryUrl(v)}
-                          alt=""
-                          className="absolute inset-0 w-full h-full object-cover"
-                          onError={(e) => {
-                            const fb = thumbFallbackUrl(v);
-                            if (e.currentTarget.src !== fb) e.currentTarget.src = fb;
-                            else e.currentTarget.style.display = 'none';
-                          }}
-                        />
-                        {v.time > 0 && (
-                          <span className="absolute bottom-1 right-1 bg-black/70 text-white text-[10px] px-1 rounded">
-                            {formatDuration(v.time)}
-                          </span>
-                        )}
-                        {isAudioOnlyVideo(v) && (
-                          <span className="absolute left-1 top-1 bg-purple-600 text-white text-[10px] px-1 rounded" title="音声のみ">
-                            ♪ 音声のみ
-                          </span>
-                        )}
-                        <button
-                          onClick={(e) => { e.stopPropagation(); void handleToggleFavorite(v); }}
-                          title={v.isFavorite ? 'お気に入りから外す' : 'お気に入りに追加'}
-                          className={[
-                            'absolute right-1 top-1 text-base leading-none drop-shadow',
-                            v.isFavorite ? 'text-yellow-400' : 'text-white/70 hover:text-yellow-400'
-                          ].join(' ')}
-                        >
-                          {v.isFavorite ? '★' : '☆'}
-                        </button>
-                      </div>
-                      <div className="p-1.5 bg-nndd-panel flex-1 flex flex-col gap-0.5">
-                        <div
-                          className="text-xs line-clamp-2 leading-tight cursor-pointer hover:underline"
-                          title={v.videoName}
-                          onClick={(e) => { e.stopPropagation(); handlePlay(v); }}
-                        >
-                          {v.videoName}
-                        </div>
-                        <div className="text-[10px] text-nndd-subtext mt-auto">
-                          {v.pubDate ? v.pubDate.toLocaleDateString('ja-JP') : '-'}
-                        </div>
-                        <div className="flex gap-1 mt-1 flex-wrap">
-                          <button onClick={(e) => { e.stopPropagation(); handlePlay(v); }} className="text-xs px-2 py-0.5 bg-nndd-accent text-white rounded">再生</button>
-                          <button onClick={(e) => { e.stopPropagation(); handleOpenFolder(v); }} className="text-xs px-2 py-0.5 bg-nndd-border rounded">フォルダ</button>
-                          {extractVideoId(v.videoName) && (
-                            <button onClick={(e) => { e.stopPropagation(); handleOpenNiconico(v); }} className="text-xs px-2 py-0.5 bg-nndd-border rounded" title="ニコニコ動画で開く">nico</button>
-                          )}
-                          <button onClick={(e) => { e.stopPropagation(); void handleDelete(v); }} className="text-xs px-2 py-0.5 bg-nndd-border hover:bg-red-700 hover:text-white rounded">削除</button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                <LibraryGridView
+                  videos={sorted}
+                  selected={selected}
+                  selectedVideoIds={selectedVideoIds}
+                  {...itemHandlers}
+                />
               ) : (
-                <table className="nndd-datagrid">
-                  <thead>
-                    <tr>
-                      <th className="w-6"></th>
-                      <th className="w-10"></th>
-                      <th className="cursor-pointer select-none hover:opacity-70" onClick={() => handleSort('videoName')}>タイトル{sortIndicator('videoName')}</th>
-                      <th className="w-24 cursor-pointer select-none hover:opacity-70" onClick={() => handleSort('time')}>時間{sortIndicator('time')}</th>
-                      <th className="w-20 cursor-pointer select-none hover:opacity-70" onClick={() => handleSort('playCount')}>再生数{sortIndicator('playCount')}</th>
-                      <th className="w-32 cursor-pointer select-none hover:opacity-70" onClick={() => handleSort('pubDate')}>投稿日{sortIndicator('pubDate')}</th>
-                      <th className="w-52">操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sorted.map((v) => (
-                      <tr
-                        key={v.id}
-                        draggable
-                        className={[
-                          selectedVideoIds.has(v.id) ? 'selected ring-1 ring-nndd-accent' : selected === v.id ? 'selected' : ''
-                        ].join(' ')}
-                        onClick={(e) => handleVideoClick(v, e)}
-                        onDoubleClick={() => handlePlay(v)}
-                        onDragStart={(e) => handleVideoDragStart(e, v)}
-                        onContextMenu={(e) => handleVideoContextMenu(e, v)}
-                      >
-                        <td className="p-0.5 text-center">
-                          <button
-                            onClick={(e) => { e.stopPropagation(); void handleToggleFavorite(v); }}
-                            title={v.isFavorite ? 'お気に入りから外す' : 'お気に入りに追加'}
-                            className={v.isFavorite ? 'text-yellow-400' : 'text-nndd-subtext hover:text-yellow-400'}
-                          >
-                            {v.isFavorite ? '★' : '☆'}
-                          </button>
-                        </td>
-                        <td className="p-0.5">
-                          <img
-                            src={thumbPrimaryUrl(v)}
-                            alt=""
-                            className="w-9 aspect-video object-cover rounded-sm"
-                            onError={(e) => {
-                              const fb = thumbFallbackUrl(v);
-                              if (e.currentTarget.src !== fb) e.currentTarget.src = fb;
-                              else e.currentTarget.style.display = 'none';
-                            }}
-                          />
-                        </td>
-                        <td
-                          title={v.videoName}
-                          className="cursor-pointer hover:underline"
-                          onClick={(e) => { e.stopPropagation(); handlePlay(v); }}
-                        >
-                          {v.videoName}
-                          {isAudioOnlyVideo(v) && (
-                            <span className="ml-1.5 text-[10px] px-1 py-0.5 rounded bg-purple-600 text-white" title="音声のみ">
-                              ♪ 音声のみ
-                            </span>
-                          )}
-                        </td>
-                        <td>{formatDuration(v.time)}</td>
-                        <td>{v.playCount}</td>
-                        <td>{v.pubDate ? v.pubDate.toLocaleDateString('ja-JP') : '-'}</td>
-                        <td className="whitespace-nowrap">
-                          <button onClick={(e) => { e.stopPropagation(); handlePlay(v); }} className="text-xs px-2 py-0.5 bg-nndd-accent text-white rounded mr-1">再生</button>
-                          <button onClick={(e) => { e.stopPropagation(); handleOpenFolder(v); }} className="text-xs px-2 py-0.5 bg-nndd-border rounded mr-1">フォルダ</button>
-                          {extractVideoId(v.videoName) && (
-                            <button onClick={(e) => { e.stopPropagation(); handleOpenNiconico(v); }} className="text-xs px-2 py-0.5 bg-nndd-border rounded mr-1" title="ニコニコ動画で開く">nico</button>
-                          )}
-                          <button onClick={(e) => { e.stopPropagation(); void handleDelete(v); }} className="text-xs px-2 py-0.5 bg-nndd-border hover:bg-red-700 hover:text-white rounded">削除</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <LibraryTableView
+                  videos={sorted}
+                  selected={selected}
+                  selectedVideoIds={selectedVideoIds}
+                  onSort={handleSort}
+                  sortIndicator={sortIndicator}
+                  {...itemHandlers}
+                />
               )}
             </div>
           </>
@@ -1021,43 +418,4 @@ export function LibraryView(): JSX.Element {
       )}
     </div>
   );
-}
-
-function TabBtn({
-  active,
-  onClick,
-  children
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}): JSX.Element {
-  return (
-    <button
-      onClick={onClick}
-      className={[
-        'flex-1 px-2 py-1 text-xs',
-        active
-          ? 'bg-nndd-bg text-nndd-text border-b-2 border-b-nndd-accent'
-          : 'text-nndd-subtext hover:bg-nndd-border hover:text-nndd-text'
-      ].join(' ')}
-    >
-      {children}
-    </button>
-  );
-}
-
-function isAudioOnlyVideo(v: NNDDREVideo): boolean {
-  return v.uri.toLowerCase().endsWith('.m4a');
-}
-
-function formatDuration(sec: number): string {
-  if (!sec || sec <= 0) return '-';
-  const h = Math.floor(sec / 3600);
-  const m = Math.floor((sec % 3600) / 60);
-  const s = Math.floor(sec % 60);
-  if (h > 0) {
-    return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  }
-  return `${m}:${String(s).padStart(2, '0')}`;
 }
