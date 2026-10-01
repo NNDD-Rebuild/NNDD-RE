@@ -15,6 +15,10 @@ import { registerWebPlayerRoutes } from './webPlayerBridge';
 
 const log = createLogger('HTTPServer');
 
+/** XML 属性値・テキスト用の最小エスケープ */
+const esc = (s: string): string =>
+  String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
 /**
  * 内蔵HTTPサーバー。
  * 元: src/org/mineap/nndd/server/NNDDHttpService.as / ServerManager.as
@@ -485,8 +489,6 @@ export class NnddHttpServer {
 
   /** 本家NNDD互換: GET_VIDEO_ID_LIST レスポンス */
   private buildNNDDREVideoIdListXml(videos: NNDDREVideo[]): string {
-    const esc = (s: string): string =>
-      String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     const lines = ['<?xml version="1.0" encoding="UTF-8"?>', '<nnddResponse>'];
     for (const v of videos) {
       const vid = this.extractVideoId(v.uri) ?? '';
@@ -502,8 +504,6 @@ export class NnddHttpServer {
   private buildNnddMyListXml(
     mylists: ReturnType<LibraryManager['myListDao']['list']>
   ): string {
-    const esc = (s: string): string =>
-      String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     const rssTypeMap: Record<string, string> = {
       mylist: 'MY_LIST',
       channel: 'CHANNEL',
@@ -524,8 +524,6 @@ export class NnddHttpServer {
 
   /** 本家NNDD互換: GET_VIDEO_BY_ID レスポンス */
   private buildNNDDREVideoByIdXml(v: NNDDREVideo, req: Request): string {
-    const esc = (s: string): string =>
-      String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     const vid = this.extractVideoId(v.uri) ?? '';
     const filename = path.basename(v.uri);
     const ext = path.extname(v.uri).slice(1);
@@ -542,8 +540,6 @@ export class NnddHttpServer {
 
   /** 本家NNDD互換: GET_MYLIST_BY_ID レスポンス (再生状況同期) */
   private buildNnddMyListByIdXml(videos: NNDDREVideo[]): string {
-    const esc = (s: string): string =>
-      String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     const lines = ['<?xml version="1.0" encoding="UTF-8"?>', '<nnddResponse>', '  <channel>'];
     for (const v of videos) {
       const vid = this.extractVideoId(v.uri) ?? '';
@@ -560,12 +556,6 @@ export class NnddHttpServer {
   }
 
   private buildVideoListXml(videos: NNDDREVideo[]): string {
-    const esc = (s: string): string =>
-      String(s ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
     const lines: string[] = [];
     lines.push('<?xml version="1.0" encoding="UTF-8"?>');
     lines.push('<NNDDServer><response status="success"><videos>');
@@ -586,12 +576,6 @@ export class NnddHttpServer {
   private buildMyListXml(
     mylists: ReturnType<LibraryManager['myListDao']['list']>
   ): string {
-    const esc = (s: string): string =>
-      String(s ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
     const lines: string[] = [];
     lines.push('<?xml version="1.0" encoding="UTF-8"?>');
     lines.push('<NNDDServer><response status="success"><mylists>');

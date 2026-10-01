@@ -13,7 +13,6 @@ export const IpcChannel = {
   LIBRARY_SET_FAVORITE: 'nndd:library:setFavorite',
 
   // 認証
-  AUTH_LOGIN: 'nndd:auth:login',
   AUTH_LOGOUT: 'nndd:auth:logout',
   AUTH_STATUS: 'nndd:auth:status',
   /** ブラウザログインウィンドウを開く。{ ssoProvider?: 'apple'|'google'|'line'|'x'|'facebook' } で該当SSOボタンを自動クリック */

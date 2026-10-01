@@ -212,7 +212,6 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
 
   useEffect(() => {
     const video = videoRef.current;
-    console.log('[VideoPlayer] src effect:', src, 'video:', video);
     if (!video || !src) return;
     setError(null);
 
@@ -334,7 +333,6 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
       };
     } else {
       // ローカル / 通常MP4
-      console.log('[VideoPlayer] setting video.src:', src);
       video.src = src;
       video.addEventListener('error', (e) => {
         const code = video.error?.code ?? 0;
