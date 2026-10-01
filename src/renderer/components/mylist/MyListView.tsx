@@ -1,18 +1,32 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { MyList, MyListItem, Playlist, PlaylistItem, RssTypeValue } from '@shared/types';
+import type { MyList, MyListItem, Playlist, PlaylistItem } from '@shared/types';
 import { IpcChannel, RssType } from '@shared/types';
-import { parseMylistSource } from '@shared/utils/parseMylistUrl';
 import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
-import { VideoCard, type VideoCardData } from '../common/VideoCard';
+import type { VideoCardData } from '../common/VideoCard';
 import { VirtualizedItemList } from '../common/VirtualizedItemList';
-import { ContinuousPlayButton } from '../common/ContinuousPlayButton';
 import { useAppStore } from '../../store/useAppStore';
 import { useWatchedIds } from '@renderer/hooks/useWatchedIds';
 import { useLibraryCheck } from '@renderer/hooks/useLibraryCheck';
-
-type Selected =
-  | { kind: 'mylist'; mylist: MyList }
-  | { kind: 'playlist'; playlist: Playlist };
+import { useMylistSearch } from '@renderer/hooks/mylist/useMylistSearch';
+import { useMylistAccountImport } from '@renderer/hooks/mylist/useMylistAccountImport';
+import { useMylistAddForm } from '@renderer/hooks/mylist/useMylistAddForm';
+import { usePendingMylistNavigation } from '@renderer/hooks/mylist/usePendingMylistNavigation';
+import { useMylistBulkMenu } from '@renderer/hooks/mylist/useMylistBulkMenu';
+import {
+  PAGE_SIZE,
+  mylistItemToCard,
+  playlistItemToCard,
+  typeLabel,
+  type Selected,
+  type SeriesFetchResult
+} from './mylistUtils';
+import { MyListAddForm } from './MyListAddForm';
+import { AccountMylistPanel } from './AccountMylistPanel';
+import { ListSidebarRow } from './ListSidebarRow';
+import { MyListHeader } from './MyListHeader';
+import { MyListFilterBar } from './MyListFilterBar';
+import { MyListPagination } from './MyListPagination';
+import { MyListItemCell } from './MyListItemCell';
 
 /**
  * マイリストタブ。
@@ -34,33 +48,27 @@ export function MyListView(): JSX.Element {
   // ページネーション (マイリストのみ)
   const [currentPage, setCurrentPage] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
-  const PAGE_SIZE = 100;
 
-  // タイトル検索 (選択中リスト内)
-  const [searchText, setSearchText] = useState('');
-  // 検索開始時に全ページを取得してキャッシュしたもの (未検索/未取得なら null)
-  const [allItems, setAllItems] = useState<VideoCardData[] | null>(null);
-  const [loadingAll, setLoadingAll] = useState(false);
-  const [loadedCount, setLoadedCount] = useState(0);
-  const cancelLoadAllRef = useRef(false);
-  const isLoadingAllRef = useRef(false);
+  // タイトル検索 (選択中リスト内) と、検索・一括DL用の全ページキャッシュ
+  const {
+    searchText,
+    allItems,
+    setAllItems,
+    loadingAll,
+    setLoadingAll,
+    loadedCount,
+    setLoadedCount,
+    cancelLoadAllRef,
+    filteredItems,
+    resetSearch,
+    fetchAllMylistPages,
+    handleSearchTextChange,
+    handleSearchConfirm
+  } = useMylistSearch({ selected, items, totalItems });
   const scrollRef = useRef<HTMLDivElement>(null);
-
-  // マイリスト追加フォーム (URLから種別を自動判定)
-  const [newUrl, setNewUrl] = useState('');
-  const [newName, setNewName] = useState('');
-  const [newType, setNewType] = useState<RssTypeValue>(RssType.MY_LIST);
-  const [urlError, setUrlError] = useState<string | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
 
   // プレイリスト作成フォーム
   const [newPlaylistName, setNewPlaylistName] = useState('');
-
-  // アカウントから取得
-  const [accountFetching, setAccountFetching] = useState(false);
-  const [accountError, setAccountError] = useState<string | null>(null);
-  const [accountMylists, setAccountMylists] = useState<MyList[] | null>(null);
-  const [importingIds, setImportingIds] = useState<Set<string>>(new Set());
 
   // 表示モード (グローバル設定に準じる)
   const globalMode = useAppStore((s) => s.contentViewMode);
@@ -82,19 +90,10 @@ export function MyListView(): JSX.Element {
 
   // 一括DL中
   const [bulkDling, setBulkDling] = useState(false);
-  const [bulkMenuOpen, setBulkMenuOpen] = useState(false);
-  const bulkMenuRef = useRef<HTMLDivElement>(null);
   const { downloadedIds, checkDownloaded } = useLibraryCheck();
   const videoIds = useMemo(() => items.map((it) => it.videoId), [items]);
   const watchedIds = useWatchedIds(videoIds);
 
-  // プレイヤーウィンドウからのナビゲーション
-  const pendingMylistId = useAppStore((s) => s.pendingMylistId);
-  const setPendingMylistId = useAppStore((s) => s.setPendingMylistId);
-  const pendingSeriesId = useAppStore((s) => s.pendingSeriesId);
-  const setPendingSeriesId = useAppStore((s) => s.setPendingSeriesId);
-  const pendingChannelId = useAppStore((s) => s.pendingChannelId);
-  const setPendingChannelId = useAppStore((s) => s.setPendingChannelId);
   const showToast = useAppStore((s) => s.showToast);
   const isLoggedIn = useAppStore((s) => s.isLoggedIn);
   // mylists が更新された後に処理するために ref で保持
@@ -113,6 +112,9 @@ export function MyListView(): JSX.Element {
     window.nndd.invoke<Playlist[]>(IpcChannel.PLAYLIST_LIST).then(setPlaylists);
   };
 
+  // アカウントから取得
+  const account = useMylistAccountImport({ mylists, reloadMylists });
+
   // グローバル設定変更を即時反映
   useEffect(() => { setDisplayMode(globalMode); }, [globalMode]);
 
@@ -121,118 +123,6 @@ export function MyListView(): JSX.Element {
     reloadPlaylists();
   }, [isLoggedIn]);
 
-  // pendingMylistId 処理: マイリストを自動選択/追加
-  useEffect(() => {
-    if (!pendingMylistId) return;
-    const mylistId = pendingMylistId;
-    setPendingMylistId(null);
-
-    const list = mylistsRef.current;
-    // 既存から検索 (URLにIDが含まれるものを探す)
-    const existing = list.find((m) =>
-      m.myListUrl === mylistId ||
-      m.myListUrl.includes(`mylist/${mylistId}`) ||
-      m.myListUrl.includes(`mylist%2F${mylistId}`)
-    );
-    if (existing) {
-      void fetchItems(existing);
-    } else {
-      // 追加せず一時表示のみ (DBには保存しない)
-      const url = `https://www.nicovideo.jp/my/mylist/${mylistId}`;
-      const fetchAndShow = async (): Promise<void> => {
-        // マイリスト名を取得して表示名に使用
-        const info = await window.nndd.invoke<{ name: string } | null>(
-          IpcChannel.MYLIST_FETCH_INFO,
-          { url, type: RssType.MY_LIST }
-        ).catch(() => null);
-        const tempMl: MyList = {
-          myListUrl: url,
-          myListName: info?.name ?? `マイリスト (${mylistId})`,
-          type: RssType.MY_LIST,
-          isDir: false,
-          unPlayVideoCount: 0,
-          myListVideoIds: {},
-        };
-        void fetchItems(tempMl); // reloadMylists は呼ばない → DBに追加されない
-      };
-      void fetchAndShow();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingMylistId]);
-
-  // pendingSeriesId 処理: シリーズを一時表示 (SERIES_FETCH → 直接setItems)
-  useEffect(() => {
-    if (!pendingSeriesId) return;
-    const seriesId = pendingSeriesId;
-    setPendingSeriesId(null);
-
-    const fetchSeries = async (): Promise<void> => {
-      setLoading(true);
-      setError(null);
-      try {
-        const result = await window.nndd.invoke<{
-          name: string;
-          items: Array<{
-            videoId: string; title: string; description: string;
-            thumbnailUrl: string; length: string;
-            pubDate: string; viewCount: number; commentCount: number;
-            mylistCount: number; likeCount: number;
-          }>;
-        } | null>(IpcChannel.SERIES_FETCH, seriesId).catch(() => null);
-        if (!result) return;
-        const url = `https://www.nicovideo.jp/series/${seriesId}`;
-        const tempMl: MyList = {
-          myListUrl: url,
-          myListName: result.name ?? `シリーズ (${seriesId})`,
-          type: RssType.SERIES,
-          isDir: false,
-          unPlayVideoCount: 0,
-          myListVideoIds: {},
-        };
-        setSelected({ kind: 'mylist', mylist: tempMl });
-        setSelectedIds(new Set());
-        setLastClickedId(null);
-        setTotalItems(result.items.length);
-        setCurrentPage(1);
-        const seriesMapped = result.items.map((it) => ({
-          ...it,
-          pubDate: new Date(it.pubDate),
-        }));
-        setItems(seriesMapped.map(mylistItemToCard));
-        void checkDownloaded(seriesMapped.map((i) => i.videoId));
-      } finally {
-        setLoading(false);
-      }
-    };
-    void fetchSeries();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingSeriesId]);
-
-  // pendingChannelId 処理: チャンネル動画一覧を一時表示 (DBには保存しない)
-  useEffect(() => {
-    if (!pendingChannelId) return;
-    const channelId = pendingChannelId;
-    setPendingChannelId(null);
-    const url = `https://ch.nicovideo.jp/${channelId}`;
-    const fetchAndShow = async (): Promise<void> => {
-      const info = await window.nndd.invoke<{ name: string } | null>(
-        IpcChannel.MYLIST_FETCH_INFO,
-        { url, type: RssType.CHANNEL }
-      ).catch(() => null);
-      const tempMl: MyList = {
-        myListUrl: url,
-        myListName: info?.name ?? `チャンネル (${channelId})`,
-        type: RssType.CHANNEL,
-        isDir: false,
-        unPlayVideoCount: 0,
-        myListVideoIds: {},
-      };
-      void fetchItems(tempMl);
-    };
-    void fetchAndShow();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingChannelId]);
-
   const fetchItems = async (ml: MyList, page = 1): Promise<void> => {
     setLoading(true);
     setError(null);
@@ -240,22 +130,11 @@ export function MyListView(): JSX.Element {
     setSelectedIds(new Set());
     setLastClickedId(null);
     setCurrentPage(page);
-    setSearchText('');
-    setAllItems(null);
-    cancelLoadAllRef.current = true;
-    isLoadingAllRef.current = false;
+    resetSearch();
     try {
       if (ml.type === RssType.SERIES) {
         const seriesId = ml.myListUrl.match(/series\/(\d+)/)?.[1] ?? ml.myListUrl;
-        const result = await window.nndd.invoke<{
-          name: string;
-          items: Array<{
-            videoId: string; title: string; description: string;
-            thumbnailUrl: string; length: string;
-            pubDate: string; viewCount: number; commentCount: number;
-            mylistCount: number; likeCount: number;
-          }>;
-        } | null>(IpcChannel.SERIES_FETCH, seriesId);
+        const result = await window.nndd.invoke<SeriesFetchResult>(IpcChannel.SERIES_FETCH, seriesId);
         if (!result) { setItems([]); setTotalItems(0); return; }
         const mapped = result.items.map((it) => ({ ...it, pubDate: new Date(it.pubDate) }));
         setItems(mapped.map(mylistItemToCard));
@@ -287,10 +166,7 @@ export function MyListView(): JSX.Element {
     setSelected({ kind: 'playlist', playlist: pl });
     setSelectedIds(new Set());
     setLastClickedId(null);
-    setSearchText('');
-    setAllItems(null);
-    cancelLoadAllRef.current = true;
-    isLoadingAllRef.current = false;
+    resetSearch();
     try {
       const list = await window.nndd.invoke<PlaylistItem[]>(IpcChannel.PLAYLIST_GET_ITEMS, pl.id);
       setItems(list.map(playlistItemToCard));
@@ -305,138 +181,47 @@ export function MyListView(): JSX.Element {
     }
   };
 
-  /** 指定マイリストの全ページを取得して1つの配列にまとめる (検索・一括DL共用) */
-  const fetchAllMylistPages = async (ml: MyList): Promise<VideoCardData[] | null> => {
-    const totalPages = Math.ceil(totalItems / PAGE_SIZE);
-    const merged: VideoCardData[] = [];
-    for (let p = 1; p <= totalPages; p++) {
-      if (cancelLoadAllRef.current) return null;
-      const data = await window.nndd.invoke<{ items: MyListItem[]; total: number }>(
-        IpcChannel.MYLIST_FETCH_PAGE,
-        // 全件先読み中は画像キャッシュを保存しない (検索確定時/DL時にヒット分だけ保存する)
-        { url: ml.myListUrl, type: ml.type, page: p, pageSize: PAGE_SIZE, cacheImages: false }
-      );
-      if (cancelLoadAllRef.current) return null;
-      const mapped = data.items.map((d) => ({ ...d, pubDate: new Date(d.pubDate) }));
-      merged.push(...mapped.map(mylistItemToCard));
-      setLoadedCount(merged.length);
-    }
-    return merged;
-  };
-
-  /** 検索欄に何か入力された時、現在ページ以外の残り全ページを取得して allItems にキャッシュする */
-  const loadAllPagesForSearch = async (): Promise<void> => {
-    if (selected?.kind !== 'mylist' || allItems !== null || totalItems <= items.length) return;
-    if (isLoadingAllRef.current) return; // 連続入力による二重起動を防止
-    isLoadingAllRef.current = true;
-    cancelLoadAllRef.current = false;
-    setLoadingAll(true);
-    setLoadedCount(0);
+  /** pendingSeriesId で指定されたシリーズを一時表示 (SERIES_FETCH → 直接setItems) */
+  const showSeries = async (seriesId: string): Promise<void> => {
+    setLoading(true);
+    setError(null);
     try {
-      const merged = await fetchAllMylistPages(selected.mylist);
-      if (merged !== null) setAllItems(merged);
-    } catch {
-      // 失敗時は現在ページのみでの検索にフォールバック (allItems は null のまま)
-    } finally {
-      setLoadingAll(false);
-      isLoadingAllRef.current = false;
-    }
-  };
-
-  const handleSearchTextChange = (value: string): void => {
-    setSearchText(value);
-    if (value.trim()) {
-      if (allItems === null) void loadAllPagesForSearch();
-    } else {
-      // 検索窓を空にしたら取得を中断
-      cancelLoadAllRef.current = true;
-    }
-  };
-
-  /** 検索確定 (Enter): ヒットした分だけ画像キャッシュに保存する */
-  const handleSearchConfirm = (): void => {
-    if (!searchText.trim()) return;
-    for (const it of filteredItems) {
-      if (!it.thumbnailUrl) continue;
-      window.nndd.invoke(IpcChannel.IMAGE_FETCH, it.thumbnailUrl).catch(() => {});
-    }
-  };
-
-  const filteredItems = useMemo(() => {
-    if (!searchText.trim()) return items;
-    const q = searchText.trim().toLowerCase();
-    const base = allItems ?? items;
-    return base.filter((it) => it.title.toLowerCase().includes(q));
-  }, [items, allItems, searchText]);
-
-  /** URL入力欄からフォーカスが外れた/Enterされた時: 種別自動判定してプレビュー表示 */
-  const handleUrlPreview = async (): Promise<void> => {
-    const url = newUrl.trim();
-    if (!url) { setUrlError(null); return; }
-    const parsed = parseMylistSource(url);
-    if (!parsed) {
-      setUrlError('マイリスト/チャンネル/ユーザー/シリーズのURLまたはIDを認識できませんでした');
-      return;
-    }
-    setUrlError(null);
-    setNewType(parsed.type);
-    setPreviewLoading(true);
-    try {
-      let name = newName.trim();
-      if (!name) {
-        const info = await window.nndd.invoke<{ name: string } | null>(
-          IpcChannel.MYLIST_FETCH_INFO,
-          { url: parsed.normalizedUrl, type: parsed.type }
-        ).catch(() => null);
-        if (info?.name) {
-          name = info.name;
-          setNewName(info.name);
-        }
-      }
+      const result = await window.nndd.invoke<SeriesFetchResult>(IpcChannel.SERIES_FETCH, seriesId).catch(() => null);
+      if (!result) return;
+      const url = `https://www.nicovideo.jp/series/${seriesId}`;
       const tempMl: MyList = {
-        myListUrl: parsed.normalizedUrl,
-        myListName: name || parsed.normalizedUrl,
-        type: parsed.type,
+        myListUrl: url,
+        myListName: result.name ?? `シリーズ (${seriesId})`,
+        type: RssType.SERIES,
         isDir: false,
         unPlayVideoCount: 0,
         myListVideoIds: {},
       };
-      await fetchItems(tempMl);
+      setSelected({ kind: 'mylist', mylist: tempMl });
+      setSelectedIds(new Set());
+      setLastClickedId(null);
+      // 前のリストの検索語・全件キャッシュが残ると、シリーズの一覧ではなく前のリストの絞り込み結果が表示されるため消す
+      resetSearch();
+      setTotalItems(result.items.length);
+      setCurrentPage(1);
+      const seriesMapped = result.items.map((it) => ({
+        ...it,
+        pubDate: new Date(it.pubDate),
+      }));
+      setItems(seriesMapped.map(mylistItemToCard));
+      void checkDownloaded(seriesMapped.map((i) => i.videoId));
     } finally {
-      setPreviewLoading(false);
+      setLoading(false);
     }
   };
 
-  const handleAdd = async (): Promise<void> => {
-    const url = newUrl.trim();
-    if (!url) return;
-    const parsed = parseMylistSource(url);
-    if (!parsed) {
-      setUrlError('マイリスト/チャンネル/ユーザー/シリーズのURLまたはIDを認識できませんでした');
-      return;
-    }
-    let name = newName.trim();
-    if (!name) {
-      const info = await window.nndd.invoke<{ name: string } | null>(
-        IpcChannel.MYLIST_FETCH_INFO,
-        { url: parsed.normalizedUrl, type: parsed.type }
-      ).catch(() => null);
-      name = info?.name ?? parsed.normalizedUrl;
-    }
-    const ml: MyList = {
-      myListUrl: parsed.normalizedUrl,
-      myListName: name,
-      type: parsed.type,
-      isDir: false,
-      unPlayVideoCount: 0,
-      myListVideoIds: {},
-    };
-    await window.nndd.invoke(IpcChannel.MYLIST_ADD, ml);
-    setNewUrl('');
-    setNewName('');
-    setUrlError(null);
-    reloadMylists();
-  };
+  // マイリスト追加フォーム (URLから種別を自動判定)
+  const addForm = useMylistAddForm({ fetchItems, reloadMylists });
+
+  // プレイヤーウィンドウからのナビゲーション
+  usePendingMylistNavigation({ mylistsRef, fetchItems, showSeries });
+
+  const { bulkMenuOpen, setBulkMenuOpen, bulkMenuRef } = useMylistBulkMenu();
 
   const handleRemove = async (ml: MyList): Promise<void> => {
     await window.nndd.invoke(IpcChannel.MYLIST_REMOVE, ml.myListUrl);
@@ -469,46 +254,6 @@ export function MyListView(): JSX.Element {
     } finally {
       setRenewingAll(false);
     }
-  };
-
-  // アカウントのマイリスト一覧を取得
-  const handleFetchAccount = async (): Promise<void> => {
-    setAccountFetching(true);
-    setAccountError(null);
-    setAccountMylists(null);
-    try {
-      const list = await window.nndd.invoke<MyList[]>(IpcChannel.MYLIST_FETCH_ACCOUNT);
-      setAccountMylists(list);
-    } catch (e) {
-      setAccountError(toUserFriendlyErrorMessage(e));
-    } finally {
-      setAccountFetching(false);
-    }
-  };
-
-  const handleImportOne = async (ml: MyList): Promise<void> => {
-    setImportingIds((prev) => new Set(prev).add(ml.myListUrl));
-    try {
-      await window.nndd.invoke(IpcChannel.MYLIST_ADD, ml);
-      reloadMylists();
-    } finally {
-      setImportingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(ml.myListUrl);
-        return next;
-      });
-    }
-  };
-
-  const handleImportAll = async (): Promise<void> => {
-    if (!accountMylists) return;
-    const registeredSet = new Set(mylists.map((m) => m.myListUrl));
-    for (const ml of accountMylists) {
-      if (!registeredSet.has(ml.myListUrl)) {
-        await window.nndd.invoke(IpcChannel.MYLIST_ADD, ml);
-      }
-    }
-    reloadMylists();
   };
 
   const handlePlay = (videoId: string): void => {
@@ -645,15 +390,6 @@ export function MyListView(): JSX.Element {
     setLastClickedId(videoId);
   };
 
-  useEffect(() => {
-    if (!bulkMenuOpen) return;
-    const handler = (e: MouseEvent): void => {
-      if (bulkMenuRef.current && !bulkMenuRef.current.contains(e.target as Node)) setBulkMenuOpen(false);
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [bulkMenuOpen]);
-
   /** 選択なしで一括DLした際、複数ページにまたがるマイリストなら全ページ分を対象にする */
   const handleBulkDownload = async (subDir?: string): Promise<void> => {
     if (bulkDling) return;
@@ -710,119 +446,34 @@ export function MyListView(): JSX.Element {
   return (
     <div className="h-full flex">
       <aside className="w-72 border-r border-nndd-border bg-nndd-panel flex flex-col overflow-hidden">
-        <div className="p-2 border-b border-nndd-border space-y-1 shrink-0">
-          <div className="text-xs font-bold text-nndd-subtext">マイリスト追加</div>
-          <input
-            value={newUrl}
-            onChange={(e) => setNewUrl(e.target.value)}
-            onBlur={() => void handleUrlPreview()}
-            onKeyDown={(e) => { if (e.key === 'Enter') void handleUrlPreview(); }}
-            placeholder="URL or ID (マイリスト/チャンネル/ユーザー/シリーズ)"
-            className="w-full bg-nndd-bg border border-nndd-border px-2 py-1 text-xs"
-          />
-          <input
-            value={newName}
-            onChange={(e) => setNewName(e.target.value)}
-            placeholder="表示名 (省略可)"
-            className="w-full bg-nndd-bg border border-nndd-border px-2 py-1 text-xs"
-          />
-          {newUrl.trim() && !urlError && (
-            <div className="text-xs text-nndd-subtext">
-              種別: {typeLabel(newType)} {typeNameJa(newType)} {previewLoading && '(取得中…)'}
-            </div>
-          )}
-          {urlError && (
-            <div className="text-xs text-red-500 dark:text-red-400">⚠ {urlError}</div>
-          )}
-          <div className="flex gap-1 flex-wrap">
-            <button
-              onClick={handleAdd}
-              className="flex-1 text-xs px-3 py-1 bg-nndd-accent text-white rounded hover:opacity-80"
-            >
-              追加
-            </button>
-            <button
-              onClick={handleRenewAll}
-              disabled={renewingAll}
-              className="text-xs px-3 py-1 bg-nndd-border rounded hover:bg-nndd-accent disabled:opacity-50"
-              title="全マイリストを更新し、未DL動画を自動でDLキューに追加"
-            >
-              {renewingAll ? '更新中…' : '一括更新'}
-            </button>
-            <button
-              onClick={handleFetchAccount}
-              disabled={accountFetching}
-              className="text-xs px-3 py-1 bg-nndd-border rounded hover:bg-nndd-accent disabled:opacity-50"
-              title="ログイン中のアカウントのマイリストを取得"
-            >
-              {accountFetching ? '取得中…' : 'アカウントから取得'}
-            </button>
-          </div>
-          {autoDlResult && (
-            <div className="text-xs text-nndd-subtext truncate" title={autoDlResult}>
-              ✓ {autoDlResult}
-            </div>
-          )}
-          {accountError && (
-            <div className="text-xs text-red-500 dark:text-red-400 truncate" title={accountError}>
-              ⚠ {accountError}
-            </div>
-          )}
-        </div>
+        <MyListAddForm
+          newUrl={addForm.newUrl}
+          onNewUrlChange={addForm.setNewUrl}
+          newName={addForm.newName}
+          onNewNameChange={addForm.setNewName}
+          newType={addForm.newType}
+          urlError={addForm.urlError}
+          previewLoading={addForm.previewLoading}
+          onUrlPreview={addForm.handleUrlPreview}
+          onAdd={addForm.handleAdd}
+          renewingAll={renewingAll}
+          onRenewAll={handleRenewAll}
+          accountFetching={account.accountFetching}
+          onFetchAccount={account.handleFetchAccount}
+          autoDlResult={autoDlResult}
+          accountError={account.accountError}
+        />
 
         {/* アカウントマイリスト取得結果 */}
-        {accountMylists !== null && (
-          <div className="shrink-0 border-b border-nndd-border bg-nndd-bg">
-            <div className="flex items-center justify-between px-2 py-1 bg-nndd-panel">
-              <span className="text-xs font-bold text-nndd-subtext">
-                アカウントのマイリスト ({accountMylists.length})
-              </span>
-              <div className="flex gap-1">
-                <button
-                  onClick={handleImportAll}
-                  className="text-xs px-2 py-0.5 bg-nndd-accent text-white rounded hover:opacity-80"
-                  title="未登録のマイリストをすべて追加"
-                >
-                  全追加
-                </button>
-                <button
-                  onClick={() => setAccountMylists(null)}
-                  className="text-xs px-2 py-0.5 bg-nndd-border rounded hover:bg-red-400 hover:text-white"
-                >
-                  ×
-                </button>
-              </div>
-            </div>
-            <div className="max-h-48 overflow-y-auto">
-              {accountMylists.length === 0 ? (
-                <div className="text-xs text-nndd-subtext p-2">マイリストが見つかりません</div>
-              ) : (
-                accountMylists.map((ml) => {
-                  const registered = registeredIds.has(ml.myListUrl);
-                  const importing = importingIds.has(ml.myListUrl);
-                  return (
-                    <div
-                      key={ml.myListUrl}
-                      className="flex items-center gap-1 px-2 py-1 text-xs border-b border-nndd-border"
-                    >
-                      <span className="flex-1 truncate" title={ml.myListUrl}>{ml.myListName}</span>
-                      {registered ? (
-                        <span className="text-nndd-subtext shrink-0">登録済</span>
-                      ) : (
-                        <button
-                          onClick={() => handleImportOne(ml)}
-                          disabled={importing}
-                          className="shrink-0 text-xs px-2 py-0.5 bg-nndd-accent text-white rounded hover:opacity-80 disabled:opacity-50"
-                        >
-                          {importing ? '追加中' : '追加'}
-                        </button>
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
+        {account.accountMylists !== null && (
+          <AccountMylistPanel
+            accountMylists={account.accountMylists}
+            registeredIds={registeredIds}
+            importingIds={account.importingIds}
+            onImportAll={account.handleImportAll}
+            onClose={() => account.setAccountMylists(null)}
+            onImportOne={account.handleImportOne}
+          />
         )}
 
         <div className="flex-1 overflow-auto">
@@ -833,88 +484,29 @@ export function MyListView(): JSX.Element {
             <div className="p-3 text-xs text-nndd-subtext">登録されているマイリストはありません。</div>
           )}
           {mylists.map((ml) => (
-            <div
+            <ListSidebarRow
               key={ml.myListUrl}
-              className={[
-                'relative flex items-center gap-1 px-2 py-1 text-xs border-b border-nndd-border cursor-pointer',
-                selected?.kind === 'mylist' && selected.mylist.myListUrl === ml.myListUrl ? 'bg-nndd-bg' : 'hover:bg-nndd-border'
-              ].join(' ')}
-              onClick={() => editingUrl !== ml.myListUrl && fetchItems(ml)}
-              onContextMenu={(e) => {
-                e.preventDefault();
+              icon={ml.icon ?? typeLabel(ml.type)}
+              name={ml.myListName}
+              title={ml.myListUrl}
+              iconResetLabel="種別デフォルトに戻す"
+              isSelected={selected?.kind === 'mylist' && selected.mylist.myListUrl === ml.myListUrl}
+              isEditing={editingUrl === ml.myListUrl}
+              editingName={editingName}
+              iconPickerOpen={iconPickerUrl === ml.myListUrl}
+              onSelect={() => fetchItems(ml)}
+              onStartEdit={() => {
                 setEditingUrl(ml.myListUrl);
                 setEditingName(ml.myListName);
               }}
-            >
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIconPickerUrl(iconPickerUrl === ml.myListUrl ? null : ml.myListUrl);
-                }}
-                className="text-nndd-subtext shrink-0 hover:opacity-70"
-                title="アイコンを変更"
-              >
-                {ml.icon ?? typeLabel(ml.type)}
-              </button>
-              {iconPickerUrl === ml.myListUrl && (
-                <>
-                  <div
-                    className="fixed inset-0 z-10"
-                    onClick={(e) => { e.stopPropagation(); setIconPickerUrl(null); }}
-                  />
-                  <div
-                    className="absolute left-0 top-full z-20 mt-1 p-2 bg-nndd-bg border border-nndd-border rounded shadow-lg w-max"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {ICON_PRESET_GROUPS.map((group) => (
-                      <div key={group.label} className="mb-1.5 last:mb-0">
-                        <div className="text-[10px] text-nndd-subtext mb-0.5">{group.label}</div>
-                        <div className="grid grid-cols-8 gap-0.5">
-                          {group.icons.map((emoji) => (
-                            <button
-                              key={emoji}
-                              onClick={() => handleIconChange(ml, emoji)}
-                              className="text-base p-1 hover:bg-nndd-border rounded"
-                            >
-                              {emoji}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                    <button
-                      onClick={() => handleIconChange(ml, null)}
-                      className="w-full text-[10px] text-nndd-subtext hover:text-nndd-accent mt-1 pt-1 border-t border-nndd-border"
-                    >
-                      種別デフォルトに戻す
-                    </button>
-                  </div>
-                </>
-              )}
-              {editingUrl === ml.myListUrl ? (
-                <input
-                  autoFocus
-                  value={editingName}
-                  onChange={(e) => setEditingName(e.target.value)}
-                  onBlur={() => handleRename(ml, editingName)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleRename(ml, editingName);
-                    if (e.key === 'Escape') setEditingUrl(null);
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-                  className="flex-1 min-w-0 bg-nndd-bg border border-nndd-accent px-1 py-0 text-xs outline-none"
-                />
-              ) : (
-                <span className="flex-1 truncate" title={ml.myListUrl}>{ml.myListName}</span>
-              )}
-              <button
-                onClick={(e) => { e.stopPropagation(); handleRemove(ml); }}
-                className="text-nndd-subtext hover:text-red-500 dark:hover:text-red-400"
-                title="削除"
-              >
-                ×
-              </button>
-            </div>
+              onEditingNameChange={setEditingName}
+              onCommitRename={() => handleRename(ml, editingName)}
+              onCancelEdit={() => setEditingUrl(null)}
+              onToggleIconPicker={() => setIconPickerUrl(iconPickerUrl === ml.myListUrl ? null : ml.myListUrl)}
+              onCloseIconPicker={() => setIconPickerUrl(null)}
+              onIconChange={(icon) => handleIconChange(ml, icon)}
+              onRemove={() => handleRemove(ml)}
+            />
           ))}
 
           <div className="px-2 py-1 text-xs font-bold text-nndd-subtext bg-nndd-bg sticky top-0 border-t border-nndd-border mt-1">
@@ -939,88 +531,29 @@ export function MyListView(): JSX.Element {
             <div className="p-3 text-xs text-nndd-subtext">プレイリストがありません。</div>
           )}
           {playlists.map((pl) => (
-            <div
+            <ListSidebarRow
               key={pl.id}
-              className={[
-                'relative flex items-center gap-1 px-2 py-1 text-xs border-b border-nndd-border cursor-pointer',
-                selected?.kind === 'playlist' && selected.playlist.id === pl.id ? 'bg-nndd-bg' : 'hover:bg-nndd-border'
-              ].join(' ')}
-              onClick={() => editingPlaylistId !== pl.id && fetchPlaylistItems(pl)}
-              onContextMenu={(e) => {
-                e.preventDefault();
+              icon={pl.icon ?? '📑'}
+              name={pl.name}
+              title={pl.name}
+              iconResetLabel="既定に戻す"
+              isSelected={selected?.kind === 'playlist' && selected.playlist.id === pl.id}
+              isEditing={editingPlaylistId === pl.id}
+              editingName={editingPlaylistName}
+              iconPickerOpen={iconPickerPlaylistId === pl.id}
+              onSelect={() => fetchPlaylistItems(pl)}
+              onStartEdit={() => {
                 setEditingPlaylistId(pl.id);
                 setEditingPlaylistName(pl.name);
               }}
-            >
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIconPickerPlaylistId(iconPickerPlaylistId === pl.id ? null : pl.id);
-                }}
-                className="text-nndd-subtext shrink-0 hover:opacity-70"
-                title="アイコンを変更"
-              >
-                {pl.icon ?? '📑'}
-              </button>
-              {iconPickerPlaylistId === pl.id && (
-                <>
-                  <div
-                    className="fixed inset-0 z-10"
-                    onClick={(e) => { e.stopPropagation(); setIconPickerPlaylistId(null); }}
-                  />
-                  <div
-                    className="absolute left-0 top-full z-20 mt-1 p-2 bg-nndd-bg border border-nndd-border rounded shadow-lg w-max"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    {ICON_PRESET_GROUPS.map((group) => (
-                      <div key={group.label} className="mb-1.5 last:mb-0">
-                        <div className="text-[10px] text-nndd-subtext mb-0.5">{group.label}</div>
-                        <div className="grid grid-cols-8 gap-0.5">
-                          {group.icons.map((emoji) => (
-                            <button
-                              key={emoji}
-                              onClick={() => handlePlaylistIconChange(pl, emoji)}
-                              className="text-base p-1 hover:bg-nndd-border rounded"
-                            >
-                              {emoji}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    ))}
-                    <button
-                      onClick={() => handlePlaylistIconChange(pl, null)}
-                      className="w-full text-[10px] text-nndd-subtext hover:text-nndd-accent mt-1 pt-1 border-t border-nndd-border"
-                    >
-                      既定に戻す
-                    </button>
-                  </div>
-                </>
-              )}
-              {editingPlaylistId === pl.id ? (
-                <input
-                  autoFocus
-                  value={editingPlaylistName}
-                  onChange={(e) => setEditingPlaylistName(e.target.value)}
-                  onBlur={() => handleRenamePlaylist(pl, editingPlaylistName)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleRenamePlaylist(pl, editingPlaylistName);
-                    if (e.key === 'Escape') setEditingPlaylistId(null);
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-                  className="flex-1 min-w-0 bg-nndd-bg border border-nndd-accent px-1 py-0 text-xs outline-none"
-                />
-              ) : (
-                <span className="flex-1 truncate" title={pl.name}>{pl.name}</span>
-              )}
-              <button
-                onClick={(e) => { e.stopPropagation(); handleRemovePlaylist(pl); }}
-                className="text-nndd-subtext hover:text-red-500 dark:hover:text-red-400"
-                title="削除"
-              >
-                ×
-              </button>
-            </div>
+              onEditingNameChange={setEditingPlaylistName}
+              onCommitRename={() => handleRenamePlaylist(pl, editingPlaylistName)}
+              onCancelEdit={() => setEditingPlaylistId(null)}
+              onToggleIconPicker={() => setIconPickerPlaylistId(iconPickerPlaylistId === pl.id ? null : pl.id)}
+              onCloseIconPicker={() => setIconPickerPlaylistId(null)}
+              onIconChange={(icon) => handlePlaylistIconChange(pl, icon)}
+              onRemove={() => handleRemovePlaylist(pl)}
+            />
           ))}
         </div>
       </aside>
@@ -1032,145 +565,48 @@ export function MyListView(): JSX.Element {
         {selected && (
           <>
             {/* ヘッダー */}
-            <div className="shrink-0 p-2 border-b border-nndd-border bg-nndd-panel flex items-center gap-2 flex-wrap">
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-bold truncate">
-                  {selected.kind === 'mylist' ? selected.mylist.myListName : selected.playlist.name}
-                </div>
-                {selected.kind === 'mylist' && (
-                  <div
-                    className="text-xs text-nndd-subtext truncate cursor-pointer hover:underline"
-                    title="クリックでURLをコピー"
-                    onClick={() => {
-                      navigator.clipboard.writeText(selected.mylist.myListUrl);
-                      showToast('URLをコピーしました');
-                    }}
-                  >
-                    {selected.mylist.myListUrl}
-                  </div>
-                )}
-              </div>
-              {selectedIds.size > 0 && (
-                <button
-                  onClick={() => setSelectedIds(new Set())}
-                  className="text-xs px-2 py-1 bg-nndd-border rounded hover:bg-nndd-accent hover:text-white"
-                >
-                  選択解除
-                </button>
-              )}
-              {selected.kind === 'mylist' && !mylists.some((m) => m.myListUrl === selected.mylist.myListUrl) && (
-                <button
-                  onClick={handleAddCurrentMylist}
-                  className="text-xs px-3 py-1 bg-green-700 text-white rounded hover:opacity-80 shrink-0"
-                  title="このマイリストを登録リストに追加"
-                >
-                  マイリスト追加
-                </button>
-              )}
-              <div ref={bulkMenuRef} className="relative inline-flex shrink-0">
-                <button
-                  onClick={() => handleBulkDownload()}
-                  disabled={bulkDling || items.length === 0}
-                  className="text-xs px-3 py-1 bg-nndd-accent text-white rounded-l hover:opacity-80 disabled:opacity-50"
-                  title="Shift+クリックで範囲選択 / Ctrl+クリックで複数選択"
-                >
-                  {bulkDling ? '追加中…' : bulkLabel}
-                </button>
-                <button
-                  onClick={() => setBulkMenuOpen((v) => !v)}
-                  disabled={bulkDling || items.length === 0}
-                  className="text-xs px-1 py-1 bg-nndd-accent text-white rounded-r border-l border-white/30 hover:opacity-80 disabled:opacity-50"
-                >▼</button>
-                {bulkMenuOpen && (
-                  <div className="absolute top-full right-0 mt-0.5 flex flex-col bg-nndd-panel border border-nndd-border rounded shadow-lg z-50 text-xs whitespace-nowrap">
-                    <button
-                      onClick={() => { setBulkMenuOpen(false); void handleBulkDownload(); }}
-                      className="block w-full px-3 py-1 text-left hover:bg-nndd-border"
-                    >通常DL</button>
-                    <button
-                      onClick={() => {
-                        setBulkMenuOpen(false);
-                        const name = selected?.kind === 'mylist' ? selected.mylist.myListName : selected?.kind === 'playlist' ? selected.playlist.name : undefined;
-                        void handleBulkDownload(name);
-                      }}
-                      className="block w-full px-3 py-1 text-left hover:bg-nndd-border"
-                    >フォルダ作成してDL</button>
-                  </div>
-                )}
-              </div>
-              <div className="flex border border-nndd-border rounded overflow-hidden shrink-0">
-                <button
-                  onClick={() => setDisplayMode('grid')}
-                  className={`text-xs px-2 py-1 ${displayMode === 'grid' ? 'bg-nndd-accent text-white' : 'hover:bg-nndd-border'}`}
-                  title="グリッド表示"
-                >⊞</button>
-                <button
-                  onClick={() => setDisplayMode('list')}
-                  className={`text-xs px-2 py-1 ${displayMode === 'list' ? 'bg-nndd-accent text-white' : 'hover:bg-nndd-border'}`}
-                  title="リスト表示"
-                >☰</button>
-              </div>
-            </div>
+            <MyListHeader
+              selected={selected}
+              selectedCount={selectedIds.size}
+              onClearSelection={() => setSelectedIds(new Set())}
+              showAddCurrent={selected.kind === 'mylist' && !mylists.some((m) => m.myListUrl === selected.mylist.myListUrl)}
+              onAddCurrent={handleAddCurrentMylist}
+              bulkMenuRef={bulkMenuRef}
+              bulkMenuOpen={bulkMenuOpen}
+              setBulkMenuOpen={setBulkMenuOpen}
+              bulkDling={bulkDling}
+              bulkDisabled={items.length === 0}
+              bulkLabel={bulkLabel}
+              onBulkDownload={handleBulkDownload}
+              displayMode={displayMode}
+              onDisplayModeChange={setDisplayMode}
+              showToast={showToast}
+            />
 
             {error && <div className="text-red-500 dark:text-red-400 text-sm p-2">エラー: {error}</div>}
 
             {items.length > 0 && (
-              <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-nndd-border bg-nndd-panel text-xs">
-                <ContinuousPlayButton
-                  disabled={loading || filteredItems.length === 0}
-                  onPlay={(audioOnly) => {
-                    if (filteredItems.length === 0) return;
-                    const videoIds = filteredItems.map((it) => it.videoId);
-                    const startIdx = selectedIds.size > 0
-                      ? filteredItems.findIndex((it) => selectedIds.has(it.videoId))
-                      : 0;
-                    window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
-                      videoId: videoIds[startIdx >= 0 ? startIdx : 0],
-                      searchPlaylist: videoIds,
-                      audioOnly: audioOnly || undefined,
-                    });
-                  }}
-                />
-                <input
-                  value={searchText}
-                  onChange={(e) => handleSearchTextChange(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') handleSearchConfirm(); }}
-                  placeholder="タイトルで絞り込み"
-                  className="bg-nndd-bg border border-nndd-border px-2 py-1 text-xs"
-                />
-                {loadingAll && (
-                  <span className="text-nndd-subtext animate-pulse">
-                    全件読込中… ({loadedCount.toLocaleString()}/{totalItems.toLocaleString()}件)
-                  </span>
-                )}
-                <span className="text-nndd-subtext">{filteredItems.length} 件</span>
-              </div>
+              <MyListFilterBar
+                loading={loading}
+                filteredItems={filteredItems}
+                selectedIds={selectedIds}
+                searchText={searchText}
+                onSearchTextChange={handleSearchTextChange}
+                onSearchConfirm={handleSearchConfirm}
+                loadingAll={loadingAll}
+                loadedCount={loadedCount}
+                totalItems={totalItems}
+              />
             )}
 
             {/* ページネーションバー (固定、マイリストのみ) */}
             {selected.kind === 'mylist' && (items.length > 0 || loading) && totalItems > PAGE_SIZE && (
-              <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-nndd-border bg-nndd-panel text-xs">
-                <span className="text-nndd-subtext">
-                  {totalItems > 0
-                    ? `${totalItems.toLocaleString()} 件中 ${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, totalItems)} 件表示`
-                    : ''}
-                </span>
-                <div className="flex items-center gap-1 ml-auto">
-                  <button
-                    onClick={() => selected.kind === 'mylist' && void fetchItems(selected.mylist, currentPage - 1)}
-                    disabled={loading || currentPage <= 1}
-                    className="px-2 py-0.5 bg-nndd-border rounded hover:bg-nndd-accent disabled:opacity-40"
-                  >◀ 前</button>
-                  <span className="text-nndd-subtext px-2">
-                    {currentPage} / {Math.ceil(totalItems / PAGE_SIZE)}
-                  </span>
-                  <button
-                    onClick={() => selected.kind === 'mylist' && void fetchItems(selected.mylist, currentPage + 1)}
-                    disabled={loading || currentPage >= Math.ceil(totalItems / PAGE_SIZE)}
-                    className="px-2 py-0.5 bg-nndd-border rounded hover:bg-nndd-accent disabled:opacity-40"
-                  >次 ▶</button>
-                </div>
-              </div>
+              <MyListPagination
+                totalItems={totalItems}
+                currentPage={currentPage}
+                loading={loading}
+                onPageChange={(page) => selected.kind === 'mylist' && void fetchItems(selected.mylist, page)}
+              />
             )}
 
             <div ref={scrollRef} className="flex-1 overflow-auto p-3">
@@ -1190,88 +626,25 @@ export function MyListView(): JSX.Element {
                   layout={displayMode}
                   scrollElementRef={scrollRef}
                   getKey={(it) => it.videoId}
-                  renderItem={(it) => {
-                    const idx = items.findIndex((x) => x.videoId === it.videoId);
-                    if (displayMode === 'grid') {
-                      return (
-                        <div
-                          onClick={(e) => handleItemClick(it.videoId, e)}
-                          className={[
-                            'relative rounded cursor-pointer',
-                            selectedIds.has(it.videoId) ? 'ring-2 ring-nndd-accent' : ''
-                          ].join(' ')}
-                        >
-                          <VideoCard
-                            data={it}
-                            onPlay={handlePlay}
-                            onDownload={handleDownload}
-                            onNiconico={handleNiconico}
-                            onPlayAudioOnly={handlePlayAudioOnly}
-                            isDownloaded={downloadedIds.has(it.videoId)}
-                            isWatched={watchedIds.has(it.videoId)}
-                            onRemove={isPlaylistSelected ? handleRemoveVideoFromPlaylist : undefined}
-                          />
-                          {isPlaylistSelected && (
-                            <div className="absolute left-1 top-1 flex flex-col gap-0.5 z-10">
-                              <button
-                                onClick={(e) => { e.stopPropagation(); moveItem(idx, -1); }}
-                                disabled={idx <= 0}
-                                className="w-5 h-5 text-xs bg-black/60 text-white rounded disabled:opacity-30"
-                                title="上へ"
-                              >▲</button>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); moveItem(idx, 1); }}
-                                disabled={idx === items.length - 1}
-                                className="w-5 h-5 text-xs bg-black/60 text-white rounded disabled:opacity-30"
-                                title="下へ"
-                              >▼</button>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    }
-                    return (
-                      <div
-                        className={[
-                          'flex items-center gap-1 rounded',
-                          selectedIds.has(it.videoId) ? 'ring-2 ring-nndd-accent' : ''
-                        ].join(' ')}
-                      >
-                        {isPlaylistSelected && (
-                          <div className="flex flex-col gap-0.5 shrink-0">
-                            <button
-                              onClick={() => moveItem(idx, -1)}
-                              disabled={idx <= 0}
-                              className="w-5 h-4 text-xs bg-nndd-border rounded disabled:opacity-30"
-                              title="上へ"
-                            >▲</button>
-                            <button
-                              onClick={() => moveItem(idx, 1)}
-                              disabled={idx === items.length - 1}
-                              className="w-5 h-4 text-xs bg-nndd-border rounded disabled:opacity-30"
-                              title="下へ"
-                            >▼</button>
-                          </div>
-                        )}
-                        <div
-                          className="flex-1 min-w-0 cursor-pointer"
-                          onClick={(e) => handleItemClick(it.videoId, e)}
-                        >
-                          <VideoCard
-                            data={it}
-                            layout="list"
-                            onPlay={handlePlay}
-                            onDownload={handleDownload}
-                            onNiconico={handleNiconico}
-                            onPlayAudioOnly={handlePlayAudioOnly}
-                            isDownloaded={downloadedIds.has(it.videoId)}
-                            isWatched={watchedIds.has(it.videoId)}
-                            onRemove={isPlaylistSelected ? handleRemoveVideoFromPlaylist : undefined}
-                          />
-                        </div>
-                      </div>
-                    );
-                  }}
+                  renderItem={(it) => (
+                    <MyListItemCell
+                      item={it}
+                      index={items.findIndex((x) => x.videoId === it.videoId)}
+                      itemCount={items.length}
+                      displayMode={displayMode}
+                      isSelected={selectedIds.has(it.videoId)}
+                      isPlaylist={isPlaylistSelected}
+                      isDownloaded={downloadedIds.has(it.videoId)}
+                      isWatched={watchedIds.has(it.videoId)}
+                      onItemClick={handleItemClick}
+                      onMove={moveItem}
+                      onPlay={handlePlay}
+                      onDownload={handleDownload}
+                      onNiconico={handleNiconico}
+                      onPlayAudioOnly={handlePlayAudioOnly}
+                      onRemove={isPlaylistSelected ? handleRemoveVideoFromPlaylist : undefined}
+                    />
+                  )}
                 />
               )}
             </div>
@@ -1280,60 +653,4 @@ export function MyListView(): JSX.Element {
       </main>
     </div>
   );
-}
-
-/** MyListItem → VideoCardData */
-function mylistItemToCard(it: MyListItem): VideoCardData {
-  return {
-    videoId: it.videoId,
-    title: it.title,
-    thumbnailUrl: it.thumbnailUrl,
-    length: it.length,          // string "M:SS" → VideoCard が string 対応済み
-    viewCount: it.viewCount,
-    commentCount: it.commentCount,
-    mylistCount: it.mylistCount,
-    likeCount: it.likeCount,
-    registeredAt: it.pubDate,   // 投稿日
-    isChannelVideo: it.isChannelVideo,
-  };
-}
-
-/** PlaylistItem → VideoCardData (追加時のスナップショットのみ、統計情報はなし) */
-function playlistItemToCard(it: PlaylistItem): VideoCardData {
-  return {
-    videoId: it.videoId,
-    title: it.title,
-    thumbnailUrl: it.thumbnailUrl,
-    length: it.lengthSec,
-    viewCount: 0,
-    commentCount: 0,
-    mylistCount: 0,
-  };
-}
-
-const ICON_PRESET_GROUPS: { label: string; icons: string[] }[] = [
-  { label: 'カラー', icons: ['🔴', '🟠', '🟡', '🟢', '🔵', '🟣', '🟤', '⚫', '⚪'] },
-  { label: 'カテゴリ', icons: ['🎵', '🎮', '🎨', '⚽', '🍳', '📚', '🎬', '✈️', '💻', '🌙', '💎', '🏆', '📌', '❤️', '😂', '🔥'] }
-];
-
-function typeLabel(t: RssTypeValue): string {
-  switch (t) {
-    case RssType.MY_LIST: return '📑';
-    case RssType.CHANNEL: return '📺';
-    case RssType.COMMUNITY: return '👥';
-    case RssType.USER_UPLOAD_VIDEO: return '👤';
-    case RssType.SERIES: return '📚';
-    default: return '?';
-  }
-}
-
-function typeNameJa(t: RssTypeValue): string {
-  switch (t) {
-    case RssType.MY_LIST: return 'マイリスト';
-    case RssType.CHANNEL: return 'チャンネル';
-    case RssType.COMMUNITY: return 'コミュニティ (終了済)';
-    case RssType.USER_UPLOAD_VIDEO: return 'ユーザー投稿';
-    case RssType.SERIES: return 'シリーズ';
-    default: return '不明';
-  }
 }
