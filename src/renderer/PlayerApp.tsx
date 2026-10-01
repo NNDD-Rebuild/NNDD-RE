@@ -1,17 +1,35 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { NNDDREComment, WatchPageInfo, DomandStreamCandidate, NicowariContent, OpenPlayerParams } from '@shared/types';
+import { useEffect, useRef, useState } from 'react';
+import type { NNDDREComment, WatchPageInfo, DomandStreamCandidate, NicowariContent } from '@shared/types';
 import { IpcChannel } from '@shared/types';
-import { buildLocalUrl, isLocalMediaUrl, COMMENT_FONT_FAMILY } from '@shared/constants';
+import { buildLocalUrl, isLocalMediaUrl } from '@shared/constants';
 import { VideoPlayer, type VideoPlayerHandle } from './components/player/VideoPlayer';
 import { VideoController } from './components/player/VideoController';
 import { VideoInfoView } from './components/player/VideoInfoView';
 import { HistoryBlockedDialog } from './components/player/HistoryBlockedDialog';
 import { NicowariBanner } from './components/player/NicowariBanner';
-import type { CommentRenderConfig } from './components/player/CommentRenderer';
 import { ensureCommandResolved } from './util/commentCommands';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useConfig } from './hooks/useConfig';
 import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
+import {
+  pickDefaultQualityId,
+  readLocalComments,
+  type InitParams,
+  type PlayInfo,
+  type PreloadEntry,
+  type StreamUrlResult
+} from './hooks/player/playerUtils';
+import { usePlaylist } from './hooks/player/usePlaylist';
+import { useSidebarResize } from './hooks/player/useSidebarResize';
+import { useCommentRenderSettings } from './hooks/player/useCommentRenderSettings';
+import { useNiconicoEmbed } from './hooks/player/useNiconicoEmbed';
+import { useHistoryBlockedPrompt } from './hooks/player/useHistoryBlockedPrompt';
+import { useWatchHistory } from './hooks/player/useWatchHistory';
+import { useDiscordPresence } from './hooks/player/useDiscordPresence';
+import { useJumpCommand, useNicowari } from './hooks/player/useOwnerCommentCommands';
+import { usePlaybackTicker } from './hooks/player/usePlaybackTicker';
+import { useCommentWindow } from './hooks/player/useCommentWindow';
+import { useFullscreenControls } from './hooks/player/useFullscreenControls';
 
 interface StreamProgress {
   videoId: string;
@@ -23,22 +41,15 @@ interface StreamProgress {
   message?: string;
 }
 
-type InitParams = OpenPlayerParams;
-
-/** 視聴履歴記録: 再生開始から 10 秒経過した時点で 1 度だけ書き込む */
-const HISTORY_RECORD_THRESHOLD_SEC = 10;
-/** レジューム保存: これ未満の視聴では保存しない */
-const RESUME_MIN_WATCH_SEC = 30;
-/** レジューム保存: 終了間際 (残りこの秒数以下) は見終わったとみなしクリア */
-const RESUME_SKIP_END_SEC = 15;
-/** レジューム保存の間引き間隔 */
-const RESUME_SAVE_INTERVAL_MS = 5000;
+/** 連続再生中に再生できない動画を自動スキップする上限 */
+const MAX_CONSECUTIVE_SKIPS = 10;
 
 /**
  * 動画プレイヤーウィンドウのルートコンポーネント。
  *
  * メインプロセスから IPC `nndd:player:init` で起動情報 (videoId or localPath) を受け取り、
  * ストリーミング or ローカル再生を行う。
+ * 責務ごとの処理は hooks/player/ 配下のフックに分けている。
  *
  * 元: VideoPlayer.mxml の全体レイアウト相当。
  */
@@ -59,10 +70,10 @@ export default function PlayerApp(): JSX.Element {
   const [showPastComments, setShowPastComments] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [showHistoryBlockedDialog, setShowHistoryBlockedDialog] = useState(false);
-  const historyBlockedResolverRef = useRef<((allow: boolean) => void) | null>(null);
   const [showComments, setShowComments] = useState(true);
   const [video, setVideo] = useState<HTMLVideoElement | null>(null);
+  /** イベントリスナー内でstaleにならないようvideo stateをrefでも持つ */
+  const videoElementRef = useRef<HTMLVideoElement | null>(null);
   const setVideoWithRef = (el: HTMLVideoElement | null): void => {
     videoElementRef.current = el;
     setVideo(el);
@@ -70,78 +81,62 @@ export default function PlayerApp(): JSX.Element {
   const videoPlayerRef = useRef<VideoPlayerHandle>(null);
   const [docPipActive, setDocPipActive] = useState(false);
   const [isLocal, setIsLocal] = useState(false);
+  const isLocalRef = useRef(false);
   const [localCommentXmlPath, setLocalCommentXmlPath] = useState<string | undefined>(undefined);
   const [localIchibaHtmlPath, setLocalIchibaHtmlPath] = useState<string | undefined>(undefined);
-  const [streamProgress, setStreamProgress] = useState<StreamProgress | null>(null);
-  const [showControls, setShowControls] = useState(true);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [commentWindowOpen, setCommentWindowOpen] = useState(false);
-  const [autoNextSeries, setAutoNextSeries] = useState(false);
-  const autoNextSeriesRef = useRef(false);
-  const seriesItemsRef = useRef<import('@shared/types').MyListItem[]>([]);
-  const [seriesItems, setSeriesItems] = useState<import('@shared/types').MyListItem[]>([]);
-  const seriesPageRef = useRef(1);
-  const seriesTotalPagesRef = useRef(1);
-  const seriesIdRef = useRef('');
-  const [autoNextRelated, setAutoNextRelated] = useState(false);
-  const autoNextRelatedRef = useRef(false);
-  const relatedItemsRef = useRef<import('@shared/types').MyListItem[]>([]);
-  const [autoNextFolder, setAutoNextFolder] = useState(false);
-  const autoNextFolderRef = useRef(false);
-  const [folderVideos, setFolderVideos] = useState<string[]>([]);
-  const folderVideosRef = useRef<string[]>([]);
-  const currentLocalPathRef = useRef<string>('');
-  const isLocalRef = useRef(false);
-  const [searchPlaylist, setSearchPlaylist] = useState<string[]>([]);
-  const searchPlaylistRef = useRef<string[]>([]);
+  // 進捗イベントの受信は未接続 (現状は常に null)
+  const [streamProgress] = useState<StreamProgress | null>(null);
   const [audioOnly, setAudioOnly] = useState(false);
   const audioOnlyRef = useRef(false);
   const [availableQualities, setAvailableQualities] = useState<DomandStreamCandidate[]>([]);
   const [selectedQualityId, setSelectedQualityId] = useState<string | null>(null);
   const consecutiveSkipRef = useRef(0);
-  const MAX_CONSECUTIVE_SKIPS = 10;
-  const preloadRef = useRef<{
-    videoId: string;
-    watchInfo?: WatchPageInfo;
-    stream?: {
-      contentUrl: string | null;
-      isDMS: boolean;
-      isHls?: boolean;
-      ffplay?: boolean;
-      niconico?: boolean;
-      error?: string;
-    };
-  } | null>(null);
+  const preloadRef = useRef<PreloadEntry | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const webviewWrapperRef = useRef<HTMLDivElement>(null);
+  /** レジューム位置クリア (終了間際判定) を1回だけ発行するためのフラグ */
+  const resumeFinishedRef = useRef(false);
+  /** src切替後に再生位置を復元するためのRef (nndd-stream→nndd-re-local自動切替時、および画質変更時に使用) */
+  const pendingSeekRef = useRef(0);
+  const srcRef = useRef('');
+  const playInfoRef = useRef<PlayInfo | null>(null);
 
-  // ── サイドバー幅リサイズ ──────────────────────────────────
-  const SIDEBAR_MIN = 180;
-  const SIDEBAR_MAX = 700;
-  const [sidebarWidth, setSidebarWidth] = useState(320);
-  // 保存値の復元 or 手動リサイズが一度でも起きたら true。true になった後は
-  // handleTabsOverflow による自動拡大を止める (フォント差でタブ幅計算が変わる
-  // 環境 (例: Linux) で、保存済みの幅を毎起動自動的に押し広げてしまうのを防ぐため)
-  const sidebarUserSetRef = useRef(false);
-  const [isSidebarDragging, setIsSidebarDragging] = useState(false);
-  const sidebarDragging = useRef(false);
-  const sidebarDragStartX = useRef(0);
-  const sidebarDragStartW = useRef(320);
+  const currentVideoId = watch?.videoId ?? playInfoRef.current?.videoId;
 
-  useEffect(() => { isHlsRef.current = isHls; }, [isHls]);
   useEffect(() => { srcRef.current = src; }, [src]);
   useEffect(() => { isLocalRef.current = isLocal; }, [isLocal]);
-  useEffect(() => { searchPlaylistRef.current = searchPlaylist; }, [searchPlaylist]);
   useEffect(() => { watchRef.current = watch; }, [watch]);
 
-  // 関連動画の連続再生ON時、動画切り替わりごとに次動画候補をバックグラウンド取得。
-  // シリーズと違い関連動画リストは動画ごとに変わるため、関連動画タブを開いていない間も
-  // ここで都度取得しないと2本目以降で relatedItemsRef が更新されず連続再生が止まる。
-  useEffect(() => {
-    if (!autoNextRelated || !watch?.videoId) return;
-    window.nndd
-      .invoke<import('@shared/types').MyListItem[]>(IpcChannel.VIDEO_GET_RELATED, watch.videoId)
-      .then((items) => { relatedItemsRef.current = items; })
-      .catch(() => {});
-  }, [watch?.videoId, autoNextRelated]);
+  const {
+    autoNextSeries,
+    autoNextRelated,
+    autoNextFolder,
+    autoNextFolderRef,
+    folderVideos,
+    currentLocalPathRef,
+    canSkipNext,
+    canSkipPrev,
+    updateSearchPlaylist,
+    updateFolderVideos,
+    isAutoPlayActive,
+    getNextVideoId,
+    advanceToNextVideo,
+    skipToNext,
+    skipToPrev,
+    onAutoNextFolderChange,
+    onAutoNextSeriesChange,
+    onSeriesPageLoaded,
+    onAutoNextRelatedChange,
+    onRelatedLoaded
+  } = usePlaylist({
+    watchVideoId: watch?.videoId,
+    currentVideoId,
+    isLocal,
+    isLocalRef,
+    watchRef,
+    playInfoRef,
+    audioOnlyRef
+  });
 
   // テーマ適用
   useEffect(() => {
@@ -150,133 +145,19 @@ export default function PlayerApp(): JSX.Element {
       .catch(() => {});
   }, []);
 
-  // autoNextFolder: マウント時に設定から復元
-  useEffect(() => {
-    window.nndd.invoke<boolean>(window.nndd.channels.CONFIG_GET, 'player.autoNextFolder')
-      .then((v) => {
-        if (v != null) {
-          autoNextFolderRef.current = v;
-          setAutoNextFolder(v);
-        }
-      })
-      .catch(() => {});
-  }, []);
+  const { sidebarWidth, isSidebarDragging, handleTabsOverflow, onSidebarDividerMouseDown } =
+    useSidebarResize();
 
-  // 保存済み幅のロード
-  useEffect(() => {
-    window.nndd
-      .invoke<number>(window.nndd.channels.CONFIG_GET, 'player.sidebarWidth')
-      .then((w) => {
-        if (w && w > 0) {
-          setSidebarWidth(w);
-          sidebarUserSetRef.current = true;
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  // タブバーが収まらない時、スクロールでなくペイン幅拡大で対応 (縮小方向へは動かさない)。
-  // ただし保存値の復元後・手動リサイズ後は対象外 (毎起動押し広げるのを防ぐ)
-  const handleTabsOverflow = useCallback((neededWidth: number): void => {
-    if (sidebarUserSetRef.current) return;
-    const w = Math.min(SIDEBAR_MAX, neededWidth + 8);
-    setSidebarWidth((prev) => Math.max(prev, w));
-  }, []);
-
-  const onSidebarDividerMouseDown = useCallback((e: React.MouseEvent): void => {
-    sidebarDragging.current = true;
-    setIsSidebarDragging(true);
-    sidebarDragStartX.current = e.clientX;
-    sidebarDragStartW.current = sidebarWidth;
-    e.preventDefault();
-  }, [sidebarWidth]);
-
-  useEffect(() => {
-    const onMove = (e: MouseEvent): void => {
-      if (!sidebarDragging.current) return;
-      const dx = sidebarDragStartX.current - e.clientX; // 左ドラッグ → 幅増加
-      const w = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, sidebarDragStartW.current + dx));
-      setSidebarWidth(w);
-    };
-    const onUp = (e: MouseEvent): void => {
-      if (!sidebarDragging.current) return;
-      sidebarDragging.current = false;
-      setIsSidebarDragging(false);
-      sidebarUserSetRef.current = true;
-      const dx = sidebarDragStartX.current - e.clientX;
-      const w = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, sidebarDragStartW.current + dx));
-      window.nndd
-        .invoke(window.nndd.channels.CONFIG_SET, 'player.sidebarWidth', w)
-        .catch(() => {});
-    };
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
-    return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const webviewWrapperRef = useRef<HTMLDivElement>(null);
-  const hideTimerRef = useRef<number | null>(null);
-  /** レジューム位置保存の間引きタイマー */
-  const lastResumeSaveAtRef = useRef(0);
-  /** レジューム位置クリア (終了間際判定) を1回だけ発行するためのフラグ */
-  const resumeFinishedRef = useRef(false);
-  /** src切替後に再生位置を復元するためのRef (nndd-stream→nndd-re-local自動切替時、および画質変更時に使用) */
-  const pendingSeekRef = useRef(0);
-  /** イベントリスナー内でstaleにならないようvideo stateをrefでも持つ */
-  const videoElementRef = useRef<HTMLVideoElement | null>(null);
-  const isHlsRef = useRef(false);
-  const srcRef = useRef('');
-  const playInfoRef = useRef<{
-    videoId: string;
-    title: string;
-    thumbnailUrl: string;
-    /** Discord Rich Presence送信用。nndd-re-local://はDiscordから解決できないため、ImageCache適用前の生URLを別途保持 */
-    discordThumbnailUrl?: string;
-    isLocal: boolean;
-  } | null>(null);
-  /** 実視聴時間計測用セッション (open〜close間の経過時間からpause時間を除いて算出) */
-  const watchSessionRef = useRef<{
-    videoId: string;
-    title: string;
-    thumbnailUrl: string;
-    isLocal: boolean;
-    openedAtMs: number;
-    pausedMs: number;
-    pauseStartedAtMs: number | null;
-  } | null>(null);
   const [defaultQuality] = useConfig<'highest' | number>('player.defaultQuality', 'highest');
   const [controlsAlwaysVisible] = useConfig<boolean>('player.controlsAlwaysVisible', true);
   const defaultQualityRef = useRef(defaultQuality);
   defaultQualityRef.current = defaultQuality;
-  const [ngStrength] = useConfig<'weak' | 'medium' | 'strong'>('player.ngStrength', 'medium');
-  const [commentOpacity] = useConfig<number>('player.commentOpacity', 1);
-  const [commentSizeScale] = useConfig<number>('player.commentSizeScale', 1);
-  const [commentShowSec] = useConfig<number>('player.commentShowSeconds', 3);
-  const [commentFontFamily] = useConfig<string>(
-    'player.commentFontFamily',
-    COMMENT_FONT_FAMILY
-  );
-  const [commentBold] = useConfig<boolean>('player.commentBold', false);
-  const [commentDropShadow] = useConfig<boolean>(
-    'player.commentDropShadow',
-    true
-  );
-  const [commentOutlineIntensity] = useConfig<'light' | 'normal'>(
-    'player.commentOutlineIntensity',
-    'light'
-  );
-  const [commentAntiAlias] = useConfig<boolean>(
-    'player.commentAntiAlias',
-    true
-  );
-  const [commentKeepCA] = useConfig<boolean>(
-    'player.commentKeepCA',
-    true
-  );
+  const { renderedComments, commentConfig } = useCommentRenderSettings({
+    comments,
+    pastComments,
+    showComments,
+    showPastComments
+  });
   const [commentListDisplay] = useConfig<'tab' | 'window'>(
     'player.commentListDisplay',
     'tab'
@@ -285,8 +166,6 @@ export default function PlayerApp(): JSX.Element {
   const isWebPlayer = (globalThis as { __NNDD_WEB__?: boolean }).__NNDD_WEB__ === true;
   /** スマホ (タッチデバイス) のブラウザ版: 操作バーは常時表示せず一定時間で消す */
   const isMobileTouch = isWebPlayer && typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches;
-  /** 過去コメント時の同時描画制限 (0=無制限) */
-  const [pastCommentMaxCount] = useConfig<number>('player.pastCommentMaxCount', 0);
   const [commentWindowAutoOpen] = useConfig<boolean>(
     'player.commentWindowAutoOpen',
     false
@@ -294,73 +173,10 @@ export default function PlayerApp(): JSX.Element {
   const [controlUiSize] = useConfig<'small' | 'normal' | 'large'>('player.controlUiSize', 'small');
   const controlZoom = controlUiSize === 'large' ? 1.5 : controlUiSize === 'normal' ? 1.3 : 1;
 
-  /** 過去コメント同時表示制限付きコメント配列をメモ化 (不要な rebuildEngine を防ぐ) */
-  const renderedComments = useMemo<NNDDREComment[]>(() => {
-    if (!showComments) return [];
-    const base = showPastComments
-      ? limitSimultaneousComments(pastComments, pastCommentMaxCount)
-      : comments;
-    // owner コマンドコメント (@ジャンプ / ＠CM 等) は画面に流さない
-    return base.filter((c) => !/^[＠@](ジャンプ|[CＣ][MＭ])/.test(c.text ?? ''));
-  }, [showComments, showPastComments, pastComments, pastCommentMaxCount, comments]);
+  useNiconicoEmbed(niconicoMode, webviewWrapperRef, playInfoRef);
 
-  const commentConfig = useMemo<Partial<CommentRenderConfig>>(
-    () => ({
-      opacity: commentOpacity,
-      sizeScale: commentSizeScale,
-      showSecNaka: commentShowSec,
-      showSecFixed: commentShowSec,
-      fontFamily: commentFontFamily,
-      bold: commentBold,
-      dropShadow: commentDropShadow,
-      outlineIntensity: commentOutlineIntensity,
-      antiAlias: commentAntiAlias,
-      keepCA: commentKeepCA,
-      ngStrength
-    }),
-    [
-      commentOpacity,
-      commentSizeScale,
-      commentShowSec,
-      commentFontFamily,
-      commentBold,
-      commentDropShadow,
-      commentOutlineIntensity,
-      commentAntiAlias,
-      commentKeepCA,
-      ngStrength
-    ]
-  );
-
-  useEffect(() => {
-    if (!niconicoMode) {
-      window.nndd.send(IpcChannel.PLAYER_NICONICO_DESTROY);
-      return;
-    }
-    const el = webviewWrapperRef.current;
-    if (!el) return;
-
-    window.nndd.send(IpcChannel.PLAYER_NICONICO_INIT, {
-      videoId: playInfoRef.current?.videoId ?? ''
-    });
-
-    const sendBounds = (): void => {
-      const rect = el.getBoundingClientRect();
-      window.nndd.send(IpcChannel.PLAYER_NICONICO_RESIZE, {
-        x: Math.round(rect.x),
-        y: Math.round(rect.y),
-        width: Math.round(rect.width),
-        height: Math.round(rect.height)
-      });
-    };
-    sendBounds();
-    const ro = new ResizeObserver(sendBounds);
-    ro.observe(el);
-    return () => {
-      ro.disconnect();
-      window.nndd.send(IpcChannel.PLAYER_NICONICO_DESTROY);
-    };
-  }, [niconicoMode]);
+  const { showHistoryBlockedDialog, askHistoryBlocked, handleHistoryBlockedChoice } =
+    useHistoryBlockedPrompt();
 
   /**
    * 初期化イベント (PlayerManager から送られる) を受信
@@ -379,11 +195,9 @@ export default function PlayerApp(): JSX.Element {
           audioOnlyRef.current = isAudioOnly;
           setAudioOnly(isAudioOnly);
           if (params.searchPlaylist && params.searchPlaylist.length > 0) {
-            searchPlaylistRef.current = params.searchPlaylist;
-            setSearchPlaylist(params.searchPlaylist);
+            updateSearchPlaylist(params.searchPlaylist);
           } else {
-            searchPlaylistRef.current = [];
-            setSearchPlaylist([]);
+            updateSearchPlaylist([]);
           }
           if (params.localPath) {
             await initLocal(params.localPath, params.localFiles, params.folderPlaylist, params.resumeSec);
@@ -396,7 +210,6 @@ export default function PlayerApp(): JSX.Element {
           }
         } catch (e) {
           const rawMsg = e instanceof Error ? e.message : String(e);
-          console.warn('[DEBUG-HB] player init caught error:', rawMsg);
           if (rawMsg.includes('HISTORY_BLOCKED:')) {
             const reopening = await handleHistoryBlocked(params);
             if (!reopening) {
@@ -405,8 +218,7 @@ export default function PlayerApp(): JSX.Element {
             return;
           }
           const msg = toUserFriendlyErrorMessage(e);
-          const isAutoPlay = params.autoNext &&
-            (autoNextSeriesRef.current || searchPlaylistRef.current.length > 0 || autoNextFolderRef.current);
+          const isAutoPlay = params.autoNext && isAutoPlayActive();
           if (isAutoPlay && consecutiveSkipRef.current < MAX_CONSECUTIVE_SKIPS) {
             consecutiveSkipRef.current++;
             console.warn(
@@ -441,7 +253,7 @@ export default function PlayerApp(): JSX.Element {
       try {
         await initStreaming(vid, audioOnlyRef.current);
       } catch (e) {
-        const isAutoPlay = autoNextSeriesRef.current || searchPlaylistRef.current.length > 0 || autoNextFolderRef.current;
+        const isAutoPlay = isAutoPlayActive();
         const msg = toUserFriendlyErrorMessage(e);
         if (isAutoPlay && consecutiveSkipRef.current < MAX_CONSECUTIVE_SKIPS) {
           consecutiveSkipRef.current++;
@@ -454,27 +266,6 @@ export default function PlayerApp(): JSX.Element {
         }
       }
     }
-  };
-
-  /** 履歴非表示中の再生失敗時、履歴を残して再取得するかユーザーに確認する */
-  const askHistoryBlocked = (): Promise<boolean> => {
-    return new Promise((resolve) => {
-      historyBlockedResolverRef.current = resolve;
-      setShowHistoryBlockedDialog(true);
-    });
-  };
-
-  const handleHistoryBlockedChoice = async (allow: boolean, remember: boolean): Promise<void> => {
-    setShowHistoryBlockedDialog(false);
-    if (remember) {
-      await window.nndd.invoke(
-        window.nndd.channels.CONFIG_SET,
-        'sensitiveVideoHistoryPolicy',
-        allow ? 'allow' : 'deny'
-      ).catch(() => {});
-    }
-    historyBlockedResolverRef.current?.(allow);
-    historyBlockedResolverRef.current = null;
   };
 
   /**
@@ -521,8 +312,7 @@ export default function PlayerApp(): JSX.Element {
     setLocalCommentXmlPath(undefined);
     setPastComments([]);
     setShowPastComments(false);
-    folderVideosRef.current = [];
-    setFolderVideos([]);
+    updateFolderVideos([]);
     setAvailableQualities([]);
     setSelectedQualityId(null);
     // 1. WatchPageInfo を取得（プリロードキャッシュ優先）
@@ -561,14 +351,9 @@ export default function PlayerApp(): JSX.Element {
 
     // 3. ストリーミング URL を取得（プリロードキャッシュ優先、コメントと並列）
     const stream = cached?.stream
-      ?? await window.nndd.invoke<{
-        contentUrl: string | null;
-        isDMS: boolean;
-        ffplay?: boolean;
-        isHls?: boolean;
-        niconico?: boolean;
-        error?: string;
-      }>(window.nndd.channels.VIDEO_GET_STREAM_URL, videoId, w, isAudioOnly, defaultQualityId);
+      ?? await window.nndd.invoke<StreamUrlResult>(
+        window.nndd.channels.VIDEO_GET_STREAM_URL, videoId, w, isAudioOnly, defaultQualityId
+      );
 
     if (stream.error) {
       throw new Error(stream.error);
@@ -597,12 +382,9 @@ export default function PlayerApp(): JSX.Element {
     const vid = watchRef.current?.videoId ?? playInfoRef.current?.videoId;
     const w = watchRef.current;
     if (!vid || !w) return;
-    const stream = await window.nndd.invoke<{
-      contentUrl: string | null;
-      isDMS: boolean;
-      isHls?: boolean;
-      error?: string;
-    }>(window.nndd.channels.VIDEO_GET_STREAM_URL, vid, w, audioOnlyRef.current, qualityId);
+    const stream = await window.nndd.invoke<StreamUrlResult>(
+      window.nndd.channels.VIDEO_GET_STREAM_URL, vid, w, audioOnlyRef.current, qualityId
+    );
     if (!stream.error && stream.contentUrl) {
       setSrc(stream.contentUrl);
       setIsHls(stream.isHls ?? false);
@@ -644,13 +426,12 @@ export default function PlayerApp(): JSX.Element {
     currentLocalPathRef.current = localPath;
     // ライブラリからソート済みリストが渡された場合はそれを優先、なければファイルシステムから取得
     if (folderPlaylist && folderPlaylist.length > 0) {
-      folderVideosRef.current = folderPlaylist;
-      setFolderVideos(folderPlaylist);
+      updateFolderVideos(folderPlaylist);
     } else {
       const dir = localPath.replace(/[/\\][^/\\]+$/, '');
       window.nndd.invoke<string[]>(window.nndd.channels.LIBRARY_FOLDER_VIDEOS, dir)
-        .then((vids) => { folderVideosRef.current = vids; setFolderVideos(vids); })
-        .catch(() => { folderVideosRef.current = []; setFolderVideos([]); });
+        .then((vids) => { updateFolderVideos(vids); })
+        .catch(() => { updateFolderVideos([]); });
     }
     consecutiveSkipRef.current = 0;
     pendingSeekRef.current = resumeSec && resumeSec > 0 ? resumeSec : 0;
@@ -679,38 +460,8 @@ export default function PlayerApp(): JSX.Element {
 
     // コメントXML と ThumbInfo XML を並列ロード (setSrc 後なので再生を塞がない)
     const loadComments = async (): Promise<void> => {
-      if (!files?.commentXml) return;
-      const cs = await window.nndd.invoke<NNDDREComment[]>(
-        window.nndd.channels.COMMENT_READ_LOCAL,
-        files.commentXml
-      );
-      // ownerコメントXML (fork='1') を読んでマージ。@ジャンプ等で全件必要なのでサンプリングしない
-      let ownerCs: NNDDREComment[] = [];
-      if (files?.ownerCommentXml) {
-        ownerCs = await window.nndd
-          .invoke<NNDDREComment[]>(window.nndd.channels.COMMENT_READ_LOCAL, files.ownerCommentXml)
-          .catch(() => []);
-        // fork 属性が無い古いXML (本家NNDD等) でも投稿者コメントとして扱う (ニコスクリプト処理に必要)
-        ownerCs = ownerCs.map((c) => (c.fork ? c : { ...c, fork: '1' }));
-      }
-      if (files?.nowCommentJson) {
-        const nos = await window.nndd.invoke<number[]>(
-          window.nndd.channels.COMMENT_NOW_IDS_READ,
-          files.nowCommentJson
-        );
-        const noSet = new Set(nos);
-        setComments([...cs.filter((c) => noSet.has(c.no)), ...ownerCs].map(ensureCommandResolved));
-      } else {
-        const MAX_COMMENTS = 1000;
-        const sorted = [...cs].sort((a, b) => a.vposMs - b.vposMs);
-        const sampled = sorted.length <= MAX_COMMENTS
-          ? sorted
-          : Array.from(
-              { length: MAX_COMMENTS },
-              (_, i) => sorted[Math.floor(i * sorted.length / MAX_COMMENTS)]
-            );
-        setComments([...sampled, ...ownerCs].map(ensureCommandResolved));
-      }
+      const cs = await readLocalComments(files);
+      if (cs) setComments(cs);
     };
 
     const loadThumbInfo = async (): Promise<void> => {
@@ -761,674 +512,46 @@ export default function PlayerApp(): JSX.Element {
     }
   };
 
-  const getNextVideoId = (): string | null => {
-    if (isLocalRef.current) return null;
-    const currentId = watchRef.current?.videoId ?? playInfoRef.current?.videoId;
-    if (autoNextSeriesRef.current) {
-      const items = seriesItemsRef.current;
-      const idx = items.findIndex((i) => i.videoId === currentId);
-      if (idx >= 0 && idx < items.length - 1) return items[idx + 1].videoId;
-    }
-    if (autoNextRelatedRef.current) {
-      const items = relatedItemsRef.current;
-      if (items.length > 0) return items[0].videoId;
-    }
-    const pl = searchPlaylistRef.current;
-    if (pl.length > 0) {
-      const idx = pl.indexOf(currentId ?? '');
-      if (idx >= 0 && idx < pl.length - 1) return pl[idx + 1];
-    }
-    return null;
-  };
+  useWatchHistory({ currentVideoId, watch, video, playInfoRef });
+  useDiscordPresence({ video, src, playInfoRef });
+  useJumpCommand({ video, comments, isLocalRef, autoNextFolderRef });
+  const endNicowari = useNicowari({
+    video,
+    comments,
+    nicowariFiles,
+    setActiveNicowari,
+    pausedByNicowariRef,
+    videoElementRef
+  });
 
-  const advanceToNextVideo = (): boolean => {
-    const isAudio = audioOnlyRef.current || undefined;
+  usePlaybackTicker({
+    videoElementRef,
+    audioOnlyRef,
+    isLocalRef,
+    playInfoRef,
+    resumeFinishedRef,
+    preloadRef,
+    defaultQualityRef,
+    getNextVideoId
+  });
+  const openCommentWindow = useCommentWindow({
+    comments,
+    localCommentXmlPath,
+    localIchibaHtmlPath,
+    playInfoRef,
+    videoElementRef,
+    setPastComments,
+    setShowPastComments,
+    loading,
+    src,
+    audioOnly,
+    commentListDisplay,
+    commentWindowAutoOpen,
+    isWebPlayer
+  });
 
-    if (autoNextSeriesRef.current) {
-      const items = seriesItemsRef.current;
-      const currentId = watchRef.current?.videoId ?? playInfoRef.current?.videoId;
-      const idx = items.findIndex((i) => i.videoId === currentId);
-      if (idx >= 0 && idx < items.length - 1) {
-        window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
-          videoId: items[idx + 1].videoId, autoNext: true, audioOnly: isAudio,
-        });
-        return true;
-      }
-      if (idx === items.length - 1 && seriesPageRef.current < seriesTotalPagesRef.current) {
-        const nextPage = seriesPageRef.current + 1;
-        window.nndd.invoke<{ items: { videoId: string }[]; page: number; totalPages: number }>(
-          IpcChannel.SERIES_FETCH, seriesIdRef.current, undefined, nextPage
-        ).then((r) => {
-          seriesItemsRef.current = r.items as import('@shared/types').MyListItem[];
-          seriesPageRef.current = r.page;
-          seriesTotalPagesRef.current = r.totalPages;
-          if (r.items.length > 0) {
-            window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
-              videoId: r.items[0].videoId, autoNext: true, audioOnly: isAudio,
-            });
-          }
-        }).catch(() => {});
-        return true;
-      }
-    }
-
-    if (autoNextRelatedRef.current) {
-      const items = relatedItemsRef.current;
-      if (items.length > 0) {
-        window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
-          videoId: items[0].videoId, autoNext: true, audioOnly: isAudio,
-        });
-        return true;
-      }
-    }
-
-    if (autoNextFolderRef.current && isLocalRef.current) {
-      const vids = folderVideosRef.current;
-      const idx = vids.indexOf(currentLocalPathRef.current);
-      if (idx >= 0 && idx < vids.length - 1) {
-        window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
-          localPath: vids[idx + 1], folderPlaylist: vids, autoNext: true, audioOnly: isAudio,
-        });
-        return true;
-      }
-    }
-
-    const pl = searchPlaylistRef.current;
-    if (pl.length > 0) {
-      const currentId = watchRef.current?.videoId ?? playInfoRef.current?.videoId;
-      const idx = pl.indexOf(currentId ?? '');
-      if (idx >= 0 && idx < pl.length - 1) {
-        window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
-          videoId: pl[idx + 1], searchPlaylist: pl, autoNext: true, audioOnly: isAudio,
-        });
-        return true;
-      }
-    }
-
-    return false;
-  };
-
-  const getActivePlaylist = (): { type: 'search'; list: string[]; idx: number } | { type: 'folder'; list: string[]; idx: number } | { type: 'series'; list: import('@shared/types').MyListItem[]; idx: number } | null => {
-    const currentId = watchRef.current?.videoId ?? playInfoRef.current?.videoId;
-
-    const pl = searchPlaylistRef.current;
-    if (pl.length > 0 && currentId) {
-      const idx = pl.indexOf(currentId);
-      if (idx >= 0) return { type: 'search', list: pl, idx };
-    }
-
-    const vids = folderVideosRef.current;
-    if (vids.length > 0 && isLocalRef.current) {
-      const idx = vids.indexOf(currentLocalPathRef.current);
-      if (idx >= 0) return { type: 'folder', list: vids, idx };
-    }
-
-    const items = seriesItemsRef.current;
-    if (items.length > 0 && currentId) {
-      const idx = items.findIndex((i) => i.videoId === currentId);
-      if (idx >= 0) return { type: 'series', list: items, idx };
-    }
-
-    return null;
-  };
-
-  const skipToNext = (): void => {
-    const isAudio = audioOnlyRef.current || undefined;
-    const active = getActivePlaylist();
-    if (!active) return;
-
-    if (active.type === 'search') {
-      if (active.idx < active.list.length - 1) {
-        window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
-          videoId: active.list[active.idx + 1], searchPlaylist: active.list, audioOnly: isAudio,
-        });
-      }
-      return;
-    }
-
-    if (active.type === 'folder') {
-      if (active.idx < active.list.length - 1) {
-        window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
-          localPath: active.list[active.idx + 1], folderPlaylist: active.list, audioOnly: isAudio,
-        });
-      }
-      return;
-    }
-
-    if (active.type === 'series') {
-      if (active.idx < active.list.length - 1) {
-        window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
-          videoId: active.list[active.idx + 1].videoId, audioOnly: isAudio,
-        });
-        return;
-      }
-      if (seriesPageRef.current < seriesTotalPagesRef.current) {
-        const nextPage = seriesPageRef.current + 1;
-        window.nndd.invoke<{ items: { videoId: string }[]; page: number; totalPages: number }>(
-          IpcChannel.SERIES_FETCH, seriesIdRef.current, undefined, nextPage
-        ).then((r) => {
-          seriesItemsRef.current = r.items as import('@shared/types').MyListItem[];
-          setSeriesItems(r.items as import('@shared/types').MyListItem[]);
-          seriesPageRef.current = r.page;
-          seriesTotalPagesRef.current = r.totalPages;
-          if (r.items.length > 0) {
-            window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
-              videoId: r.items[0].videoId, audioOnly: isAudio,
-            });
-          }
-        }).catch(() => {});
-      }
-    }
-  };
-
-  const skipToPrev = (): void => {
-    const isAudio = audioOnlyRef.current || undefined;
-    const active = getActivePlaylist();
-    if (!active) return;
-
-    if (active.type === 'search') {
-      if (active.idx > 0) {
-        window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
-          videoId: active.list[active.idx - 1], searchPlaylist: active.list, audioOnly: isAudio,
-        });
-      }
-      return;
-    }
-
-    if (active.type === 'folder') {
-      if (active.idx > 0) {
-        window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
-          localPath: active.list[active.idx - 1], folderPlaylist: active.list, audioOnly: isAudio,
-        });
-      }
-      return;
-    }
-
-    if (active.type === 'series') {
-      if (active.idx > 0) {
-        window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
-          videoId: active.list[active.idx - 1].videoId, audioOnly: isAudio,
-        });
-        return;
-      }
-      if (seriesPageRef.current > 1) {
-        const prevPage = seriesPageRef.current - 1;
-        window.nndd.invoke<{ items: { videoId: string }[]; page: number; totalPages: number }>(
-          IpcChannel.SERIES_FETCH, seriesIdRef.current, undefined, prevPage
-        ).then((r) => {
-          seriesItemsRef.current = r.items as import('@shared/types').MyListItem[];
-          setSeriesItems(r.items as import('@shared/types').MyListItem[]);
-          seriesPageRef.current = r.page;
-          seriesTotalPagesRef.current = r.totalPages;
-          if (r.items.length > 0) {
-            window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, {
-              videoId: r.items[r.items.length - 1].videoId, audioOnly: isAudio,
-            });
-          }
-        }).catch(() => {});
-      }
-    }
-  };
-
-  const toggleFullscreen = useCallback((): void => {
-    const el = containerRef.current;
-    if (!el) return;
-    if (!document.fullscreenElement) {
-      el.requestFullscreen?.()
-        ?.then(() => {
-          // モバイル (縦持ち) でのフルスクリーンは横画面固定にする。
-          // lock() は型定義に無い実験的APIのため any 経由で呼ぶ。
-          // デスクトップや API 非対応環境では失敗するので無視する。
-          (screen.orientation as unknown as { lock?: (o: string) => Promise<void> })
-            .lock?.('landscape')
-            .catch(() => {});
-        })
-        .catch(() => {});
-    } else {
-      screen.orientation?.unlock?.();
-      document.exitFullscreen?.();
-    }
-  }, []);
-
-  const currentVideoId = watch?.videoId ?? playInfoRef.current?.videoId;
-
-  /** 進行中セッションを確定し、HISTORY_RECORD_THRESHOLD_SEC 秒以上視聴していれば履歴に記録 */
-  const flushWatchSession = useCallback((): void => {
-    const s = watchSessionRef.current;
-    watchSessionRef.current = null;
-    if (!s) return;
-    let pausedMs = s.pausedMs;
-    if (s.pauseStartedAtMs != null) {
-      pausedMs += Date.now() - s.pauseStartedAtMs;
-    }
-    const watchSeconds = (Date.now() - s.openedAtMs - pausedMs) / 1000;
-    if (watchSeconds < HISTORY_RECORD_THRESHOLD_SEC) return;
-    window.nndd
-      .invoke(window.nndd.channels.HISTORY_ADD, {
-        videoId: s.videoId,
-        title: s.title,
-        thumbnailUrl: s.thumbnailUrl,
-        isLocal: s.isLocal,
-        watchSeconds
-      })
-      .catch((e) => console.warn('history add failed', e));
-  }, []);
-
-  // 動画切替のたびに実視聴時間セッションを開始/確定 (open〜closeの経過時間 - pause時間)
-  useEffect(() => {
-    if (!currentVideoId) return;
-    const info = playInfoRef.current;
-    const now = Date.now();
-    watchSessionRef.current = {
-      videoId: currentVideoId,
-      title: info?.title ?? currentVideoId,
-      thumbnailUrl: info?.thumbnailUrl ?? '',
-      isLocal: info?.isLocal ?? false,
-      openedAtMs: now,
-      pausedMs: 0,
-      // ストリームURL取得・コメント取得等のロード待ちは「再生していない」時間として除外するため
-      // 初期状態はpause中扱いにし、実際のplayイベントで計測を開始する
-      pauseStartedAtMs: now
-    };
-    return () => flushWatchSession();
-  }, [currentVideoId, flushWatchSession]);
-
-  // videoId確定〜WatchPageInfo取得完了までのタイムラグで暫定タイトル (videoIdそのまま) が
-  // セッションに固定されてしまうのを防ぐため、watch確定時にタイトル/サムネを同期する
-  useEffect(() => {
-    const s = watchSessionRef.current;
-    const info = playInfoRef.current;
-    if (s && info && s.videoId === info.videoId) {
-      s.title = info.title;
-      s.thumbnailUrl = info.thumbnailUrl;
-      s.isLocal = info.isLocal;
-    }
-  }, [watch]);
-
-  // pause中は視聴時間としてカウントしない
-  useEffect(() => {
-    if (!video) return;
-    const onPause = (): void => {
-      const s = watchSessionRef.current;
-      if (s && s.pauseStartedAtMs == null) s.pauseStartedAtMs = Date.now();
-    };
-    const onPlay = (): void => {
-      const s = watchSessionRef.current;
-      if (s && s.pauseStartedAtMs != null) {
-        s.pausedMs += Date.now() - s.pauseStartedAtMs;
-        s.pauseStartedAtMs = null;
-      }
-    };
-    video.addEventListener('pause', onPause);
-    video.addEventListener('play', onPlay);
-    return () => {
-      video.removeEventListener('pause', onPause);
-      video.removeEventListener('play', onPlay);
-    };
-  }, [video]);
-
-  // ウィンドウを閉じる際の保険 (unmount cleanupが間に合わない場合に備える)
-  useEffect(() => {
-    window.addEventListener('beforeunload', flushWatchSession);
-    return () => window.removeEventListener('beforeunload', flushWatchSession);
-  }, [flushWatchSession]);
-
-  // Discord Rich Presence: 再生開始時にPresence送信 (src切替のたびに最新化)
-  useEffect(() => {
-    if (!video) return;
-    const sendActivity = (): void => {
-      const info = playInfoRef.current;
-      if (!info?.videoId) return;
-      window.nndd.send(IpcChannel.DISCORD_RPC_SET_ACTIVITY, {
-        videoId: info.videoId,
-        title: info.title,
-        thumbnailUrl: info.discordThumbnailUrl || undefined,
-        durationSec: video.duration || undefined,
-        startedAtMs: Date.now() - video.currentTime * 1000
-      });
-    };
-    video.addEventListener('play', sendActivity);
-    // ローカル再生は VideoPlayer マウント直後に play() されるため、リスナー登録前に
-    // play イベントが発火済みのことがある。既に再生中なら即送信する
-    if (!video.paused) sendActivity();
-    return () => video.removeEventListener('play', sendActivity);
-  }, [video, src]);
-
-  // Discord Rich Presence: ウィンドウを閉じたらPresenceをクリア
-  useEffect(() => {
-    return () => {
-      window.nndd.send(IpcChannel.DISCORD_RPC_CLEAR_ACTIVITY);
-    };
-  }, []);
-
-  // owner コメントの @ジャンプ / ＠ジャンプ: 指定 vpos に達したら別動画へジャンプ
-  // 半角・全角 @ 両対応。fork は 'owner' (ストリーミング) / '1' (ローカルXML) の両方を見る
-  useEffect(() => {
-    if (!video) return;
-    const jumpComments = comments.filter(
-      (c) =>
-        (c.fork === 'owner' || c.fork === '1') &&
-        /[＠@]ジャンプ/.test((c.mail ?? '') + ' ' + (c.text ?? ''))
-    );
-    if (jumpComments.length === 0) return;
-    const triggered = new Set<number>();
-    const onTime = (): void => {
-      if (isLocalRef.current && autoNextFolderRef.current) return;
-      const nowMs = video.currentTime * 1000;
-      for (const c of jumpComments) {
-        if (!triggered.has(c.no) && nowMs >= c.vposMs) {
-          triggered.add(c.no);
-          // text から @ジャンプ 部分を除去して動画ID抽出
-          const rawText = (c.text ?? '').replace(/[＠@]ジャンプ\s*/g, '').trim();
-          const m = rawText.match(/((?:sm|nm|so|ax|sd|ca|cd|cw|zb|ze|yo)\d+)/);
-          const targetId = m ? m[1] : rawText;
-          if (targetId) {
-            window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, { videoId: targetId, autoNext: true });
-          }
-        }
-      }
-    };
-    video.addEventListener('timeupdate', onTime);
-    return () => video.removeEventListener('timeupdate', onTime);
-  }, [video, comments]);
-
-  // owner コメントの ＠CM (ユーザーニコ割): 指定 vpos に達したらニコ割を動画上部に表示する。
-  // 書式: ＠CM nm12345 [再生|停止]。「停止」ならニコ割の間は本編を止める (本家NNDD準拠)。
-  // 時刻 (hhmm) 指定の時報型は本家同様に対象外。ニコ割SWFはローカル再生時のみ手元にある。
-  useEffect(() => {
-    if (!video || nicowariFiles.length === 0) return;
-    const cmComments = comments.filter(
-      (c) => (c.fork === 'owner' || c.fork === '1') && /^[＠@][CＣ][MＭ]/.test(c.text ?? '')
-    );
-    if (cmComments.length === 0) return;
-    const triggered = new Set<number>();
-    let disposed = false;
-    const onTime = (): void => {
-      const nowMs = video.currentTime * 1000;
-      for (const c of cmComments) {
-        if (triggered.has(c.no) || nowMs < c.vposMs) continue;
-        triggered.add(c.no);
-        const text = c.text ?? '';
-        const id = text.match(/(nm\d+)/i)?.[1];
-        if (!id || /(nm\d+)[^\d].*\s(\d{4})/i.test(text)) continue;
-        const file = nicowariFiles.find((f) => f.toLowerCase().includes(`[nicowari][${id.toLowerCase()}]`));
-        if (!file) {
-          console.warn('[Nicowari] ニコ割SWFがダウンロードされていません:', id);
-          continue;
-        }
-        const stop = text.includes('停止');
-        window.nndd
-          .invoke<NicowariContent>(window.nndd.channels.LIBRARY_NICOWARI_READ, file)
-          .then((content) => {
-            if (disposed) return;
-            if (stop && !video.paused) {
-              video.pause();
-              pausedByNicowariRef.current = true;
-            }
-            setActiveNicowari(content);
-          })
-          .catch((e) => console.warn('[Nicowari] 読み込み失敗:', file, e));
-      }
-    };
-    video.addEventListener('timeupdate', onTime);
-    return () => {
-      disposed = true;
-      video.removeEventListener('timeupdate', onTime);
-    };
-  }, [video, comments, nicowariFiles]);
-
-  const endNicowari = useCallback((): void => {
-    setActiveNicowari(null);
-    if (pausedByNicowariRef.current) {
-      pausedByNicowariRef.current = false;
-      videoElementRef.current?.play().catch(() => {});
-    }
-  }, []);
-
-  // ── コメントウィンドウ連携 ──────────────────────────────
-  // comments 変更時にプッシュ (ウィンドウが開いていれば main が転送)
-  useEffect(() => {
-    window.nndd.send(IpcChannel.COMMENT_WINDOW_PUSH, comments);
-  }, [comments]);
-
-  // 250ms ごとに再生位置をプッシュ + 残り5秒で次の動画をプリロード
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      const v = videoElementRef.current;
-      const t = v?.currentTime ?? 0;
-      window.nndd.send(IpcChannel.COMMENT_WINDOW_TIME, t);
-
-      if (v && v.duration > 0 && !audioOnlyRef.current) {
-        const now = Date.now();
-        if (now - lastResumeSaveAtRef.current >= RESUME_SAVE_INTERVAL_MS) {
-          lastResumeSaveAtRef.current = now;
-          const info = playInfoRef.current;
-          const remaining = v.duration - t;
-          if (info?.videoId && t >= RESUME_MIN_WATCH_SEC) {
-            if (remaining <= RESUME_SKIP_END_SEC) {
-              if (!resumeFinishedRef.current) {
-                resumeFinishedRef.current = true;
-                window.nndd.invoke(IpcChannel.RESUME_CLEAR, info.videoId).catch(() => {});
-              }
-            } else {
-              window.nndd
-                .invoke(IpcChannel.RESUME_SAVE, {
-                  videoKey: info.videoId,
-                  positionSec: t,
-                  durationSec: v.duration
-                })
-                .catch(() => {});
-            }
-          }
-        }
-      }
-
-      if (v && !isLocalRef.current && preloadRef.current === null && v.duration > 0) {
-        const remaining = v.duration - t;
-        if (remaining > 0 && remaining <= 5) {
-          const nextId = getNextVideoId();
-          if (nextId) {
-            preloadRef.current = { videoId: nextId };
-            (async () => {
-              try {
-                const watchInfo = await window.nndd.invoke<WatchPageInfo>(
-                  window.nndd.channels.VIDEO_GET_WATCH_INFO, nextId
-                );
-                const avail = watchInfo.domandVideos
-                  .filter((q) => q.isAvailable)
-                  .sort((a, b) => b.qualityLevel - a.qualityLevel);
-                const qualityId = pickDefaultQualityId(avail, defaultQualityRef.current);
-                const stream = await window.nndd.invoke<{
-                  contentUrl: string | null;
-                  isDMS: boolean;
-                  isHls?: boolean;
-                  ffplay?: boolean;
-                  niconico?: boolean;
-                  error?: string;
-                }>(window.nndd.channels.VIDEO_GET_STREAM_URL, nextId, watchInfo, audioOnlyRef.current, qualityId);
-                if (!stream.error) {
-                  preloadRef.current = { videoId: nextId, watchInfo, stream };
-                } else {
-                  preloadRef.current = null;
-                }
-              } catch {
-                preloadRef.current = null;
-              }
-            })();
-          }
-        }
-      }
-    }, 250);
-    return () => window.clearInterval(id);
-  }, []);
-
-  // コメントウィンドウからのシーク要求を受信
-  useEffect(() => {
-    const off = window.nndd.on(
-      IpcChannel.PLAYER_SEEK,
-      (timeSec: number) => {
-        const v = videoElementRef.current;
-        if (v) v.currentTime = timeSec;
-      }
-    );
-    return off;
-  }, []);
-
-  // コメントウィンドウからの過去コメント配列を受信
-  useEffect(() => {
-    const off = window.nndd.on(
-      IpcChannel.PLAYER_PAST_COMMENTS,
-      (cs: NNDDREComment[] | null) => {
-        if (cs === null || cs.length === 0) {
-          setPastComments([]);
-          setShowPastComments(false);
-        } else {
-          setPastComments(cs);
-          setShowPastComments(true);
-        }
-      }
-    );
-    return off;
-  }, []);
-
-  const commentsRef = useRef<NNDDREComment[]>([]);
-  useEffect(() => { commentsRef.current = comments; }, [comments]);
-
-  const localCommentXmlPathRef = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    localCommentXmlPathRef.current = localCommentXmlPath;
-  }, [localCommentXmlPath]);
-
-  const localIchibaHtmlPathRef = useRef<string | undefined>(undefined);
-  useEffect(() => {
-    localIchibaHtmlPathRef.current = localIchibaHtmlPath;
-  }, [localIchibaHtmlPath]);
-
-  const openCommentWindow = useCallback((): void => {
-    const info = playInfoRef.current;
-    window.nndd
-      .invoke(IpcChannel.COMMENT_WINDOW_OPEN, {
-        videoId: info?.videoId ?? '',
-        title: info?.title ?? '',
-        comments: commentsRef.current,
-        localCommentXmlPath: localCommentXmlPathRef.current,
-        ichibaHtmlPath: localIchibaHtmlPathRef.current
-      })
-      .then(() => setCommentWindowOpen(true))
-      .catch(() => {});
-  }, []); // commentsRef は ref なので deps 不要
-
-  // 動画が変わったとき (loading 完了 + src セット) に自動オープン
-  const autoOpenDoneRef = useRef(false);
-  useEffect(() => {
-    if (loading || !src) {
-      autoOpenDoneRef.current = false; // リセット: 次の動画でまた発火可能に
-      return;
-    }
-    if (autoOpenDoneRef.current) return;
-    autoOpenDoneRef.current = true;
-    if (commentListDisplay === 'window' && !audioOnly && !isWebPlayer) {
-      openCommentWindow();
-    }
-  }, [loading, src, commentListDisplay, commentWindowAutoOpen, openCommentWindow, audioOnly]);
-
-
-  // フルスクリーン状態追跡 (DOM fullscreen + BrowserWindow fullscreen + niconico)
-  useEffect(() => {
-    const onFsChange = (): void => {
-      setIsFullscreen(Boolean(document.fullscreenElement));
-    };
-    document.addEventListener('fullscreenchange', onFsChange);
-    // BrowserWindow レベルのフルスクリーン (OS ボタン)
-    const offWin = window.electron.ipcRenderer.on(
-      'nndd:player:window:fullscreen',
-      (_e, full: boolean) => setIsFullscreen(full)
-    );
-    // niconicoプレイヤー内フルスクリーン
-    const offNico = window.electron.ipcRenderer.on(
-      'nndd:player:niconico:fullscreen',
-      (_e, full: boolean) => setIsFullscreen(full)
-    );
-    return () => {
-      document.removeEventListener('fullscreenchange', onFsChange);
-      offWin();
-      offNico();
-    };
-  }, []);
-
-  const showControlsTemporarily = useCallback((): void => {
-    setShowControls(true);
-    if (hideTimerRef.current !== null) {
-      window.clearTimeout(hideTimerRef.current);
-    }
-    hideTimerRef.current = window.setTimeout(() => {
-      setShowControls(false);
-    }, 2500);
-  }, []);
-
-  /** スマホ: 操作バーが隠れている時のタップは表示だけ、表示中のタップで再生/一時停止を切り替える */
-  const handleVideoTap = useCallback((): void => {
-    const wasVisible = showControls;
-    showControlsTemporarily();
-    if (!wasVisible) return;
-    if (!video) return;
-    if (video.paused) video.play().catch(() => {});
-    else video.pause();
-  }, [showControls, showControlsTemporarily, video]);
-
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const onMove = (): void => showControlsTemporarily();
-    const onLeave = (): void => {
-      if (isFullscreen) setShowControls(false);
-    };
-    el.addEventListener('mousemove', onMove);
-    el.addEventListener('mouseleave', onLeave);
-    // 初期はコントロール表示
-    showControlsTemporarily();
-    return () => {
-      el.removeEventListener('mousemove', onMove);
-      el.removeEventListener('mouseleave', onLeave);
-      if (hideTimerRef.current !== null) {
-        window.clearTimeout(hideTimerRef.current);
-      }
-    };
-  }, [isFullscreen, showControlsTemporarily]);
-
-  const canSkipNext = useMemo(() => {
-    if (searchPlaylist.length > 0 && currentVideoId) {
-      const idx = searchPlaylist.indexOf(currentVideoId);
-      return idx >= 0 && idx < searchPlaylist.length - 1;
-    }
-    if (folderVideos.length > 0 && isLocal) {
-      const idx = folderVideos.indexOf(currentLocalPathRef.current);
-      return idx >= 0 && idx < folderVideos.length - 1;
-    }
-    if (seriesItems.length > 0 && currentVideoId) {
-      const idx = seriesItems.findIndex((i) => i.videoId === currentVideoId);
-      if (idx >= 0 && idx < seriesItems.length - 1) return true;
-      return seriesPageRef.current < seriesTotalPagesRef.current;
-    }
-    return undefined;
-  }, [searchPlaylist, folderVideos, seriesItems, currentVideoId, isLocal]);
-
-  const canSkipPrev = useMemo(() => {
-    if (searchPlaylist.length > 0 && currentVideoId) {
-      const idx = searchPlaylist.indexOf(currentVideoId);
-      return idx > 0;
-    }
-    if (folderVideos.length > 0 && isLocal) {
-      const idx = folderVideos.indexOf(currentLocalPathRef.current);
-      return idx > 0;
-    }
-    if (seriesItems.length > 0 && currentVideoId) {
-      const idx = seriesItems.findIndex((i) => i.videoId === currentVideoId);
-      if (idx > 0) return true;
-      return seriesPageRef.current > 1;
-    }
-    return undefined;
-  }, [searchPlaylist, folderVideos, seriesItems, currentVideoId, isLocal]);
+  const { isFullscreen, showControls, toggleFullscreen, handleVideoTap } =
+    useFullscreenControls({ containerRef, video });
 
   useKeyboardShortcuts({
     togglePlay: () => {
@@ -1588,11 +711,7 @@ export default function PlayerApp(): JSX.Element {
                       <input
                         type="checkbox"
                         checked={autoNextFolder}
-                        onChange={(e) => {
-                          autoNextFolderRef.current = e.target.checked;
-                          setAutoNextFolder(e.target.checked);
-                          window.nndd.invoke(window.nndd.channels.CONFIG_SET, 'player.autoNextFolder', e.target.checked).catch(() => {});
-                        }}
+                        onChange={(e) => onAutoNextFolderChange(e.target.checked)}
                         className="cursor-pointer"
                       />
                       フォルダ連続再生
@@ -1656,25 +775,11 @@ export default function PlayerApp(): JSX.Element {
             onPastCommentsLoaded={(cs) => setPastComments(cs)}
             onPastCommentTabActive={(active) => setShowPastComments(active)}
             autoNextSeries={autoNextSeries}
-            onAutoNextChange={(v) => {
-              autoNextSeriesRef.current = v;
-              setAutoNextSeries(v);
-              if (v) { autoNextRelatedRef.current = false; setAutoNextRelated(false); }
-            }}
-            onSeriesPageLoaded={(items, page, totalPages, sid) => {
-              seriesItemsRef.current = items;
-              setSeriesItems(items);
-              seriesPageRef.current = page;
-              seriesTotalPagesRef.current = totalPages;
-              seriesIdRef.current = sid;
-            }}
+            onAutoNextChange={onAutoNextSeriesChange}
+            onSeriesPageLoaded={onSeriesPageLoaded}
             autoNextRelated={autoNextRelated}
-            onAutoNextRelatedChange={(v) => {
-              autoNextRelatedRef.current = v;
-              setAutoNextRelated(v);
-              if (v) { autoNextSeriesRef.current = false; setAutoNextSeries(false); }
-            }}
-            onRelatedLoaded={(items) => { relatedItemsRef.current = items; }}
+            onAutoNextRelatedChange={onAutoNextRelatedChange}
+            onRelatedLoaded={onRelatedLoaded}
             onTabsOverflow={handleTabsOverflow}
           />
         </aside>
@@ -1684,46 +789,4 @@ export default function PlayerApp(): JSX.Element {
       )}
     </div>
   );
-}
-
-/**
- * 設定の defaultQuality に従って画質候補から初期選択IDを決める。
- * available は qualityLevel (height) 降順ソート済みの前提。
- *   - 'highest': 先頭 (最高画質)
- *   - number: 指定高さ以下で最大のもの。該当なしなら最高画質にフォールバック
- */
-function pickDefaultQualityId(
-  available: DomandStreamCandidate[],
-  preset: 'highest' | number
-): string | null {
-  if (available.length === 0) return null;
-  if (preset === 'highest') return available[0].id;
-  const fit = available.find((v) => (v.height ?? 0) <= preset);
-  return (fit ?? available[0]).id;
-}
-
-/**
- * 任意の 3 秒ウィンドウ内に同時表示されるコメントを maxCount 件に制限する。
- * スライディングウィンドウ (O(n)) で処理するため 10 万件でも高速。
- * maxCount=0 の場合は全件返す。
- */
-function limitSimultaneousComments(comments: NNDDREComment[], maxCount: number): NNDDREComment[] {
-  if (maxCount <= 0 || comments.length === 0) return comments;
-  const SHOW_MS = 3000; // NiconiComments デフォルト表示時間に合わせる
-  // vposMs 昇順ソート (既にソート済みの場合はほぼコスト 0)
-  const sorted = [...comments].sort((a, b) => a.vposMs - b.vposMs);
-  const result: NNDDREComment[] = [];
-  let winStart = 0; // result 内のウィンドウ先頭インデックス
-
-  for (const c of sorted) {
-    // ウィンドウ先頭を進める (表示期限切れコメントを除外)
-    while (winStart < result.length && result[winStart].vposMs < c.vposMs - SHOW_MS) {
-      winStart++;
-    }
-    const concurrent = result.length - winStart;
-    if (concurrent < maxCount) {
-      result.push(c);
-    }
-  }
-  return result;
 }
