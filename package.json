@@ -12,9 +12,6 @@
     "build:library-comment-bundle": "node scripts/buildLibraryCommentBundle.js",
     "preview": "electron-vite preview",
     "start": "electron-vite preview",
-    "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
-    "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
-    "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
     "dist:win": "electron-vite build && npm run build:library-comment-bundle && electron-builder --win",
@@ -24,10 +21,6 @@
     "tc": "tsc --noEmit -p tsconfig.node.json",
     "tc:web": "tsc --noEmit -p tsconfig.web.json",
     "tc:all": "npm run tc && npm run tc:web",
-    "tc:ipc": "tsc --noEmit -p tsconfig.node.json 2>&1 | findstr registerIpc",
-    "tc:video": "tsc --noEmit -p tsconfig.node.json 2>&1 | findstr VIDEO_OPEN_PLAYER",
-    "tc:both": "tsc --noEmit -p tsconfig.node.json 2>&1 | findstr \"VIDEO_OPEN_PLAYER registerIpc\"",
-    "tc:both:short": "tsc --noEmit -p tsconfig.node.json 2>&1 | findstr \"VIDEO_OPEN_PLAYER registerIpc\" | more +0",
     "gen:proto": "buf generate"
   },
   "dependencies": {
@@ -43,7 +36,6 @@
     "hls.js": "^1.7.3",
     "mediabunny": "^1.50.8",
     "mpegts.js": "^1.8.0",
-    "node-fetch": "^3.3.2",
     "qrcode.react": "^4.2.0",
     "tough-cookie": "^5.0.0",
     "uuid": "^10.0.0",
