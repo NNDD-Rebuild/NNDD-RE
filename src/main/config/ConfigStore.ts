@@ -55,7 +55,7 @@ export interface NnddConfig {
 
   /**
    * 新規DL時に過去コメントを全件取得 (fetchAllComments) するか。
-   * デフォルト true。false にすると今コメ (fetchComments) のみ取得。
+   * デフォルト false (今コメ (fetchComments) のみ取得)。true にすると過去ログまで遡って取得する。
    */
   downloadAllComments: boolean;
 
@@ -502,14 +502,41 @@ const DEFAULTS: NnddConfig = {
   }
 };
 
-let store: Store<NnddConfig> | null = null;
+type NestedObject<V> = NonNullable<V> extends readonly unknown[] ? never
+  : NonNullable<V> extends object ? NonNullable<V> : never;
 
-export function getConfigStore(): Store<NnddConfig> {
+/** NnddConfig のドット記法キー ('developer.apiDumpTargets' など) の一覧 */
+type ConfigDotPath<T = NnddConfig> = {
+  [K in keyof T & string]: [NestedObject<T[K]>] extends [never]
+    ? never
+    : `${K}.${(keyof NestedObject<T[K]> & string) | ConfigDotPath<NestedObject<T[K]>>}`;
+}[keyof T & string];
+
+/** ドット記法キーが指す値の型。途中のオブジェクトが省略可能なら undefined を含める */
+type ConfigValueAt<T, P extends string> = P extends `${infer K}.${infer Rest}`
+  ? K extends keyof T
+    ? ConfigValueAt<NonNullable<T[K]>, Rest> | Extract<T[K], undefined>
+    : never
+  : P extends keyof T
+    ? T[P]
+    : never;
+
+/**
+ * conf (electron-store の基盤) の型定義はドット記法キーの get を unknown として扱うため、
+ * NnddConfig から値の型を引けるオーバーロードを先頭に足す。
+ */
+export type NnddConfigStore = {
+  get<P extends ConfigDotPath>(key: P): ConfigValueAt<NnddConfig, P>;
+} & Store<NnddConfig>;
+
+let store: NnddConfigStore | null = null;
+
+export function getConfigStore(): NnddConfigStore {
   if (!store) {
     store = new Store<NnddConfig>({
       name: 'nndd-config',
       defaults: DEFAULTS
-    });
+    }) as NnddConfigStore;
   }
   return store;
 }
