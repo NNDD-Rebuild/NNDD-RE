@@ -223,7 +223,9 @@ export function LibraryView(): JSX.Element {
         setFsFolders(dirs);
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch(() => {
+        if (seq === reloadSeqRef.current) setLoading(false);
+      });
   };
 
   useEffect(reload, []);
