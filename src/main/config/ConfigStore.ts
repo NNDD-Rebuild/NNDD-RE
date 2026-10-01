@@ -506,11 +506,17 @@ type NestedObject<V> = NonNullable<V> extends readonly unknown[] ? never
   : NonNullable<V> extends object ? NonNullable<V> : never;
 
 /** NnddConfig のドット記法キー ('developer.apiDumpTargets' など) の一覧 */
-type ConfigDotPath<T = NnddConfig> = {
+export type ConfigDotPath<T = NnddConfig> = {
   [K in keyof T & string]: [NestedObject<T[K]>] extends [never]
     ? never
     : `${K}.${(keyof NestedObject<T[K]> & string) | ConfigDotPath<NestedObject<T[K]>>}`;
 }[keyof T & string];
+
+/** NnddConfig のトップレベルキー ('libraryRoot' など) */
+export type ConfigTopLevelKey = keyof NnddConfig & string;
+
+/** CONFIG_GET / CONFIG_SET で受け付けるキー (トップレベルキーとドット記法キー) */
+export type ConfigKey = ConfigTopLevelKey | ConfigDotPath;
 
 /** ドット記法キーが指す値の型。途中のオブジェクトが省略可能なら undefined を含める */
 type ConfigValueAt<T, P extends string> = P extends `${infer K}.${infer Rest}`
