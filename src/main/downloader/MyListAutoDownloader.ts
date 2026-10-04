@@ -1,10 +1,15 @@
 import type { MyList, MyListItem, NNDDREVideo } from '@shared/types';
+import { RssType } from '@shared/types';
 import { LibraryManager } from '../db/LibraryManager';
 import { DownloadManager } from './DownloadManager';
-import { MyListClient } from '../nicovideo/mylist/MyListClient';
+import { fetchMylistLikeItems } from '../nicovideo/mylist/MylistFetcher';
+import { SeriesClient } from '../nicovideo/series/SeriesClient';
 import { createLogger } from '../util/Logger';
+import { extractBracketedVideoId } from '@shared/utils/videoId';
 
 const log = createLogger('MyListAutoDL');
+
+type VideoRef = Pick<MyListItem, 'videoId'>;
 
 /**
  * マイリスト自動ダウンロード。
@@ -26,16 +31,14 @@ export class MyListAutoDownloader {
    * @returns { fetched: 取得した動画数, queued: DLキューに追加した数 }
    */
   async renew(myList: MyList): Promise<{ fetched: number; queued: number }> {
-    const id = this.extractMylistId(myList.myListUrl);
-    if (!id) throw new Error(`invalid mylist url: ${myList.myListUrl}`);
-    const items = await MyListClient.fetchPublicMylist(id);
+    const items = await this.fetchAllItems(myList);
     let queued = 0;
 
     // ライブラリ内に既にある動画はスキップ
     const knownKeys = new Set(
       this.library.videoDao
         .list()
-        .map((v: NNDDREVideo) => this.extractVideoId(v.uri))
+        .map((v: NNDDREVideo) => extractBracketedVideoId(v.uri))
         .filter(Boolean)
     );
 
@@ -84,22 +87,36 @@ export class MyListAutoDownloader {
     return out;
   }
 
-  private extractMylistId(url: string): string | null {
-    const m = url.match(/(?:mylist\/|^)(\d+)/);
-    return m ? m[1] : null;
+  /** 種別 (マイリスト / ユーザー投稿 / チャンネル / シリーズ) に応じて全ページ分の動画を取得する。 */
+  private async fetchAllItems(myList: MyList): Promise<VideoRef[]> {
+    if (myList.type === RssType.SERIES) {
+      const { items } = await SeriesClient.fetchAllVideos(myList.myListUrl);
+      return items;
+    }
+
+    // 1 ページあたりの件数は種別ごとに違う (チャンネルはサイト側固定) ため、件数ではなく空ページと total で終了を判定する
+    const pageSize = 100;
+    const maxPages = 500;
+    const all: VideoRef[] = [];
+    const seen = new Set<string>();
+    for (let page = 1; page <= maxPages; page++) {
+      const { items, total } = await fetchMylistLikeItems(myList.myListUrl, myList.type, page, pageSize, false);
+      for (const it of items) {
+        if (seen.has(it.videoId)) continue;
+        seen.add(it.videoId);
+        all.push(it);
+      }
+      if (items.length === 0 || (total > 0 && all.length >= total)) break;
+    }
+    return all;
   }
 
-  private extractVideoId(uri: string): string | null {
-    const m = uri.match(/\[((?:sm|nm|so|ax|sd|ca|cd|cw|zb|ze|yo)\d+)\]/);
-    return m ? m[1] : null;
-  }
-
-  private countUnplayed(items: MyListItem[]): number {
+  private countUnplayed(items: VideoRef[]): number {
     // この時点では実際の再生状況は分からないため、ライブラリ未登録のものを未再生とみなす
     const knownKeys = new Set(
       this.library.videoDao
         .list()
-        .map((v: NNDDREVideo) => this.extractVideoId(v.uri))
+        .map((v: NNDDREVideo) => extractBracketedVideoId(v.uri))
         .filter(Boolean)
     );
     return items.filter((it) => !knownKeys.has(it.videoId)).length;

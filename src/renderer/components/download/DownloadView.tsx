@@ -361,17 +361,19 @@ function statusLabel(s: string): string {
   }
 }
 
+const RUNNING_STATUSES: ReadonlySet<string> = new Set([
+  DownloadStatusType.LOGIN,
+  DownloadStatusType.WATCH,
+  DownloadStatusType.COMMENT,
+  DownloadStatusType.OWNER_COMMENT,
+  DownloadStatusType.THUMB,
+  DownloadStatusType.MASTER_PLAYLIST,
+  DownloadStatusType.KEY,
+  DownloadStatusType.SEGMENT,
+  DownloadStatusType.MERGE,
+  DownloadStatusType.VIDEO
+]);
+
 function isRunning(s: string): boolean {
-  return [
-    DownloadStatusType.LOGIN,
-    DownloadStatusType.WATCH,
-    DownloadStatusType.COMMENT,
-    DownloadStatusType.OWNER_COMMENT,
-    DownloadStatusType.THUMB,
-    DownloadStatusType.MASTER_PLAYLIST,
-    DownloadStatusType.KEY,
-    DownloadStatusType.SEGMENT,
-    DownloadStatusType.MERGE,
-    DownloadStatusType.VIDEO
-  ].includes(s as typeof DownloadStatusType[keyof typeof DownloadStatusType]);
+  return RUNNING_STATUSES.has(s);
 }

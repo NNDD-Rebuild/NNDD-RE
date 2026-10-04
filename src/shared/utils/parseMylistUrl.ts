@@ -1,4 +1,5 @@
 import { RssType, type RssTypeValue } from '../types/mylist';
+import { channelUrl, mylistUrl, seriesUrl, userUrl } from './nicoUrl';
 
 export interface ParsedMylistSource {
   type: RssTypeValue;
@@ -18,27 +19,27 @@ export function parseMylistSource(input: string): ParsedMylistSource | null {
   // mylist は user/xxx/mylist/yyy 形式もあるため最優先で判定
   let m = trimmed.match(/mylist\/(\d+)/);
   if (m) {
-    return { type: RssType.MY_LIST, id: m[1], normalizedUrl: `https://www.nicovideo.jp/my/mylist/${m[1]}` };
+    return { type: RssType.MY_LIST, id: m[1], normalizedUrl: mylistUrl(m[1]) };
   }
 
   m = trimmed.match(/series\/(\d+)/);
   if (m) {
-    return { type: RssType.SERIES, id: m[1], normalizedUrl: `https://www.nicovideo.jp/series/${m[1]}` };
+    return { type: RssType.SERIES, id: m[1], normalizedUrl: seriesUrl(m[1]) };
   }
 
   m = trimmed.match(/ch\.nicovideo\.jp\/([a-zA-Z0-9_-]+)/);
   if (m) {
-    return { type: RssType.CHANNEL, id: m[1], normalizedUrl: `https://ch.nicovideo.jp/${m[1]}` };
+    return { type: RssType.CHANNEL, id: m[1], normalizedUrl: channelUrl(m[1]) };
   }
 
   m = trimmed.match(/user\/(\d+)/);
   if (m) {
-    return { type: RssType.USER_UPLOAD_VIDEO, id: m[1], normalizedUrl: `https://www.nicovideo.jp/user/${m[1]}` };
+    return { type: RssType.USER_UPLOAD_VIDEO, id: m[1], normalizedUrl: userUrl(m[1]) };
   }
 
   // ID単体はマイリストとみなす (従来挙動を踏襲)
   if (/^\d+$/.test(trimmed)) {
-    return { type: RssType.MY_LIST, id: trimmed, normalizedUrl: `https://www.nicovideo.jp/my/mylist/${trimmed}` };
+    return { type: RssType.MY_LIST, id: trimmed, normalizedUrl: mylistUrl(trimmed) };
   }
 
   return null;

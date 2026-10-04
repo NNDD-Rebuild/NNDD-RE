@@ -1,4 +1,5 @@
 import type { WatchPageInfo, DomandStreamCandidate } from '@shared/types';
+import { NicoApi, NicoEndpoint } from '@shared/constants';
 import { NicoContext } from '../NicoContext';
 import { createLogger } from '../../util/Logger';
 import * as path from 'path';
@@ -123,9 +124,7 @@ export class WatchSession {
     // 埋め込まれる (ゲスト取得時) ため、ここで新規生成せず同じ値を使い回す必要がある。
     // 別の actionTrackId を使うと uid 不一致で HTTP 400 INVALID_PARAMETER になる。
     const actionTrackId = this.watch.actionTrackId ?? this.generateActionTrackId();
-    const url = `https://nvapi.nicovideo.jp/v1/watch/${encodeURIComponent(
-      this.videoId
-    )}/access-rights/hls?actionTrackId=${actionTrackId}`;
+    const url = NicoEndpoint.watchAccessRightsHls(this.videoId, actionTrackId);
 
     log.info('DMS session ensure:', url, audioOnly ? 'audioOnly' : `video=${video!.id}`, 'audio=', audio.id);
 
@@ -164,7 +163,7 @@ export class WatchSession {
       {
         headers: {
           'X-Access-Right-Key': accessRightKey,
-          'X-Request-With': 'https://www.nicovideo.jp'
+          'X-Request-With': NicoApi.WWW_BASE
         },
         noCookie: guest,
         noCookieReceive: false,
@@ -237,7 +236,7 @@ export class WatchSession {
       log.info(`Session API dump enabled: ${debugDumpPath}`);
     }
 
-    const url = 'https://api.dmc.nico/api/sessions?_format=json';
+    const url = NicoEndpoint.dmcSessions();
     const res = await ctx.http.postJson<DmcSessionResponse>(url, body, {
       debugDumpPath,
       debugLabel: 'session-dmc'
@@ -267,9 +266,7 @@ export class WatchSession {
     this.stopHeartbeat();
     const interval = 40_000;
     const ctx = NicoContext.get();
-    const url = `https://api.dmc.nico/api/sessions/${encodeURIComponent(
-      sessionId
-    )}?_format=json&_method=PUT`;
+    const url = NicoEndpoint.dmcSessionHeartbeat(sessionId);
     this.heartbeatTimer = setInterval(() => {
       ctx.http
         .fetch(url, {

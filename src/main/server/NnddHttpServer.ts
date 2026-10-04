@@ -4,8 +4,11 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { NNDDREVideo } from '@shared/types';
+import { NicoApi } from '@shared/constants/api';
 import { VideoFileSuffix } from '@shared/constants/paths';
+import { extractBracketedVideoId } from '@shared/utils/videoId';
 import { LibraryManager } from '../db/LibraryManager';
+import { isPathAllowed } from '../player/LocalVideoProtocol';
 import { getConfigStore } from '../config/ConfigStore';
 import { createLogger } from '../util/Logger';
 import { CommentXmlReader } from '../nicovideo/comment/CommentXmlReader';
@@ -14,6 +17,10 @@ import { generateLibraryPage } from './libraryPage';
 import { registerWebPlayerRoutes } from './webPlayerBridge';
 
 const log = createLogger('HTTPServer');
+
+/** XML 属性値・テキスト用の最小エスケープ */
+const esc = (s: string): string =>
+  String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
 /**
  * 内蔵HTTPサーバー。
@@ -317,8 +324,16 @@ export class NnddHttpServer {
     this.streamFile(req, res, v.uri);
   }
 
-  /** ファイルを Range 対応で配信する */
+  /**
+   * ファイルを Range 対応で配信する。
+   * LAN に公開され得るため、デスクトップのローカル再生と同じ許可ルート配下に限る。
+   */
   private streamFile(req: Request, res: Response, filePath: string): void {
+    if (!isPathAllowed(path.resolve(filePath))) {
+      log.warn('stream access denied:', filePath);
+      res.status(403).send('forbidden');
+      return;
+    }
     const stat = fs.statSync(filePath);
     const size = stat.size;
     const range = req.headers.range;
@@ -479,14 +494,11 @@ export class NnddHttpServer {
   }
 
   private extractVideoId(uri: string): string | null {
-    const m = uri.match(/\[((?:sm|nm|so|ax|sd|ca|cd|cw|zb|ze|yo)\d+)\]/);
-    return m ? m[1] : null;
+    return extractBracketedVideoId(uri);
   }
 
   /** 本家NNDD互換: GET_VIDEO_ID_LIST レスポンス */
   private buildNNDDREVideoIdListXml(videos: NNDDREVideo[]): string {
-    const esc = (s: string): string =>
-      String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     const lines = ['<?xml version="1.0" encoding="UTF-8"?>', '<nnddResponse>'];
     for (const v of videos) {
       const vid = this.extractVideoId(v.uri) ?? '';
@@ -502,8 +514,6 @@ export class NnddHttpServer {
   private buildNnddMyListXml(
     mylists: ReturnType<LibraryManager['myListDao']['list']>
   ): string {
-    const esc = (s: string): string =>
-      String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     const rssTypeMap: Record<string, string> = {
       mylist: 'MY_LIST',
       channel: 'CHANNEL',
@@ -524,8 +534,6 @@ export class NnddHttpServer {
 
   /** 本家NNDD互換: GET_VIDEO_BY_ID レスポンス */
   private buildNNDDREVideoByIdXml(v: NNDDREVideo, req: Request): string {
-    const esc = (s: string): string =>
-      String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     const vid = this.extractVideoId(v.uri) ?? '';
     const filename = path.basename(v.uri);
     const ext = path.extname(v.uri).slice(1);
@@ -542,15 +550,13 @@ export class NnddHttpServer {
 
   /** 本家NNDD互換: GET_MYLIST_BY_ID レスポンス (再生状況同期) */
   private buildNnddMyListByIdXml(videos: NNDDREVideo[]): string {
-    const esc = (s: string): string =>
-      String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
     const lines = ['<?xml version="1.0" encoding="UTF-8"?>', '<nnddResponse>', '  <channel>'];
     for (const v of videos) {
       const vid = this.extractVideoId(v.uri) ?? '';
       const played = !v.yetReading ? 'true' : 'false';
       lines.push('    <item>');
       lines.push(`      <title>${esc(v.videoName)}</title>`);
-      lines.push(`      <link>https://www.nicovideo.jp/watch/${esc(vid)}</link>`);
+      lines.push(`      <link>${NicoApi.WATCH_PAGE}${esc(vid)}</link>`);
       lines.push(`      <played>${played}</played>`);
       lines.push('    </item>');
     }
@@ -560,12 +566,6 @@ export class NnddHttpServer {
   }
 
   private buildVideoListXml(videos: NNDDREVideo[]): string {
-    const esc = (s: string): string =>
-      String(s ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
     const lines: string[] = [];
     lines.push('<?xml version="1.0" encoding="UTF-8"?>');
     lines.push('<NNDDServer><response status="success"><videos>');
@@ -586,12 +586,6 @@ export class NnddHttpServer {
   private buildMyListXml(
     mylists: ReturnType<LibraryManager['myListDao']['list']>
   ): string {
-    const esc = (s: string): string =>
-      String(s ?? '')
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
     const lines: string[] = [];
     lines.push('<?xml version="1.0" encoding="UTF-8"?>');
     lines.push('<NNDDServer><response status="success"><mylists>');

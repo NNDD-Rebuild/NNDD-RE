@@ -287,11 +287,13 @@ export class DownloadManager extends EventEmitter {
       fs.mkdirSync(baseDir, { recursive: true });
       const baseName = LocalFileNaming.baseName(watch.title, watch.videoId);
       const skipComments = item.isAudioOnly && (getConfigStore().get('skipCommentsOnAudioOnly') ?? false);
+      // DL途中で設定が変わっても取得処理と完了検証の判定がずれないよう、ここで1回だけ読む
+      const downloadAllComments = getConfigStore().get('downloadAllComments') ?? false;
 
       // コメント取得
       // コメント全量取得 (過去ログ含む — fetchAllComments でループ遡り)
       this.updateStatus(item, DownloadStatusType.COMMENT);
-      if (!skipComments && getConfigStore().get('downloadAllComments') !== false) {
+      if (!skipComments && downloadAllComments) {
       try {
         const comments = await CommentClient.fetchAllComments(watch, {
           includeEasy: getConfigStore().get('downloadEasyComments') ?? false,
@@ -345,7 +347,7 @@ export class DownloadManager extends EventEmitter {
         );
         // 全件取得オフ時は上のfetchAllCommentsブロックが実行されず通常コメントXMLが
         // 生成されないため、今コメの内容をそのまま通常コメントXMLとしても書き出す
-        if (getConfigStore().get('downloadAllComments') === false) {
+        if (!downloadAllComments) {
           const threadId =
             watch.commentThreads.find((t) => t.fork === 'main')?.id ??
             watch.commentThreads[0]?.id ??
@@ -448,7 +450,7 @@ export class DownloadManager extends EventEmitter {
 
         const missingSecondary: string[] = [];
         if (!skipComments) {
-          if (getConfigStore().get('downloadAllComments') !== false) {
+          if (downloadAllComments) {
             const p = path.join(baseDir, LocalFileNaming.commentXmlFileName(watch.title, watch.videoId));
             if (!fs.existsSync(p)) missingSecondary.push('コメントXML');
           }

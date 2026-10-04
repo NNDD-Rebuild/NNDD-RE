@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useConfig } from '@renderer/hooks/useConfig';
+import { Section } from './common';
 
 type UpdateEvent =
   | { event: 'checking' }
@@ -172,23 +173,7 @@ function describe(s: UpdateEvent | null): string {
   }
 }
 
-function Section({
-  title,
-  children
-}: {
-  title: string;
-  children: React.ReactNode;
-}): JSX.Element {
-  return (
-    <div className="mb-5">
-      <div className="text-sm font-bold mb-2 border-b border-nndd-border pb-1">
-        {title}
-      </div>
-      <div className="pl-3">{children}</div>
-    </div>
-  );
-}
-
+// disabled 時の半透明化がない点で ./common の Btn と異なるため個別定義
 function Btn(props: React.ButtonHTMLAttributes<HTMLButtonElement>): JSX.Element {
   return (
     <button

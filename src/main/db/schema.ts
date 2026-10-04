@@ -249,7 +249,6 @@ export const Q = {
     INSERT INTO history (videoId, title, thumbnailUrl, watchedAt, isLocal, watchSeconds)
     VALUES (?, ?, ?, ?, ?, ?);`,
   DELETE_HISTORY: `DELETE FROM history;`,
-  SELECT_HISTORY_EXISTS: `SELECT 1 FROM history WHERE videoId = ?;`,
 
   // スケジュール
   SELECT_SCHEDULES: `SELECT * FROM schedule;`,

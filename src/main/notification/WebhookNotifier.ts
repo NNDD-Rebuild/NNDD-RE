@@ -26,8 +26,9 @@ export function detectWebhookProvider(webhookUrl: string): WebhookProvider | nul
   } catch {
     return null;
   }
-  if (hostname.endsWith('discord.com') || hostname.endsWith('discordapp.com')) return 'discord';
-  if (hostname.endsWith('slack.com')) return 'slack';
+  const isHost = (domain: string): boolean => hostname === domain || hostname.endsWith(`.${domain}`);
+  if (isHost('discord.com') || isHost('discordapp.com')) return 'discord';
+  if (isHost('slack.com')) return 'slack';
   return null;
 }
 

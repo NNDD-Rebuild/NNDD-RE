@@ -1,5 +1,6 @@
 import { createLogger } from '../util/Logger';
 import { NNDD_RE_CMD_SCHEME } from '../../shared/constants/paths';
+import { isVideoId } from '../../shared/utils/videoId';
 import type { CmdApi } from '../ipc/registerIpc';
 import { LivePlayerManager } from '../player/LivePlayerManager';
 import { normalizeLiveId } from '../nicovideo/live/LiveWatchPage';
@@ -12,7 +13,11 @@ export type CmdAction =
   | { action: 'mylist'; mylistId: string }
   | { action: 'live'; programId: string };
 
-/** `nndd-re-cmd://play/sm12345` 等をパースする。形式不正・未知アクションは null */
+/**
+ * `nndd-re-cmd://play/sm12345` 等をパースする。形式不正・未知アクションは null。
+ * OS 経由で任意の URL が来るため、ID は下流 (DL ファイル名・URL 組み立て) に渡す前に形式を検証する。
+ * 生放送の ID は handleCmdUrl の normalizeLiveId で検証する。
+ */
 export function parseCmdUrl(url: string): CmdAction | null {
   const prefix = `${NNDD_RE_CMD_SCHEME}://`;
   if (!url.startsWith(prefix)) return null;
@@ -24,11 +29,11 @@ export function parseCmdUrl(url: string): CmdAction | null {
 
   switch (action) {
     case 'play':
-      return { action: 'play', videoId: id };
+      return isVideoId(id) ? { action: 'play', videoId: id } : null;
     case 'download':
-      return { action: 'download', videoId: id };
+      return isVideoId(id) ? { action: 'download', videoId: id } : null;
     case 'mylist':
-      return { action: 'mylist', mylistId: id };
+      return /^\d+$/.test(id) ? { action: 'mylist', mylistId: id } : null;
     case 'live':
       return { action: 'live', programId: id };
     default:

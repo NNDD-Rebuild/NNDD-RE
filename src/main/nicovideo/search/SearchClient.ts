@@ -4,59 +4,14 @@ import type {
   NNDDRESearchSortTypeValue
 } from '@shared/types';
 import { NNDDRESearchType } from '@shared/types';
-import { NicoApi } from '@shared/constants';
+import { NicoEndpoint } from '@shared/constants';
 import { NicoContext } from '../NicoContext';
 import { ThumbInfoXmlReader } from '../video/ThumbInfoXmlReader';
 import { createLogger } from '../../util/Logger';
 import { ImageCache } from '../../util/ImageCache';
+import type { NicoSnapshotV2Response, NicoSnapshotV2Item, NicoNvapiSearchResponse, NicoNvapiSearchItem } from '../apiTypes';
 
 const log = createLogger('SearchClient');
-
-interface SnapshotV2Response {
-  meta: { status: number; totalCount: number; id: string };
-  data: SnapshotV2Item[];
-}
-
-interface SnapshotV2Item {
-  contentId: string;
-  title: string;
-  description: string;
-  thumbnailUrl: string;
-  lengthSeconds: number;
-  viewCounter: number;
-  commentCounter: number;
-  mylistCounter: number;
-  likeCounter: number;
-  startTime: string;
-  tags: string;
-  channelId?: number | string | null;
-  userId?: number | string | null;
-}
-
-interface NvapiSearchResponse {
-  meta: { status: number };
-  data: {
-    totalCount: number;
-    items: NvapiSearchItem[];
-  };
-}
-
-interface NvapiSearchItem {
-  id: string;
-  title: string;
-  shortDescription?: string;
-  thumbnail: { url: string; middleUrl?: string };
-  duration: number;
-  registeredAt: string;
-  count: { view: number; comment: number; mylist: number; like: number };
-  isChannelVideo?: boolean;
-  owner?: {
-    ownerType?: 'user' | 'channel' | string;
-    id: string;
-    name: string;
-    iconUrl: string;
-  } | null;
-}
 
 export type SearchApiMode = 'snapshot' | 'nvapi';
 
@@ -93,7 +48,7 @@ export class SearchClient {
     if (apiMode === 'nvapi') return this.searchNvapi(opts);
     const url = this.buildUrl(opts);
     log.debug('search:', url);
-    const res = await NicoContext.get().http.getJson<SnapshotV2Response>(url);
+    const res = await NicoContext.get().http.getJson<NicoSnapshotV2Response>(url);
     const items = (res.data ?? []).map(this.toItem);
     return {
       items: this.applyCachedThumbs(items),
@@ -107,7 +62,7 @@ export class SearchClient {
   }> {
     const url = this.buildNvapiUrl(opts);
     log.debug('searchNvapi:', url);
-    const res = await NicoContext.get().http.getJson<NvapiSearchResponse>(url);
+    const res = await NicoContext.get().http.getJson<NicoNvapiSearchResponse>(url);
     const items = (res.data?.items ?? []).map(this.toItemFromNvapi);
     return {
       items: this.applyCachedThumbs(items),
@@ -124,7 +79,7 @@ export class SearchClient {
 
   private static async fetchByVideoId(videoId: string): Promise<SearchResultItem | null> {
     try {
-      const xml = await NicoContext.get().http.getText(`${NicoApi.THUMB_INFO}${videoId}`);
+      const xml = await NicoContext.get().http.getText(NicoEndpoint.thumbInfo(videoId));
       const parsed = ThumbInfoXmlReader.parse(xml);
       if (!parsed) return null;
       const http = NicoContext.get().http;
@@ -171,7 +126,7 @@ export class SearchClient {
     params.set('_offset', String(opts.offset ?? 0));
     params.set('_limit', String(opts.limit ?? 32));
     params.set('_context', 'nndd-electron');
-    return `${NicoApi.SEARCH_API}?${params.toString()}`;
+    return NicoEndpoint.searchSnapshot(params);
   }
 
   private static toSortParam(
@@ -217,7 +172,7 @@ export class SearchClient {
     params.set('sortOrder', sortOrder);
     params.set('page', String(Math.floor((opts.offset ?? 0) / (opts.limit ?? 32)) + 1));
     params.set('pageSize', String(Math.min(opts.limit ?? 32, 100)));
-    return `${NicoApi.SEARCH_API_NVAPI}?${params.toString()}`;
+    return NicoEndpoint.searchNvapi(params);
   }
 
   private static toNvapiSortParam(
@@ -251,7 +206,7 @@ export class SearchClient {
     }
   }
 
-  private static toItemFromNvapi(d: NvapiSearchItem): SearchResultItem {
+  private static toItemFromNvapi(d: NicoNvapiSearchItem): SearchResultItem {
     const isChannelVideo = !!d.isChannelVideo || d.owner?.ownerType === 'channel';
     return {
       videoId: d.id,
@@ -273,7 +228,7 @@ export class SearchClient {
     };
   }
 
-  private static toItem(d: SnapshotV2Item): SearchResultItem {
+  private static toItem(d: NicoSnapshotV2Item): SearchResultItem {
     const isChannelVideo = d.channelId !== null && d.channelId !== undefined;
     return {
       videoId: d.contentId,
@@ -288,7 +243,7 @@ export class SearchClient {
       registeredAt: new Date(d.startTime),
       tags: (d.tags ?? '').split(/\s+/).filter(Boolean),
       author: isChannelVideo
-        ? { id: `ch${d.channelId}`, nickname: '', iconUrl: `https://secure-dcdn.cdn.nimg.jp/comch/channel-icon/128x128/ch${d.channelId}.jpg` }
+        ? { id: `ch${d.channelId}`, nickname: '', iconUrl: NicoEndpoint.channelIcon(d.channelId) }
         : d.userId != null
         ? { id: String(d.userId), nickname: '', iconUrl: '' }
         : undefined,

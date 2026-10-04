@@ -36,6 +36,8 @@ let httpServer: NnddHttpServer | null = null;
 let trayManager: TrayManager | null = null;
 let backupManager: BackupManager | null = null;
 let cmdApi: CmdApi | null = null;
+// before-quit 開始後は true。メインウィンドウの close でトレイ常駐に回さず、終了処理の二重実行も防ぐ。
+let quitCleanupStarted = false;
 
 // Windows: setZoomFactor後にGPUデコード動画が黒くなるバグ対策 (Electron 33 / Chromium 130)
 // setZoomFactorはniconico埋め込みプレイヤー (player.streamingMode: 'niconico') でのみ呼ばれるため、
@@ -123,7 +125,7 @@ function createMainWindow(): BrowserWindow {
   // 閉じるボタンでもトレイ常駐 (設定で有効化されている場合)
   win.on('close', (e) => {
     const cfg = getConfigStore();
-    if (cfg.get('tray').minimizeToTray && !(app as unknown as { isQuiting?: boolean }).isQuiting) {
+    if (cfg.get('tray').minimizeToTray && !quitCleanupStarted) {
       e.preventDefault();
       win.hide();
     }
@@ -309,14 +311,10 @@ app.on('window-all-closed', () => {
   }
 });
 
-let quitCleanupStarted = false;
-
 // before-quit はリスナーが Promise を返しても Electron 自身は完了を待たないため、
 // event.preventDefault() で一旦終了をキャンセルし、非同期クリーンアップ完了後に
 // 改めて app.quit() を呼ぶ (2回目の発火は quitCleanupStarted で素通りさせる)。
 app.on('before-quit', (event) => {
-  (app as unknown as { isQuiting?: boolean }).isQuiting = true;
-
   if (quitCleanupStarted) return;
   event.preventDefault();
   quitCleanupStarted = true;

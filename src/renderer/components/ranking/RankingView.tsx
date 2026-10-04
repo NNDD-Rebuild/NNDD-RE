@@ -5,7 +5,9 @@ import { VideoCard } from '../common/VideoCard';
 import { VirtualizedItemList } from '../common/VirtualizedItemList';
 import { useAppStore } from '@renderer/store/useAppStore';
 import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
+import { watchUrl } from '@shared/utils/nicoUrl';
 import { useWatchedIds } from '@renderer/hooks/useWatchedIds';
+import { useLibraryCheck } from '@renderer/hooks/useLibraryCheck';
 
 const ALL_TAG = '';
 
@@ -22,7 +24,7 @@ export function RankingView(): JSX.Element {
   const [items, setItems] = useState<RankingItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [downloadedIds, setDownloadedIds] = useState<Set<string>>(new Set());
+  const { downloadedIds, checkDownloaded } = useLibraryCheck();
   const videoIds = useMemo(() => items.map((i) => i.videoId), [items]);
   const watchedIds = useWatchedIds(videoIds);
   const globalMode = useAppStore((s) => s.contentViewMode);
@@ -49,7 +51,10 @@ export function RankingView(): JSX.Element {
       .catch(() => {});
   }, []);
 
+  // ジャンル・期間・サブカテゴリを取得中に切り替えた場合、最後に投げた取得の結果だけを反映する
+  const fetchSeqRef = useRef(0);
   const fetchRanking = async (): Promise<void> => {
+    const seq = ++fetchSeqRef.current;
     setLoading(true);
     setError(null);
     try {
@@ -57,19 +62,18 @@ export function RankingView(): JSX.Element {
         window.nndd.channels.RANKING_FETCH,
         { genre, term, tag: tag || undefined }
       );
+      if (seq !== fetchSeqRef.current) return;
       const mapped = res.items.map((d) => ({ ...d, registeredAt: new Date(d.registeredAt) }));
       setItems(mapped);
       setTrendTags(res.trendTags ?? []);
-      const ids = mapped.map((d) => d.videoId);
-      window.nndd
-        .invoke<string[]>(window.nndd.channels.LIBRARY_CHECK_BATCH, ids)
-        .then((dl) => setDownloadedIds(new Set(dl)))
-        .catch(() => {});
+      void checkDownloaded(mapped.map((d) => d.videoId));
     } catch (e) {
-      setError(toUserFriendlyErrorMessage(e));
+      if (seq === fetchSeqRef.current) setError(toUserFriendlyErrorMessage(e));
     } finally {
-      setLoading(false);
-      requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 0 }));
+      if (seq === fetchSeqRef.current) {
+        setLoading(false);
+        requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 0 }));
+      }
     }
   };
 
@@ -77,12 +81,11 @@ export function RankingView(): JSX.Element {
   useEffect(() => {
     setTag(ALL_TAG);
     setTrendTags([]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [genre]);
 
   useEffect(() => {
     fetchRanking();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- fetchRanking は毎回作り直されるため、条件の変化時だけ取得する
   }, [genre, term, tag, isLoggedIn]);
 
   const handlePlay = (videoId: string): void => {
@@ -98,7 +101,7 @@ export function RankingView(): JSX.Element {
     );
   };
   const handleNiconico = (videoId: string): void => {
-    window.nndd.invoke(window.nndd.channels.SYS_OPEN_PATH, `https://www.nicovideo.jp/watch/${videoId}`);
+    window.nndd.invoke(window.nndd.channels.SYS_OPEN_PATH, watchUrl(videoId));
   };
   const handlePlayAudioOnly = (videoId: string): void => {
     window.nndd.invoke(window.nndd.channels.VIDEO_OPEN_PLAYER, { videoId, audioOnly: true });

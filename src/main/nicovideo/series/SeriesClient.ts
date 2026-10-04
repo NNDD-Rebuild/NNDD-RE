@@ -1,5 +1,7 @@
+import { NicoEndpoint } from '@shared/constants';
 import { NicoContext } from '../NicoContext';
 import { createLogger } from '../../util/Logger';
+import type { NicoSeriesVideo, NicoSeriesResponse } from '../apiTypes';
 
 const log = createLogger('SeriesClient');
 
@@ -23,24 +25,6 @@ export interface SeriesFetchResult {
   totalPages: number;
 }
 
-interface SeriesVideo {
-  id: string;
-  title: string;
-  thumbnail?: { url?: string | { listingMedium?: string } };
-  duration?: number;
-  count?: { view?: number; comment?: number; mylist?: number; like?: number };
-  registeredAt?: string;
-}
-
-interface SeriesRes {
-  meta?: { status?: number };
-  data?: {
-    detail?: { title?: string; description?: string };
-    totalCount?: number;
-    items?: Array<{ video: SeriesVideo }>;
-  };
-}
-
 const PAGE_SIZE = 100;
 
 function toLength(sec: number): string {
@@ -52,14 +36,14 @@ function toLength(sec: number): string {
     : `${mm}:${String(ss).padStart(2, '0')}`;
 }
 
-function toThumb(t: SeriesVideo['thumbnail']): string {
+function toThumb(t: NicoSeriesVideo['thumbnail']): string {
   if (!t) return '';
   if (typeof t.url === 'string') return t.url;
   if (t.url && typeof t.url === 'object') return (t.url as { listingMedium?: string }).listingMedium ?? '';
   return '';
 }
 
-function mapItems(items: Array<{ video: SeriesVideo }>): SeriesVideoItem[] {
+function mapItems(items: Array<{ video: NicoSeriesVideo }>): SeriesVideoItem[] {
   return items.map((i) => ({
     videoId: i.video.id,
     title: i.video.title,
@@ -87,10 +71,10 @@ export class SeriesClient {
     return m ? m[1] : null;
   }
 
-  private static async fetchPageRaw(id: string, page: number): Promise<SeriesRes> {
-    const url = `https://nvapi.nicovideo.jp/v2/series/${encodeURIComponent(id)}?pageSize=${PAGE_SIZE}&page=${page}`;
+  private static async fetchPageRaw(id: string, page: number): Promise<NicoSeriesResponse> {
+    const url = NicoEndpoint.series(id, PAGE_SIZE, page);
     log.debug('fetch series page %d:', page, url);
-    return NicoContext.get().http.getJson<SeriesRes>(url);
+    return NicoContext.get().http.getJson<NicoSeriesResponse>(url);
   }
 
   /**

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { CookieJar } from 'tough-cookie';
-import { NicoAuthCookieName } from '@shared/constants';
+import { NicoApi, NicoAuthCookieName } from '@shared/constants';
 import { createLogger } from '../../util/Logger';
 
 const log = createLogger('CookieStore');
@@ -74,7 +74,7 @@ export class CookieStore {
 
   /** 認証に必要な user_session が存在するか */
   async hasLoginCookie(): Promise<boolean> {
-    const cookies = await this.jar.getCookies('https://www.nicovideo.jp/');
+    const cookies = await this.jar.getCookies(NicoApi.TOP);
     return cookies.some((c) => c.key === NicoAuthCookieName.USER_SESSION);
   }
 

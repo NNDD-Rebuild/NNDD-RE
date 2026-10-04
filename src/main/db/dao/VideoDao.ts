@@ -1,4 +1,5 @@
 import type { NNDDREVideo } from '@shared/types';
+import { extractBracketedVideoId } from '@shared/utils/videoId';
 import { NnddDatabase } from '../Database';
 import { Q } from '../schema';
 
@@ -187,7 +188,6 @@ export class VideoDao {
    * 元: NamedArrayLibraryManager で `[sm12345]` 形式から抽出していた。
    */
   private extractKey(uri: string): string {
-    const m = uri.match(/\[((?:sm|nm|so|ax|sd|ca|cd|cw|zb|ze|yo)\d+)\]/);
-    return m ? m[1] : uri;
+    return extractBracketedVideoId(uri) ?? uri;
   }
 }

@@ -7,8 +7,7 @@ import { ipcMain, type IpcMainInvokeEvent } from 'electron';
  * registerIpcHandlers の先頭で installIpcRegistry() を呼ぶこと (それ以前に登録された
  * ハンドラは記録されない)。
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type Handler = (event: IpcMainInvokeEvent, ...args: any[]) => unknown;
+type Handler = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown;
 
 const handlers = new Map<string, Handler>();
 let installed = false;

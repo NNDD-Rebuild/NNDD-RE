@@ -174,7 +174,9 @@ export function ScheduleSettings(): JSX.Element {
               onChange={(e) =>
                 setEditing({
                   ...editing,
-                  targetType: e.target.value as Schedule['targetType']
+                  targetType: e.target.value as Schedule['targetType'],
+                  // targetId はシリーズIDと投稿者IDで共用のため、種別を変えたら前の値を残さない
+                  targetId: ''
                 })
               }
               className="w-full bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
