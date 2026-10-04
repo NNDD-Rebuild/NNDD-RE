@@ -27,6 +27,11 @@ const toNumber = (raw: string): number | null => {
   return raw.trim() !== '' && Number.isFinite(n) ? n : null;
 };
 
+const toPort = (raw: string): number | null => {
+  const n = toNumber(raw);
+  return n !== null && Number.isInteger(n) && n >= 1 && n <= 65535 ? n : null;
+};
+
 export const HONKE_CONFIG_MAP: Record<string, ConfigMapEntry> = {
   volume: {
     reKey: 'player.volume',
@@ -55,7 +60,22 @@ export const HONKE_CONFIG_MAP: Record<string, ConfigMapEntry> = {
   isRepeat: { reKey: 'player.repeat', convert: toBool },
   isShowComment: { reKey: 'player.showComments', convert: toBool },
   isCommentFontBold: { reKey: 'player.commentBold', convert: toBool },
-  isAntiAlias: { reKey: 'player.commentAntiAlias', convert: toBool }
+  isAntiAlias: { reKey: 'player.commentAntiAlias', convert: toBool },
+  showCommentSec: {
+    reKey: 'player.commentShowSeconds',
+    convert: (raw) => {
+      const n = toNumber(raw);
+      return n === null || n <= 0 ? null : n;
+    }
+  },
+  // 本家のサーバー機能 → RE 内蔵HTTPサーバー。LAN公開 (allowExternal) は意図しない公開を避けるため取り込まない
+  allowOtherNNDDConnection: { reKey: 'httpServer.enabled', convert: toBool },
+  localPort: { reKey: 'httpServer.port', convert: toPort },
+  enableShareVideoInfo: { reKey: 'httpServer.allowVideo', convert: toBool },
+  enableShareMyListInfo: { reKey: 'httpServer.allowMyList', convert: toBool },
+  allowGetOtherNNDDInfo: { reKey: 'remoteNndd.enabled', convert: toBool },
+  remoteNNDDAddress: { reKey: 'remoteNndd.address', convert: (raw) => (raw ? raw : null) },
+  remoteNNDDPort: { reKey: 'remoteNndd.port', convert: toPort }
 };
 
 /** 認証情報など、本家側で暗号化ストアにありインポートできないことが分かっているキー */
