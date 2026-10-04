@@ -30,6 +30,7 @@ import { registerLiveHandlers } from './handlers/live';
 import { registerHttpHandlers } from './handlers/http';
 import { registerNavigationHandlers } from './handlers/navigation';
 import { registerImageHandlers } from './handlers/image';
+import { registerHonkeImportHandlers } from './handlers/honkeImport';
 
 const log = createLogger('IPC');
 
@@ -95,6 +96,7 @@ export function registerIpcHandlers(
   registerHttpHandlers(ctx);
   const { navigateMylist } = registerNavigationHandlers(ctx);
   registerImageHandlers();
+  registerHonkeImportHandlers(ctx);
 
   // セッションの定期チェック (起動直後に1回 + 30分ごと)
   startSessionCheck(ctx);

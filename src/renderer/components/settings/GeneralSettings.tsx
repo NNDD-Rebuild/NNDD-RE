@@ -7,6 +7,7 @@ import { TraySection, WindowResetSection } from './general/WindowSections';
 import { ImageCacheSection } from './general/ImageCacheSection';
 import { DiscordRpcSection, WebhookSection, ChannelWatchSection } from './general/IntegrationSections';
 import { DeveloperSection } from './general/DeveloperSection';
+import { HonkeImportSettings } from './HonkeImportSettings';
 
 
 /**
@@ -41,6 +42,7 @@ export function GeneralSettings({ onDeveloperModeChange }: GeneralSettingsProps)
       <DiscordRpcSection />
       <WebhookSection />
       <ChannelWatchSection />
+      <HonkeImportSettings />
       <DeveloperSection onDeveloperModeChange={onDeveloperModeChange} />
     </div>
   );

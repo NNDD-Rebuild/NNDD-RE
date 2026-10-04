@@ -427,7 +427,19 @@ export const IpcChannel = {
   /** (DiscordActivityInfo) 動画再生中のPresenceを設定 (send, 返り値なし) */
   DISCORD_RPC_SET_ACTIVITY: 'nndd:discordRpc:setActivity',
   /** Presenceをクリア (send, 返り値なし) */
-  DISCORD_RPC_CLEAR_ACTIVITY: 'nndd:discordRpc:clearActivity'
+  DISCORD_RPC_CLEAR_ACTIVITY: 'nndd:discordRpc:clearActivity',
+
+  // 本家NNDDからのインポート
+  /** → HonkeImportSource[] 自動検出した本家データの候補 */
+  HONKE_DETECT: 'nndd:honke:detect',
+  /** (pickedDir: string) → HonkeImportSource | null 手動選択フォルダから本家データを解決 */
+  HONKE_RESOLVE: 'nndd:honke:resolve',
+  /** (source: HonkeImportSource) → HonkeImportPreview */
+  HONKE_PREVIEW: 'nndd:honke:preview',
+  /** (selection: HonkeImportSelection) → HonkeImportReport */
+  HONKE_APPLY: 'nndd:honke:apply',
+  /** main → renderer: HonkeImportProgress */
+  HONKE_PROGRESS: 'nndd:honke:progress'
 } as const;
 
 export type IpcChannelValue = typeof IpcChannel[keyof typeof IpcChannel];
