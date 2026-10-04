@@ -129,6 +129,7 @@ export function FollowView(): JSX.Element {
   const setPendingMylistId = useAppStore((s) => s.setPendingMylistId);
   const setPendingSeriesId = useAppStore((s) => s.setPendingSeriesId);
   const setActiveTab = useAppStore((s) => s.setActiveTab);
+  const setPendingChannelId = useAppStore((s) => s.setPendingChannelId);
   const isLoggedIn = useAppStore((s) => s.isLoggedIn);
   const [displayMode, setDisplayMode] = useState<'grid' | 'list'>(globalMode);
   const LIMIT = 32;
@@ -379,7 +380,18 @@ export function FollowView(): JSX.Element {
     window.nndd.invoke(window.nndd.channels.SYS_OPEN_PATH, watchUrl(videoId));
   };
   const handleUserPage = (userId: string): void => {
-    window.nndd.invoke(window.nndd.channels.SYS_OPEN_PATH, userUrl(userId));
+    if (userId.startsWith('ch')) {
+      setPendingChannelId(userId);
+      setActiveTab('mylist');
+      return;
+    }
+    const known = resolveUser(userId);
+    const author = [...userItems, ...allItems].find((r) => r.author?.id === userId)?.author;
+    setPendingFollowUser({
+      id: userId,
+      nickname: known?.nickname ?? author?.nickname ?? '',
+      iconUrl: known?.iconUrl ?? author?.iconUrl ?? '',
+    });
   };
   const handleOpenMylist = (id: string): void => {
     setPendingMylistId(id);
@@ -510,6 +522,13 @@ export function FollowView(): JSX.Element {
                 {t.label}
               </button>
             ))}
+            <button
+              onClick={() => window.nndd.invoke(window.nndd.channels.SYS_OPEN_PATH, userUrl(selectedUserId))}
+              className="text-xs px-3 py-1 rounded bg-nndd-border hover:bg-nndd-accent/70"
+              title="ニコニコ動画のユーザーページを外部ブラウザで開く"
+            >
+              ニコニコで開く
+            </button>
           </div>
         )}
 
@@ -617,12 +636,12 @@ export function FollowView(): JSX.Element {
                   getKey={(r) => r.videoId}
                   renderItem={(r) => (
                     <VideoCard
-                      data={toCardData(r)}
+                      data={isUserMode ? { ...toCardData(r), authorIconUrl: undefined, authorId: undefined, authorNickname: undefined } : toCardData(r)}
                       layout={displayMode === 'list' ? 'list' : undefined}
                       onPlay={handlePlay}
                       onDownload={handleDownload}
                       onNiconico={handleNiconico}
-                      onUserPage={handleUserPage}
+                      onUserPage={isUserMode ? undefined : handleUserPage}
                       onPlayAudioOnly={handlePlayAudioOnly}
                       isDownloaded={downloadedIds.has(r.videoId)}
                       isWatched={watchedIds.has(r.videoId)}
