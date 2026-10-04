@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { NNDDREComment, NgListItem } from '@shared/types';
+import type { NNDDREComment } from '@shared/types';
 import { IpcChannel } from '@shared/types';
 import { CommentList } from './components/player/CommentList';
 import { ensureCommandResolved } from './util/commentCommands';
+import { useNgList } from './hooks/player/useNgList';
 
 interface InitData {
   videoId: string;
@@ -26,7 +27,7 @@ export default function CommentApp(): JSX.Element {
   const [title, setTitle] = useState('コメント一覧');
   const [comments, setComments] = useState<NNDDREComment[]>([]);
   const [currentTimeSec, setCurrentTimeSec] = useState(0);
-  const [ngList, setNgList] = useState<NgListItem[]>([]);
+  const { ngList, addNg: handleAddNg, removeNg: handleRemoveNg } = useNgList();
   const [tab, setTab] = useState<Tab>('comments');
   const [localXmlPath, setLocalXmlPath] = useState<string | undefined>(undefined);
   const [ichibaHtmlPath, setIchibaHtmlPath] = useState<string | undefined>(undefined);
@@ -50,14 +51,6 @@ export default function CommentApp(): JSX.Element {
   useEffect(() => {
     window.nndd.invoke<'dark' | 'light'>(window.nndd.channels.CONFIG_GET, 'ui.theme')
       .then((v) => { if (v === 'light') document.documentElement.classList.add('light'); })
-      .catch(() => {});
-  }, []);
-
-  // NG リストロード
-  useEffect(() => {
-    window.nndd
-      .invoke<NgListItem[]>(IpcChannel.NG_LIST_COMMENT)
-      .then(setNgList)
       .catch(() => {});
   }, []);
 
@@ -128,22 +121,6 @@ export default function CommentApp(): JSX.Element {
 
   const handleSeek = useCallback((timeSec: number): void => {
     window.nndd.send(IpcChannel.COMMENT_WINDOW_SEEK, timeSec);
-  }, []);
-
-  const handleAddNg = useCallback(async (item: NgListItem): Promise<void> => {
-    await window.nndd.invoke(IpcChannel.NG_ADD_COMMENT, item);
-    setNgList((prev) =>
-      prev.some((x) => x.type === item.type && x.value === item.value)
-        ? prev
-        : [...prev, item]
-    );
-  }, []);
-
-  const handleRemoveNg = useCallback(async (item: NgListItem): Promise<void> => {
-    await window.nndd.invoke(IpcChannel.NG_REMOVE_COMMENT, item);
-    setNgList((prev) =>
-      prev.filter((x) => !(x.type === item.type && x.value === item.value))
-    );
   }, []);
 
   const handleRefetch = useCallback(async (): Promise<string | undefined> => {

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { NNDDREComment } from '@shared/types';
+import type { NNDDREComment, NgListItem } from '@shared/types';
 import { COMMENT_FONT_FAMILY } from '@shared/constants';
 import type { CommentRenderConfig } from '../../components/player/CommentRenderer';
 import { useConfig } from '../useConfig';
@@ -12,8 +12,10 @@ export function useCommentRenderSettings({
   comments,
   pastComments,
   showComments,
-  showPastComments
+  showPastComments,
+  ngList
 }: {
+  ngList: NgListItem[];
   comments: NNDDREComment[];
   pastComments: NNDDREComment[];
   showComments: boolean;
@@ -72,7 +74,8 @@ export function useCommentRenderSettings({
       outlineIntensity: commentOutlineIntensity,
       antiAlias: commentAntiAlias,
       keepCA: commentKeepCA,
-      ngStrength
+      ngStrength,
+      ngList
     }),
     [
       commentOpacity,
@@ -84,7 +87,8 @@ export function useCommentRenderSettings({
       commentOutlineIntensity,
       commentAntiAlias,
       commentKeepCA,
-      ngStrength
+      ngStrength,
+      ngList
     ]
   );
 

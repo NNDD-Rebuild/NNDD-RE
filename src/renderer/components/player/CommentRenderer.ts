@@ -1,11 +1,8 @@
 import NiconiComments from '@xpadev-net/niconicomments';
 import type { FormattedComment } from '@xpadev-net/niconicomments';
-import {
-  type NNDDREComment,
-  type NgListItem,
-  NgListItemType
-} from '@shared/types';
+import type { NNDDREComment, NgListItem } from '@shared/types';
 import { COMMENT_FONT_FAMILY } from '@shared/constants';
+import { compileNgList, matchesNg, type CompiledNg } from '@shared/utils/ngMatch';
 
 /**
  * ニコニココメント描画エンジン。
@@ -151,8 +148,10 @@ export class CommentRenderer {
     // opacity は canvas の CSS スタイルで適用
     this.canvas.style.opacity = String(this.config.opacity);
 
-    // enabled が変化したらエンジン再起動
-    if (prev.enabled !== this.config.enabled) {
+    // enabled / NG が変化したらエンジン再起動 (既に流れる予定のコメントへも NG を反映するため)
+    const ngChanged =
+      prev.ngList !== this.config.ngList || prev.ngStrength !== this.config.ngStrength;
+    if (prev.enabled !== this.config.enabled || ngChanged) {
       if (this.video) {
         this.rebuildEngine();
       }
@@ -380,24 +379,24 @@ export class CommentRenderer {
     });
   }
 
+  private compiledNgCache: { source: NgListItem[]; compiled: CompiledNg[] } | null = null;
+
+  private compiledNgFor(ngList: NgListItem[]): CompiledNg[] {
+    if (this.compiledNgCache?.source !== ngList) {
+      this.compiledNgCache = { source: ngList, compiled: compileNgList(ngList) };
+    }
+    return this.compiledNgCache.compiled;
+  }
+
   /** NGリストで除外 */
   private filterComments(comments: NNDDREComment[]): NNDDREComment[] {
     const strength = this.config.ngStrength ?? 'medium';
+    const compiledNg = this.compiledNgFor(this.config.ngList);
     const spamUserIds = strength === 'strong' ? this.detectSpamUsers(comments) : null;
     return comments.filter((c) => {
       if (!c.isShow) return false;
       if (spamUserIds?.has(c.userId)) return false;
-      for (const ng of this.config.ngList) {
-        if (strength !== 'weak' && ng.type === NgListItemType.WORD && c.text.includes(ng.value))
-          return false;
-        if (ng.type === NgListItemType.WORD_EXACT && c.text === ng.value)
-          return false;
-        if (ng.type === NgListItemType.USER_ID && c.userId === ng.value)
-          return false;
-        if (ng.type === NgListItemType.COMMAND && c.mail.includes(ng.value))
-          return false;
-      }
-      return true;
+      return !matchesNg(c, compiledNg, strength);
     });
   }
 

@@ -10,6 +10,7 @@ import type {
 import { IpcChannel } from '@shared/types';
 import { CommentList } from './components/player/CommentList';
 import { useConfig } from './hooks/useConfig';
+import { useNgList } from './hooks/player/useNgList';
 
 type Tab = 'comments' | 'notices';
 
@@ -34,7 +35,7 @@ export default function LiveCommentApp(): JSX.Element {
   const [program, setProgram] = useState<LiveProgramInfo | null>(null);
   const [statistics, setStatistics] = useState<LiveStatistics | null>(null);
   const [canSeek, setCanSeek] = useState(false);
-  const [ngList, setNgList] = useState<NgListItem[]>([]);
+  const { ngList, addNg: handleAddNg, removeNg: handleRemoveNg } = useNgList();
   const [ssngList, setSsngList] = useState<NgListItem[]>([]);
   const [tab, setTab] = useState<Tab>('comments');
   const [onTop, , onTopLoading] = useConfig<boolean>('live.commentWindowOnTop', true);
@@ -47,14 +48,6 @@ export default function LiveCommentApp(): JSX.Element {
       .then((v) => {
         if (v === 'light') document.documentElement.classList.add('light');
       })
-      .catch(() => {});
-  }, []);
-
-  // NG リストロード
-  useEffect(() => {
-    window.nndd
-      .invoke<NgListItem[]>(IpcChannel.NG_LIST_COMMENT)
-      .then(setNgList)
       .catch(() => {});
   }, []);
 
@@ -117,18 +110,6 @@ export default function LiveCommentApp(): JSX.Element {
     (timeSec: number) => window.nndd.send(IpcChannel.LIVE_COMMENT_WINDOW_SEEK, timeSec * 1000),
     []
   );
-
-  const handleAddNg = useCallback(async (item: NgListItem): Promise<void> => {
-    await window.nndd.invoke(IpcChannel.NG_ADD_COMMENT, item);
-    setNgList((prev) =>
-      prev.some((x) => x.type === item.type && x.value === item.value) ? prev : [...prev, item]
-    );
-  }, []);
-
-  const handleRemoveNg = useCallback(async (item: NgListItem): Promise<void> => {
-    await window.nndd.invoke(IpcChannel.NG_REMOVE_COMMENT, item);
-    setNgList((prev) => prev.filter((x) => !(x.type === item.type && x.value === item.value)));
-  }, []);
 
   const toggleOnTop = (v: boolean): void => {
     setOnTopState(v);

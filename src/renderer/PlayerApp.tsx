@@ -23,6 +23,7 @@ import {
 import { usePlaylist } from './hooks/player/usePlaylist';
 import { useSidebarResize } from './hooks/player/useSidebarResize';
 import { useApplyTheme } from './hooks/useApplyTheme';
+import { useNgList } from './hooks/player/useNgList';
 import { useCommentRenderSettings } from './hooks/player/useCommentRenderSettings';
 import { useNiconicoEmbed } from './hooks/player/useNiconicoEmbed';
 import { useHistoryBlockedPrompt } from './hooks/player/useHistoryBlockedPrompt';
@@ -149,7 +150,9 @@ export default function PlayerApp(): JSX.Element {
   const [controlsAlwaysVisible] = useConfig<boolean>('player.controlsAlwaysVisible', true);
   const defaultQualityRef = useRef(defaultQuality);
   defaultQualityRef.current = defaultQuality;
+  const { ngList, addNg, removeNg } = useNgList();
   const { renderedComments, commentConfig } = useCommentRenderSettings({
+    ngList,
     comments,
     pastComments,
     showComments,
@@ -768,6 +771,9 @@ export default function PlayerApp(): JSX.Element {
             localCommentXmlPath={localCommentXmlPath}
             ichibaHtmlPath={localIchibaHtmlPath}
             showCommentTab={commentListDisplay === 'tab' || isWebPlayer}
+            ngList={ngList}
+            onAddNg={addNg}
+            onRemoveNg={removeNg}
             onCommentsUpdated={(cs) => setComments(cs.map(ensureCommandResolved))}
             onPastCommentsLoaded={(cs) => setPastComments(cs)}
             onPastCommentTabActive={(active) => setShowPastComments(active)}

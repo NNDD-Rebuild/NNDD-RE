@@ -47,6 +47,10 @@ interface Props {
   onRelatedLoaded?: (items: MyListItem[]) => void;
   /** タブバーがペイン幅に収まらない時、必要な幅(px)を通知 (スクロールでなくペイン幅拡大で対応するため) */
   onTabsOverflow?: (neededWidth: number) => void;
+  /** コメントNGリスト (動画上のコメント描画と共有するため親が保持) */
+  ngList: NgListItem[];
+  onAddNg: (item: NgListItem) => Promise<void>;
+  onRemoveNg: (item: NgListItem) => Promise<void>;
 }
 
 type Tab = 'info' | 'comments' | 'pastComments' | 'series' | 'related';
@@ -77,13 +81,15 @@ export function VideoInfoView({
   autoNextRelated = false,
   onAutoNextRelatedChange,
   onRelatedLoaded,
-  onTabsOverflow
+  onTabsOverflow,
+  ngList,
+  onAddNg,
+  onRemoveNg
 }: Props): JSX.Element {
   const [tab, setTab] = useState<Tab>('info');
   const [controlUiSize] = useConfig<'small' | 'normal' | 'large'>('player.controlUiSize', 'small');
   const tabZoom = controlUiSize === 'large' ? 1.5 : controlUiSize === 'normal' ? 1.3 : 1;
   const [currentTimeMs, setCurrentTimeMs] = useState(0);
-  const [ngList, setNgList] = useState<NgListItem[]>([]);
 
   // 過去コメント状態
   const [pastComments, setPastComments] = useState<NNDDREComment[]>([]);
@@ -100,14 +106,6 @@ export function VideoInfoView({
   // ストリーミング時の過去コメント取得件数上限
   const [pastFetchMaxCount, setPastFetchMaxCount] = useState(10_000);
   const [pastProgressMsg, setPastProgressMsg] = useState<string | null>(null);
-
-  // NG リストを初回ロード
-  useEffect(() => {
-    window.nndd
-      .invoke<NgListItem[]>(IpcChannel.NG_LIST_COMMENT)
-      .then(setNgList)
-      .catch(() => {});
-  }, []);
 
   // 過去コメント取得 (ストリーミング時) の進捗通知を購読
   useEffect(() => {
@@ -188,21 +186,6 @@ export function VideoInfoView({
     },
     [video]
   );
-
-  const handleAddNg = useCallback(async (item: NgListItem): Promise<void> => {
-    await window.nndd.invoke(IpcChannel.NG_ADD_COMMENT, item);
-    setNgList((prev) => {
-      const exists = prev.some((x) => x.type === item.type && x.value === item.value);
-      return exists ? prev : [...prev, item];
-    });
-  }, []);
-
-  const handleRemoveNg = useCallback(async (item: NgListItem): Promise<void> => {
-    await window.nndd.invoke(IpcChannel.NG_REMOVE_COMMENT, item);
-    setNgList((prev) =>
-      prev.filter((x) => !(x.type === item.type && x.value === item.value))
-    );
-  }, []);
 
   const handleRefetchComments = useCallback(async (): Promise<string | undefined> => {
     if (!videoId) return;
@@ -424,8 +407,8 @@ export function VideoInfoView({
             ngList={ngList}
             onSeek={handleSeek}
             currentTimeMs={currentTimeMs}
-            onAddNg={handleAddNg}
-            onRemoveNg={handleRemoveNg}
+            onAddNg={onAddNg}
+            onRemoveNg={onRemoveNg}
             onRefetchComments={isLocal ? handleRefetchComments : undefined}
           />
         ) : (
@@ -453,8 +436,8 @@ export function VideoInfoView({
             ngList={ngList}
             onSeek={handleSeek}
             currentTimeMs={currentTimeMs}
-            onAddNg={handleAddNg}
-            onRemoveNg={handleRemoveNg}
+            onAddNg={onAddNg}
+            onRemoveNg={onRemoveNg}
           />
         )}
       </div>

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { NgListItem, NgListItemTypeValue } from '@shared/types';
 import { NgListItemType } from '@shared/types';
 import { useConfig } from '@renderer/hooks/useConfig';
+import { useNgList } from '@renderer/hooks/player/useNgList';
 
 const STRENGTH_OPTIONS: { value: 'weak' | 'medium' | 'strong'; label: string; desc: string }[] = [
   { value: 'weak', label: '弱', desc: 'NGワードは完全一致のみ適用' },
@@ -27,18 +28,11 @@ export function NgCommentSettings(): JSX.Element {
     'player.ngStrength',
     'medium'
   );
-  const [ngList, setNgList] = useState<NgListItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { ngList, loaded, addNg, removeNg } = useNgList();
+  const loading = !loaded;
   const [kind, setKind] = useState<NgListItemTypeValue>(NgListItemType.WORD);
   const [matchExact, setMatchExact] = useState(false);
   const [input, setInput] = useState('');
-
-  useEffect(() => {
-    window.nndd
-      .invoke<NgListItem[]>(window.nndd.channels.NG_LIST_COMMENT)
-      .then((list) => { setNgList(list ?? []); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, []);
 
   const selectedKind = KIND_OPTIONS.find((o) => o.value === kind)!;
   const effectiveType: NgListItemTypeValue =
@@ -48,18 +42,11 @@ export function NgCommentSettings(): JSX.Element {
     const value = input.trim();
     if (!value) return;
     const item: NgListItem = { type: effectiveType, value };
-    await window.nndd.invoke(window.nndd.channels.NG_ADD_COMMENT, item);
-    setNgList((prev) => {
-      const filtered = prev.filter((x) => !(x.type === effectiveType && x.value === value));
-      return [...filtered, item];
-    });
+    await addNg(item);
     setInput('');
-  }, [input, effectiveType]);
+  }, [input, effectiveType, addNg]);
 
-  const handleRemove = useCallback(async (item: NgListItem): Promise<void> => {
-    await window.nndd.invoke(window.nndd.channels.NG_REMOVE_COMMENT, item);
-    setNgList((prev) => prev.filter((x) => !(x.type === item.type && x.value === item.value)));
-  }, []);
+  const handleRemove = removeNg;
 
   if (loading) {
     return <div className="p-6 text-sm text-nndd-subtext">読み込み中…</div>;

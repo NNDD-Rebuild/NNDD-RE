@@ -53,7 +53,7 @@ export const CommentOverlay = forwardRef<CommentOverlayHandle, Props>(
       renderer.setConfig({
         ...DEFAULT_RENDER_CONFIG,
         ...config,
-        ngList: ngList ?? []
+        ...(ngList ? { ngList } : {})
       });
       renderer.setComments(comments);
       rendererRef.current = renderer;
@@ -120,7 +120,7 @@ export const CommentOverlay = forwardRef<CommentOverlayHandle, Props>(
 
     // 設定/NG更新
     useEffect(() => {
-      rendererRef.current?.setConfig({ ...config, ngList: ngList ?? [] });
+      rendererRef.current?.setConfig({ ...config, ...(ngList ? { ngList } : {}) });
     }, [config, ngList]);
 
     useImperativeHandle(

@@ -17,6 +17,7 @@ import type {
 import { IpcChannel } from '@shared/types';
 import type { CommentRenderer } from './components/player/CommentRenderer';
 import { useConfig } from './hooks/useConfig';
+import { useNgList } from './hooks/player/useNgList';
 import { VideoController } from './components/player/VideoController';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { CommentLockChip, CreatorSupportBar, EnqueteOverlay, MoveOrderBanner } from './components/live/LiveOverlays';
@@ -121,7 +122,7 @@ export default function LivePlayerApp(): JSX.Element {
   const [commentLayout, setCommentLayout] = useState<LiveCommentLayout>('normal');
   /** video 要素 (VideoController に渡す) */
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
-  const [ngList, setNgList] = useState<NgListItem[]>([]);
+  const { ngList, addNg: handleAddNg, removeNg: handleRemoveNg } = useNgList();
   const [ssngList, setSsngList] = useState<NgListItem[]>([]);
   const { sidebarWidth, isSidebarDragging, onSidebarDividerMouseDown } = useSidebarResize();
   useApplyTheme();
@@ -401,14 +402,6 @@ export default function LivePlayerApp(): JSX.Element {
     if (video?.paused) void video.play().catch(() => {});
   };
 
-  // ---- NGリスト ----
-  useEffect(() => {
-    window.nndd
-      .invoke<NgListItem[]>(IpcChannel.NG_LIST_COMMENT)
-      .then(setNgList)
-      .catch(() => {});
-  }, []);
-
   // ユーザーの NG リストに放送者の NG (SSNG) を足したもの。画面の描画とコメントリストの両方に使う
   const effectiveNgList = useMemo(() => [...ngList, ...ssngList], [ngList, ssngList]);
 
@@ -416,18 +409,6 @@ export default function LivePlayerApp(): JSX.Element {
   useEffect(() => {
     rendererRef.current?.setConfig({ ngList: effectiveNgList });
   }, [effectiveNgList]);
-
-  const handleAddNg = useCallback(async (item: NgListItem): Promise<void> => {
-    await window.nndd.invoke(IpcChannel.NG_ADD_COMMENT, item);
-    setNgList((prev) =>
-      prev.some((x) => x.type === item.type && x.value === item.value) ? prev : [...prev, item]
-    );
-  }, []);
-
-  const handleRemoveNg = useCallback(async (item: NgListItem): Promise<void> => {
-    await window.nndd.invoke(IpcChannel.NG_REMOVE_COMMENT, item);
-    setNgList((prev) => prev.filter((x) => !(x.type === item.type && x.value === item.value)));
-  }, []);
 
   // ---- 移動指示 (自動で従う設定なら待ち時間の後に移動) ----
   const { moveDeadline, followMoveOrder, dismissMoveOrder } = useLiveMoveOrder({

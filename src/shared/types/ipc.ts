@@ -149,6 +149,8 @@ export const IpcChannel = {
   NG_LIST_COMMENT: 'nndd:ng:listComment',
   NG_ADD_COMMENT: 'nndd:ng:addComment',
   NG_REMOVE_COMMENT: 'nndd:ng:removeComment',
+  /** コメントNGリストの変更通知 (main → 全ウィンドウ)。受信側は NG_LIST_COMMENT で再取得する */
+  NG_COMMENT_CHANGED: 'nndd:ng:commentChanged',
   NG_LIST_TAG: 'nndd:ng:listTag',
   NG_ADD_TAG: 'nndd:ng:addTag',
   NG_REMOVE_TAG: 'nndd:ng:removeTag',

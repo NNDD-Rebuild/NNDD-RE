@@ -25,12 +25,19 @@ export function registerCommentHandlers(ctx: IpcHandlerContext): void {
   ipcMain.handle(IpcChannel.NG_LIST_COMMENT, () =>
     library.ngListDao.listComment()
   );
+  const broadcastNgChanged = (): void => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send(IpcChannel.NG_COMMENT_CHANGED);
+    }
+  };
   ipcMain.handle(IpcChannel.NG_ADD_COMMENT, (_e, item: NgListItem) => {
     library.ngListDao.addComment(item);
+    broadcastNgChanged();
     return true;
   });
   ipcMain.handle(IpcChannel.NG_REMOVE_COMMENT, (_e, item: NgListItem) => {
     library.ngListDao.removeComment(item);
+    broadcastNgChanged();
     return true;
   });
   ipcMain.handle(IpcChannel.NG_LIST_TAG, () => library.ngListDao.listTags());

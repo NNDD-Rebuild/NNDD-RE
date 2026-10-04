@@ -7,6 +7,7 @@ import {
 } from 'react';
 import type { NNDDREComment, NgListItem } from '@shared/types';
 import { NgListItemType, IpcChannel } from '@shared/types';
+import { compileNgList, matchesNg } from '@shared/utils/ngMatch';
 import { mylistUrl, watchUrl } from '@shared/utils/nicoUrl';
 import { NgListDialog } from './NgListDialog';
 
@@ -80,14 +81,6 @@ function formatDate(unixSec: number): string {
 type SortKey = 'vposMs' | 'no' | 'date';
 type SortDir = 'asc' | 'desc';
 
-function isNgComment(c: NNDDREComment, ngList: NgListItem[]): boolean {
-  for (const ng of ngList) {
-    if (ng.type === NgListItemType.USER_ID && c.userId === ng.value) return true;
-    if (ng.type === NgListItemType.WORD && c.text.includes(ng.value)) return true;
-    if (ng.type === NgListItemType.COMMAND && c.mail.includes(ng.value)) return true;
-  }
-  return false;
-}
 
 // ── メインコンポーネント ─────────────────────────────────
 /**
@@ -265,14 +258,16 @@ export function CommentList({
   // activeComment を O(1) で参照
   const activeComment = activeIndex >= 0 ? sorted[activeIndex] : null;
 
+  const compiledNg = useMemo(() => compileNgList(ngList), [ngList]);
+
   const ngCount = useMemo(
-    () => sorted.filter((c) => isNgComment(c, ngList)).length,
-    [sorted, ngList]
+    () => sorted.filter((c) => matchesNg(c, compiledNg)).length,
+    [sorted, compiledNg]
   );
 
   const visibleRows = useMemo(
-    () => (showNg ? sorted : sorted.filter((c) => !isNgComment(c, ngList))),
-    [sorted, ngList, showNg]
+    () => (showNg ? sorted : sorted.filter((c) => !matchesNg(c, compiledNg))),
+    [sorted, compiledNg, showNg]
   );
 
   // visibleRows 内での activeComment の行番号
@@ -458,7 +453,7 @@ export function CommentList({
             {/* 表示行 */}
             {rowsSlice.map((c) => {
               const isActive = c === activeComment;
-              const isNg = isNgComment(c, ngList);
+              const isNg = matchesNg(c, compiledNg);
               return (
                 <tr
                   key={`${c.thread}-${c.fork ?? ''}-${c.no}`}
