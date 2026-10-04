@@ -326,6 +326,7 @@ export class HonkeImporter {
     const items: ConfigItem[] = [];
     const skipped: string[] = [];
     let duplicate = 0;
+    let unsupported = 0;
     for (const [k, raw] of Object.entries(cfg)) {
       if (HONKE_CONFIG_NEVER_IMPORT.has(k)) {
         skipped.push(`${k}: 認証情報は取り込めません`);
@@ -333,7 +334,7 @@ export class HonkeImporter {
       }
       const map = HONKE_CONFIG_MAP[k];
       if (!map) {
-        skipped.push(`${k}: RE に対応する設定がありません`);
+        unsupported++;
         continue;
       }
       const value = map.convert(raw);
@@ -344,7 +345,7 @@ export class HonkeImporter {
       if (this.configStore.get(map.reKey) === value) duplicate++;
       items.push({ reKey: map.reKey, value, honkeKey: k });
     }
-    return { total: Object.keys(cfg).length, items, duplicate, skipped };
+    return { total: Object.keys(cfg).length - unsupported, items, duplicate, skipped };
   }
 
   private applyConfig(c: Collected<ConfigItem>, policy: HonkeImportPolicy): HonkeImportCategoryResult {
