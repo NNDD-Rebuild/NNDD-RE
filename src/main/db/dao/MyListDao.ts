@@ -11,6 +11,7 @@ interface MyListRow {
   unPlayCount: number;
   lastRenewed: number | null;
   icon: string | null;
+  parentUrl: string | null;
 }
 
 /**
@@ -29,11 +30,19 @@ export class MyListDao {
       isDir: r.isDir === 1,
       unPlayVideoCount: r.unPlayCount,
       myListVideoIds: {},
-      icon: r.icon
+      icon: r.icon,
+      parentUrl: r.parentUrl
     }));
   }
 
+  /** parentUrl が undefined なら既存の所属フォルダを維持する */
   upsert(myList: MyList): void {
+    const parentUrl =
+      myList.parentUrl !== undefined
+        ? myList.parentUrl
+        : ((this.db.prepare('SELECT parentUrl FROM mylist WHERE url = ?').get(myList.myListUrl) as
+            | { parentUrl: string | null }
+            | undefined)?.parentUrl ?? null);
     this.db
       .prepare(Q.INSERT_MYLIST)
       .run(
@@ -43,7 +52,8 @@ export class MyListDao {
         myList.isDir ? 1 : 0,
         myList.unPlayVideoCount,
         Date.now() / 1000,
-        myList.icon ?? null
+        myList.icon ?? null,
+        parentUrl
       );
   }
 
@@ -55,8 +65,17 @@ export class MyListDao {
     this.db.prepare(Q.UPDATE_MYLIST_ICON).run(icon, url);
   }
 
+  /** 削除。フォルダの場合、中身はルートへ移す */
   remove(url: string): void {
-    this.db.prepare(Q.DELETE_MYLIST).run(url);
+    this.db.transaction(() => {
+      this.db.prepare(Q.RELEASE_MYLIST_CHILDREN).run(url);
+      this.db.prepare(Q.DELETE_MYLIST).run(url);
+    });
+  }
+
+  /** 所属フォルダを変更 (null でルート) */
+  move(url: string, parentUrl: string | null): void {
+    this.db.prepare(Q.UPDATE_MYLIST_PARENT).run(parentUrl, url);
   }
 
   /** 全マイリスト登録を削除 */

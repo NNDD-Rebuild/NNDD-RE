@@ -112,6 +112,15 @@ export class NnddDatabase {
         // 既にカラムあり — 無視
       }
     }
+    // v10 → v11: mylist に parentUrl カラム追加 (フォルダ階層)
+    if (Number(from) <= 10) {
+      try {
+        this.db.exec(`ALTER TABLE mylist ADD COLUMN parentUrl TEXT;`);
+        log.info('added mylist.parentUrl column');
+      } catch {
+        // 既にカラムあり — 無視
+      }
+    }
   }
 
   /** プリペアドステートメントの取得 */

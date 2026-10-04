@@ -35,7 +35,7 @@ export function ScheduleSettings(): JSX.Element {
       );
     window.nndd
       .invoke<MyList[]>(window.nndd.channels.MYLIST_LIST)
-      .then(setMylists);
+      .then((list) => setMylists(list.filter((m) => !m.isDir)));
     window.nndd
       .invoke<FollowUserOption[]>(window.nndd.channels.FOLLOW_USERS)
       .then(setFollowUsers)

@@ -70,7 +70,7 @@ export class MyListAutoDownloader {
       string,
       { fetched: number; queued: number; error?: string }
     > = {};
-    const mylists = this.library.myListDao.list();
+    const mylists = this.library.myListDao.list().filter((m) => !m.isDir);
     for (const ml of mylists) {
       try {
         const r = await this.renew(ml);

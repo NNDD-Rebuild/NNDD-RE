@@ -148,7 +148,7 @@ export class NnddHttpServer {
     });
 
     this.app.get('/api/mylist', (_req, res) => {
-      res.json(this.library.myListDao.list());
+      res.json(this.library.myListDao.list().filter((m) => !m.isDir));
     });
 
     this.app.get('/api/video/:id', (req, res) => {
@@ -254,7 +254,7 @@ export class NnddHttpServer {
           res.status(403).send('mylist sharing disabled');
           return;
         }
-        const mls = this.library.myListDao.list();
+        const mls = this.library.myListDao.list().filter((m) => !m.isDir);
         if (type === 'GET_MYLIST_LIST') {
           res.type('application/xml').send(this.buildNnddMyListXml(mls));
         } else {

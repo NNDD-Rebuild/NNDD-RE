@@ -60,7 +60,8 @@ interface Collected<T> {
 }
 
 interface ConfigItem { reKey: string; value: unknown; honkeKey: string }
-interface MyListCandidate { name: string; url: string; type: RssTypeValue }
+/** isDir のとき url は空 (適用時に採番)。parent は items 内のインデックスで、ルートは -1 */
+interface MyListCandidate { name: string; url: string; type: RssTypeValue; isDir: boolean; parent: number }
 interface SearchCandidate { name: string; word: string; type: NNDDRESearchTypeValue; sortType: NNDDRESearchSortTypeValue }
 interface PlaylistCandidate { name: string; entries: { videoId: string; title: string; lengthSec: number }[] }
 interface LibraryCandidate {
@@ -190,6 +191,8 @@ export class HonkeImporter {
       }
       return { systemDir, configPath, label: picked };
     }
+    const localStore = path.join(picked, 'Local Store');
+    if (fs.existsSync(path.join(localStore, 'config.xml'))) return HonkeImporter.resolve(localStore);
     const looksLikeSystem =
       path.basename(picked).toLowerCase() === 'system' ||
       ['library.db', 'ngList.xml', 'myLists.xml', 'searchItems.xml', 'history.xml'].some((f) =>
@@ -457,11 +460,14 @@ export class HonkeImporter {
     const skipped: string[] = [];
     const seen = new Set<string>();
     const existing = new Set(this.deps.library.myListDao.list().map((m) => m.myListUrl));
+    const candidateIndex = new Map<number, number>();
     let duplicate = 0;
-    for (const m of list) {
+    list.forEach((m, i) => {
+      const parent = candidateIndex.get(m.parent) ?? -1;
       if (m.isDir) {
-        skipped.push(`${m.name}: フォルダは取り込まず、中身を平坦に取り込みます`);
-        continue;
+        candidateIndex.set(i, items.length);
+        items.push({ name: m.name, url: '', type: RssType.MY_LIST, isDir: true, parent });
+        return;
       }
       const type = mapMyListType(m.type);
       let url: string;
@@ -472,16 +478,17 @@ export class HonkeImporter {
         const parsed = parseMylistSource(m.url.replace('/channel/', '/'));
         if (!parsed) {
           skipped.push(`${m.name}: URL を認識できません (${m.url})`);
-          continue;
+          return;
         }
         url = parsed.normalizedUrl;
         finalType = parsed.type;
       }
-      if (!url || seen.has(url)) continue;
+      if (!url || seen.has(url)) return;
       seen.add(url);
       if (existing.has(url)) duplicate++;
-      items.push({ name: m.name || url, url, type: finalType });
-    }
+      candidateIndex.set(i, items.length);
+      items.push({ name: m.name || url, url, type: finalType, isDir: false, parent });
+    });
     return { total: list.length, items, duplicate, skipped };
   }
 
@@ -490,13 +497,40 @@ export class HonkeImporter {
     const dao = this.deps.library.myListDao;
     let added = 0;
     let skipped = 0;
+    let folders = 0;
     this.deps.library.db.transaction(() => {
       if (policy === 'replace') dao.clearAll();
-      const existing = new Set(dao.list().map((m) => m.myListUrl));
-      for (const m of c.items) {
+      const current = dao.list();
+      const existing = new Set(current.map((m) => m.myListUrl));
+      const folderKey = (parentUrl: string | null, name: string): string => `${parentUrl ?? ''}\0${name}`;
+      const folderUrls = new Map<string, string>();
+      for (const m of current) if (m.isDir) folderUrls.set(folderKey(m.parentUrl ?? null, m.myListName), m.myListUrl);
+      const urlOf: string[] = [];
+      c.items.forEach((m, i) => {
+        const parentUrl = m.parent >= 0 ? urlOf[m.parent] : null;
+        if (m.isDir) {
+          const key = folderKey(parentUrl, m.name);
+          let url = folderUrls.get(key);
+          if (!url) {
+            url = `folder:${crypto.randomUUID()}`;
+            folderUrls.set(key, url);
+            dao.upsert({
+              myListUrl: url,
+              myListName: m.name,
+              type: RssType.MY_LIST,
+              isDir: true,
+              unPlayVideoCount: 0,
+              myListVideoIds: {},
+              parentUrl
+            });
+            folders++;
+          }
+          urlOf[i] = url;
+          return;
+        }
         if (existing.has(m.url)) {
           skipped++;
-          continue;
+          return;
         }
         dao.upsert({
           myListUrl: m.url,
@@ -504,12 +538,14 @@ export class HonkeImporter {
           type: m.type,
           isDir: false,
           unPlayVideoCount: 0,
-          myListVideoIds: {}
+          myListVideoIds: {},
+          parentUrl
         });
         added++;
-      }
+      });
     });
-    return { category: HonkeImportCategory.MYLIST, added, updated: 0, skipped, notes: c.skipped };
+    const notes = folders > 0 ? [`フォルダ ${folders} 個を作成しました`, ...c.skipped] : c.skipped;
+    return { category: HonkeImportCategory.MYLIST, added, updated: 0, skipped, notes };
   }
 
   // ---- 保存検索 ----

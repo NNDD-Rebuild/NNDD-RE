@@ -176,7 +176,8 @@ export class BackupManager {
         url: m.myListUrl,
         name: m.myListName,
         type: m.type,
-        isDir: m.isDir
+        isDir: m.isDir,
+        parentUrl: m.parentUrl ?? null
       }));
     }
 
@@ -266,6 +267,7 @@ export class BackupManager {
             myListName: m.name,
             type: m.type,
             isDir: m.isDir,
+            parentUrl: m.parentUrl ?? null,
             unPlayVideoCount: 0,
             myListVideoIds: {}
           });
@@ -592,6 +594,7 @@ function parseBackupPayload(raw: string): BackupPayload {
     expectNullableString(o.name, `${where}.name`);
     expectNullableString(o.type, `${where}.type`);
     expectBoolean(o.isDir, `${where}.isDir`);
+    if (o.parentUrl !== undefined) expectNullableString(o.parentUrl, `${where}.parentUrl`);
   });
 
   checkOptionalList(root, 'schedule', (item, where) => {

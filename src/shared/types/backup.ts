@@ -85,6 +85,7 @@ export interface BackupPayload {
     name: string;
     type: RssTypeValue;
     isDir: boolean;
+    parentUrl?: string | null;
   }>;
   schedule?: Array<{
     id: string;

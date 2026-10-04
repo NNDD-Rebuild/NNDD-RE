@@ -89,6 +89,11 @@ export function MyListView(): JSX.Element {
   const [iconPickerUrl, setIconPickerUrl] = useState<string | null>(null);
   const [iconPickerPlaylistId, setIconPickerPlaylistId] = useState<number | null>(null);
 
+  // マイリストのフォルダ (展開状態・ドラッグ中の項目・新規フォルダ名)
+  const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
+  const [dragUrl, setDragUrl] = useState<string | null>(null);
+  const [newFolderName, setNewFolderName] = useState('');
+
   // 一括DL中
   const [bulkDling, setBulkDling] = useState(false);
   const { downloadedIds, checkDownloaded } = useLibraryCheck();
@@ -275,6 +280,43 @@ export function MyListView(): JSX.Element {
     }
   };
 
+  const handleCreateFolder = async (): Promise<void> => {
+    const name = newFolderName.trim();
+    if (!name) return;
+    await window.nndd.invoke(IpcChannel.MYLIST_ADD, {
+      myListUrl: `folder:${crypto.randomUUID()}`,
+      myListName: name,
+      type: RssType.MY_LIST,
+      isDir: true,
+      unPlayVideoCount: 0,
+      myListVideoIds: {},
+      parentUrl: null
+    } satisfies MyList);
+    setNewFolderName('');
+    reloadMylists();
+  };
+
+  /** url を parentUrl (null でルート) のフォルダへ移動。自分自身や子孫フォルダへは移動しない */
+  const handleMove = async (url: string, parentUrl: string | null): Promise<void> => {
+    setDragUrl(null);
+    if (url === parentUrl) return;
+    const parentOf = new Map(mylists.map((m) => [m.myListUrl, m.parentUrl ?? null]));
+    for (let cur = parentUrl; cur; cur = parentOf.get(cur) ?? null) {
+      if (cur === url) return;
+    }
+    await window.nndd.invoke(IpcChannel.MYLIST_MOVE, { url, parentUrl });
+    if (parentUrl) setExpandedFolders((prev) => new Set(prev).add(parentUrl));
+    reloadMylists();
+  };
+
+  const toggleFolder = (url: string): void => {
+    setExpandedFolders((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(url)) next.add(url);
+      return next;
+    });
+  };
+
   const handlePlay = (videoId: string): void => {
     window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, { videoId });
   };
@@ -458,6 +500,51 @@ export function MyListView(): JSX.Element {
   };
 
   const registeredIds = new Set(mylists.map((m) => m.myListUrl));
+  const mylistChildren = new Map<string | null, MyList[]>();
+  for (const m of mylists) {
+    const key = m.parentUrl && registeredIds.has(m.parentUrl) ? m.parentUrl : null;
+    const arr = mylistChildren.get(key);
+    if (arr) arr.push(m);
+    else mylistChildren.set(key, [m]);
+  }
+
+  const renderMylistRows = (parentUrl: string | null, depth: number): JSX.Element[] =>
+    (mylistChildren.get(parentUrl) ?? []).flatMap((ml) => {
+      const expanded = expandedFolders.has(ml.myListUrl);
+      const row = (
+        <ListSidebarRow
+          key={ml.myListUrl}
+          icon={ml.icon ?? (ml.isDir ? '📁' : typeLabel(ml.type))}
+          name={ml.myListName}
+          title={ml.isDir ? ml.myListName : ml.myListUrl}
+          iconResetLabel={ml.isDir ? '既定に戻す' : '種別デフォルトに戻す'}
+          depth={depth}
+          folder={ml.isDir ? { expanded, onToggle: () => toggleFolder(ml.myListUrl) } : undefined}
+          drag={{
+            onDragStart: () => setDragUrl(ml.myListUrl),
+            onDragEnd: () => setDragUrl(null),
+            onDrop: ml.isDir && dragUrl ? () => handleMove(dragUrl, ml.myListUrl) : undefined
+          }}
+          isSelected={selected?.kind === 'mylist' && selected.mylist.myListUrl === ml.myListUrl}
+          isEditing={editingUrl === ml.myListUrl}
+          editingName={editingName}
+          iconPickerOpen={iconPickerUrl === ml.myListUrl}
+          onSelect={() => fetchItems(ml)}
+          onStartEdit={() => {
+            setEditingUrl(ml.myListUrl);
+            setEditingName(ml.myListName);
+          }}
+          onEditingNameChange={setEditingName}
+          onCommitRename={() => handleRename(ml, editingName)}
+          onCancelEdit={() => setEditingUrl(null)}
+          onToggleIconPicker={() => setIconPickerUrl(iconPickerUrl === ml.myListUrl ? null : ml.myListUrl)}
+          onCloseIconPicker={() => setIconPickerUrl(null)}
+          onIconChange={(icon) => handleIconChange(ml, icon)}
+          onRemove={() => handleRemove(ml)}
+        />
+      );
+      return ml.isDir && expanded ? [row, ...renderMylistRows(ml.myListUrl, depth + 1)] : [row];
+    });
   const bulkLabel = selectedIds.size > 0
     ? `一括DL (${selectedIds.size}件選択)`
     : selected?.kind === 'mylist' && !searchText.trim() && totalItems > items.length
@@ -505,31 +592,27 @@ export function MyListView(): JSX.Element {
           {mylists.length === 0 && (
             <div className="p-3 text-xs text-nndd-subtext">登録されているマイリストはありません。</div>
           )}
-          {mylists.map((ml) => (
-            <ListSidebarRow
-              key={ml.myListUrl}
-              icon={ml.icon ?? typeLabel(ml.type)}
-              name={ml.myListName}
-              title={ml.myListUrl}
-              iconResetLabel="種別デフォルトに戻す"
-              isSelected={selected?.kind === 'mylist' && selected.mylist.myListUrl === ml.myListUrl}
-              isEditing={editingUrl === ml.myListUrl}
-              editingName={editingName}
-              iconPickerOpen={iconPickerUrl === ml.myListUrl}
-              onSelect={() => fetchItems(ml)}
-              onStartEdit={() => {
-                setEditingUrl(ml.myListUrl);
-                setEditingName(ml.myListName);
-              }}
-              onEditingNameChange={setEditingName}
-              onCommitRename={() => handleRename(ml, editingName)}
-              onCancelEdit={() => setEditingUrl(null)}
-              onToggleIconPicker={() => setIconPickerUrl(iconPickerUrl === ml.myListUrl ? null : ml.myListUrl)}
-              onCloseIconPicker={() => setIconPickerUrl(null)}
-              onIconChange={(icon) => handleIconChange(ml, icon)}
-              onRemove={() => handleRemove(ml)}
+          <div className="p-2 border-b border-nndd-border flex gap-1">
+            <input
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleCreateFolder(); }}
+              placeholder="新しいフォルダ名"
+              className="flex-1 min-w-0 bg-nndd-bg border border-nndd-border px-2 py-1 text-xs"
             />
-          ))}
+            <button
+              onClick={handleCreateFolder}
+              className="text-xs px-3 py-1 bg-nndd-accent text-white rounded hover:opacity-80"
+            >
+              作成
+            </button>
+          </div>
+          <div
+            onDragOver={dragUrl ? (e) => e.preventDefault() : undefined}
+            onDrop={dragUrl ? (e) => { e.preventDefault(); handleMove(dragUrl, null); } : undefined}
+          >
+            {renderMylistRows(null, 0)}
+          </div>
 
           <div className="px-2 py-1 text-xs font-bold text-nndd-subtext bg-nndd-bg sticky top-0 border-t border-nndd-border mt-1">
             プレイリスト (ローカル)

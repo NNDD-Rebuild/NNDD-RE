@@ -52,6 +52,14 @@ export function registerBrowseHandlers(ctx: IpcHandlerContext): void {
   });
 
   ipcMain.handle(
+    IpcChannel.MYLIST_MOVE,
+    (_e, args: { url: string; parentUrl: string | null }) => {
+      library.myListDao.move(args.url, args.parentUrl);
+      return true;
+    }
+  );
+
+  ipcMain.handle(
     IpcChannel.MYLIST_UPDATE_ICON,
     (_e, args: { url: string; icon: string | null }) => {
       library.myListDao.updateIcon(args.url, args.icon);

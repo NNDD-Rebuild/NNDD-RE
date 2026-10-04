@@ -83,24 +83,28 @@ export interface HonkeMyList {
   url: string;
   type: string;
   isDir: boolean;
+  /** 所属フォルダの、返却配列内でのインデックス。ルート直下は -1 */
+  parent: number;
 }
 
-/** myLists.xml: フォルダは myList のネスト。階層は平坦化して返す */
+/** myLists.xml: フォルダは myList のネスト。親子関係は parent (配列内インデックス) で表した平坦な配列で返す (親は子より前) */
 export function parseMyListsXml(xml: string): HonkeMyList[] {
   const out: HonkeMyList[] = [];
-  const walk = (nodes: Node[]): void => {
+  const walk = (nodes: Node[], parent: number): void => {
     for (const n of nodes) {
       const isDir = str(n['@_isDir']) === 'true';
+      const index = out.length;
       out.push({
         name: safeDecode(str(n['@_name'])),
         url: safeDecode(str(n['@_url'])),
         type: str(n['@_type']),
-        isDir
+        isDir,
+        parent
       });
-      if (n.myList) walk(asArray(n.myList as Node | Node[]));
+      if (n.myList) walk(asArray(n.myList as Node | Node[]), index);
     }
   };
-  walk(asArray(root(xml, 'myLists').myList as Node | Node[]));
+  walk(asArray(root(xml, 'myLists').myList as Node | Node[]), -1);
   return out;
 }
 

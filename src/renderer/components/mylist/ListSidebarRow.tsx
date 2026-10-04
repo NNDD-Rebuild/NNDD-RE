@@ -68,7 +68,10 @@ export function ListSidebarRow({
   onToggleIconPicker,
   onCloseIconPicker,
   onIconChange,
-  onRemove
+  onRemove,
+  depth = 0,
+  folder,
+  drag
 }: {
   icon: string;
   name: string;
@@ -87,6 +90,17 @@ export function ListSidebarRow({
   onCloseIconPicker: () => void;
   onIconChange: (icon: string | null) => void;
   onRemove: () => void;
+  /** フォルダ内の階層の深さ (インデント用) */
+  depth?: number;
+  /** フォルダ行のとき指定。展開状態と開閉コールバック */
+  folder?: { expanded: boolean; onToggle: () => void };
+  /** ドラッグ&ドロップによるフォルダ移動 */
+  drag?: {
+    onDragStart: () => void;
+    onDragEnd: () => void;
+    /** ドロップ先になれる行 (フォルダ) のみ指定 */
+    onDrop?: () => void;
+  };
 }): JSX.Element {
   return (
     <div
@@ -94,12 +108,25 @@ export function ListSidebarRow({
         'relative flex items-center gap-1 px-2 py-1 text-xs border-b border-nndd-border cursor-pointer',
         isSelected ? 'bg-nndd-bg' : 'hover:bg-nndd-border'
       ].join(' ')}
-      onClick={() => !isEditing && onSelect()}
+      style={depth > 0 ? { paddingLeft: 8 + depth * 14 } : undefined}
+      draggable={drag !== undefined && !isEditing}
+      onDragStart={drag ? (e) => { e.dataTransfer.effectAllowed = 'move'; drag.onDragStart(); } : undefined}
+      onDragEnd={drag?.onDragEnd}
+      onDragOver={drag?.onDrop ? (e) => e.preventDefault() : undefined}
+      onDrop={drag?.onDrop ? (e) => { e.preventDefault(); e.stopPropagation(); drag.onDrop?.(); } : undefined}
+      onClick={() => {
+        if (isEditing) return;
+        if (folder) folder.onToggle();
+        else onSelect();
+      }}
       onContextMenu={(e) => {
         e.preventDefault();
         onStartEdit();
       }}
     >
+      {folder && (
+        <span className="shrink-0 w-3 text-nndd-subtext">{folder.expanded ? '▼' : '▶'}</span>
+      )}
       <button
         onClick={(e) => {
           e.stopPropagation();

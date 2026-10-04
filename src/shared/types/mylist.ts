@@ -31,6 +31,8 @@ export interface MyList {
   myListVideoIds: Record<string, boolean>;
   /** ユーザーが選択したカスタムアイコン (絵文字)。未設定なら種別のデフォルトアイコンを使用 */
   icon?: string | null;
+  /** 所属フォルダの myListUrl。null/未指定ならルート */
+  parentUrl?: string | null;
 }
 
 /**
