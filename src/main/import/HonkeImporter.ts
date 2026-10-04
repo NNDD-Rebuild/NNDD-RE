@@ -478,7 +478,7 @@ export class HonkeImporter {
       if (type === RssType.COMMUNITY) {
         url = m.url.replace(/\?.*$/, '');
       } else {
-        const parsed = parseMylistSource(m.url.replace('/channel/', '/'));
+        const parsed = parseMylistSource(m.url.replace('/channel/', '/').replace(/myListId\//i, 'mylist/'));
         if (!parsed) {
           skipped.push(`${m.name}: URL を認識できません (${m.url})`);
           return;
