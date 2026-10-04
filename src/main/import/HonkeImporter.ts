@@ -371,7 +371,7 @@ export class HonkeImporter {
 
   // ---- NG ----
 
-  private collectNg(source: HonkeImportSource): Collected<{ comment: NgListItem[]; tags: string[] }> {
+  private collectNg(source: HonkeImportSource): Collected<{ comment?: NgListItem; tag?: string }> {
     const ngText = readTextIfExists(this.sysFile(source, 'ngList.xml'));
     const tagText = readTextIfExists(this.sysFile(source, 'ngTags.xml'));
     if (ngText === null && tagText === null) return this.missing('ngList.xml / ngTags.xml');
@@ -405,15 +405,17 @@ export class HonkeImporter {
     const duplicate =
       comment.filter((x) => existing.has(`${x.type}\0${x.value}`)).length +
       tags.filter((t) => existingTags.has(t)).length;
-    const n = comment.length + tags.length;
-    return { total, items: n > 0 ? [{ comment, tags }] : [], duplicate, skipped };
+    return { total, items: [...comment.map((c) => ({ comment: c })), ...tags.map((t) => ({ tag: t }))], duplicate, skipped };
   }
 
   private applyNg(source: HonkeImportSource, policy: HonkeImportPolicy): HonkeImportCategoryResult {
     const c = this.collectNg(source);
     if (c.error) throw new Error(c.error);
     const dao = this.deps.library.ngListDao;
-    const data = c.items[0] ?? { comment: [], tags: [] };
+    const data = {
+      comment: c.items.flatMap((x) => (x.comment ? [x.comment] : [])),
+      tags: c.items.flatMap((x) => (x.tag !== undefined ? [x.tag] : []))
+    };
     let added = 0;
     this.deps.library.db.transaction(() => {
       if (policy === 'replace') {
