@@ -10,7 +10,8 @@ import type {
 } from '@shared/types';
 import { NicoContext } from '../NicoContext';
 import { createLogger } from '../../util/Logger';
-import { LIVE_ORIGIN, parseEmbeddedData } from './LiveWatchPage';
+import { LIVE_ORIGIN, fetchLiveWatchPage, parseEmbeddedData } from './LiveWatchPage';
+import { extractLiveIdFromInput } from '@shared/utils/liveId';
 import type {
   NicoLiveEmbeddedData,
   NicoLiveEmbeddedProgram,
@@ -109,8 +110,37 @@ async function fetchFollowingComingSoon(): Promise<LiveProgramListResult> {
   return { programs, total: num(state?.totalProgramsCount) ?? programs.length };
 }
 
+/** 番組ページから1件分の番組情報を取る。取得できなければ null */
+async function fetchProgramById(id: string): Promise<LiveProgramSummary | null> {
+  try {
+    const { program: p } = await fetchLiveWatchPage(id);
+    return {
+      programId: p.programId,
+      title: p.title,
+      thumbnailUrl: p.thumbnailUrl,
+      status: normalizeStatus(p.status),
+      beginAtMs: p.beginTimeMs,
+      endAtMs: p.endTimeMs,
+      comments: p.commentCount,
+      ownerName: p.supplierName,
+      ownerIconUrl: p.supplier?.iconUrl ?? '',
+      providerType: p.providerType,
+      isMemberOnly: false
+    };
+  } catch (e) {
+    log.warn('fetchProgramById failed:', id, e);
+    return null;
+  }
+}
+
 /** 番組検索 (api.cas.nicovideo.jp) */
 export async function searchPrograms(params: LiveSearchParams): Promise<LiveProgramListResult> {
+  // 検索 API は番組IDでは引けないため、ID/URL が入力された場合は番組ページから直接取得する
+  const liveId = params.offset === 0 ? extractLiveIdFromInput(params.keyword) : null;
+  if (liveId) {
+    const program = await fetchProgramById(liveId);
+    if (program) return { programs: [program], total: 1 };
+  }
   // API は 1 回 20 件までなので、1 ページ分 (SEARCH_PAGE_SIZE 件) を並行して取得してつなげる
   const offsets = Array.from({ length: SEARCH_PAGE_SIZE / SEARCH_LIMIT }, (_, i) => params.offset + i * SEARCH_LIMIT);
   const responses = await Promise.all(

@@ -5,6 +5,7 @@ import type {
 } from '@shared/types';
 import { NNDDRESearchType } from '@shared/types';
 import { NicoEndpoint } from '@shared/constants';
+import { extractVideoIdFromInput } from '@shared/utils/videoId';
 import { NicoContext } from '../NicoContext';
 import { ThumbInfoXmlReader } from '../video/ThumbInfoXmlReader';
 import { createLogger } from '../../util/Logger';
@@ -40,9 +41,9 @@ export class SearchClient {
     items: SearchResultItem[];
     totalCount: number;
   }> {
-    const trimmed = opts.word.trim();
-    if (/^(sm|nm|so)\d+$/i.test(trimmed)) {
-      const item = await this.fetchByVideoId(trimmed.toLowerCase());
+    const videoId = extractVideoIdFromInput(opts.word);
+    if (videoId) {
+      const item = await this.fetchByVideoId(videoId);
       if (item) return { items: [item], totalCount: 1 };
     }
     if (apiMode === 'nvapi') return this.searchNvapi(opts);

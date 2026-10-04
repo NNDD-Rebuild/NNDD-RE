@@ -13,6 +13,8 @@ import { useAppStore } from '@renderer/store/useAppStore';
 import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
 import { useWatchedIds } from '@renderer/hooks/useWatchedIds';
 import { useLibraryCheck } from '@renderer/hooks/useLibraryCheck';
+import { extractLiveIdFromInput } from '@shared/utils/liveId';
+import { extractVideoIdFromInput } from '@shared/utils/videoId';
 
 /**
  * 検索タブ。
@@ -72,6 +74,7 @@ export function SearchView(): JSX.Element {
   const setActiveTab = useAppStore((s) => s.setActiveTab);
   const setPendingMylistId = useAppStore((s) => s.setPendingMylistId);
   const setPendingSeriesId = useAppStore((s) => s.setPendingSeriesId);
+  const setPendingLiveSearch = useAppStore((s) => s.setPendingLiveSearch);
   const setPendingFollowUser = useAppStore((s) => s.setPendingFollowUser);
   const setPendingChannelId = useAppStore((s) => s.setPendingChannelId);
   const pendingSearchTag = useAppStore((s) => s.pendingSearchTag);
@@ -132,7 +135,7 @@ export function SearchView(): JSX.Element {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- pendingSearchTag が来た時だけ検索し、ソート順等の変更では再検索しない
   }, [pendingSearchTag]);
 
-  /** マイリスト/シリーズURL・IDを検出してそのタブへ遷移 */
+  /** マイリスト/シリーズ/生放送のURL・IDを検出してそのタブへ遷移 */
   const handleNavigate = (input: string): boolean => {
     const ml = input.match(/nicovideo\.jp(?:\/user\/\d+)?\/mylist\/(\d+)/) ||
                input.match(/^mylist\/(\d+)$/i);
@@ -146,6 +149,12 @@ export function SearchView(): JSX.Element {
     if (sr) {
       setActiveTab('mylist');
       setPendingSeriesId(sr[1]);
+      return true;
+    }
+    const liveId = extractLiveIdFromInput(input);
+    if (liveId) {
+      setActiveTab('live');
+      setPendingLiveSearch(liveId);
       return true;
     }
     return false;
@@ -182,6 +191,10 @@ export function SearchView(): JSX.Element {
       setPage(targetPage);
       scrollRef.current?.scrollTo({ top: 0 });
       void checkDownloaded(r.items.map((i) => i.videoId));
+      // 動画ID/URL を入力した検索で1件だけ見つかった場合は自動で再生する
+      if (targetPage === 1 && r.items.length === 1 && extractVideoIdFromInput(trimmed)) {
+        handlePlay(r.items[0].videoId);
+      }
     } catch (e) {
       if (seq === searchSeqRef.current) setError(toUserFriendlyErrorMessage(e));
     } finally {
@@ -331,7 +344,8 @@ export function SearchView(): JSX.Element {
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleSearch(1);
             }}
-            placeholder="検索ワード"
+            placeholder="検索ワード / 動画・生放送・マイリストの URL または ID"
+            title="動画の URL/ID は該当動画を表示、生放送・マイリスト・シリーズの URL/ID は各タブへ移動して表示します"
             className="flex-1 min-w-[200px] bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
           />
           <select

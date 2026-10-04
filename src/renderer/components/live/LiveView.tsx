@@ -9,6 +9,7 @@ import type {
   LiveSearchParams
 } from '@shared/types';
 import { IpcChannel, LIVE_SEARCH_PAGE_SIZE } from '@shared/types';
+import { extractLiveIdFromInput } from '@shared/utils/liveId';
 import { useAppStore } from '@renderer/store/useAppStore';
 import { VirtualizedItemList } from '../common/VirtualizedItemList';
 
@@ -232,6 +233,8 @@ export function LiveView(): JSX.Element {
    * 最後に投げた読み込みの結果だけを反映する (前のタブの番組一覧が新しいタブに出ないようにする)
    */
   const loadSeqRef = useRef(0);
+  // 外部 (検索タブ・プレイヤー) からの検索でサブタブを検索へ切り替えるとき、切替時の再読込が検索実行の読込を上書きしないようにする
+  const skipSubTabSearchLoadRef = useRef(false);
 
   const fetchList = useCallback(
     async (tab: SubTab, offset: number, search: Omit<LiveSearchParams, 'offset'> | null, seq: number): Promise<LiveProgramListResult | null> => {
@@ -272,7 +275,7 @@ export function LiveView(): JSX.Element {
   );
 
   const load = useCallback(
-    async (tab: SubTab, search: Omit<LiveSearchParams, 'offset'> | null, append: boolean, offset: number) => {
+    async (tab: SubTab, search: Omit<LiveSearchParams, 'offset'> | null, append: boolean, offset: number, autoOpenSingle = false) => {
       const seq = ++loadSeqRef.current;
       setLoading(true);
       setError('');
@@ -286,6 +289,10 @@ export function LiveView(): JSX.Element {
         }
         setPrograms((prev) => (append ? [...prev, ...r.programs] : r.programs));
         setTotal(r.total);
+        if (autoOpenSingle && r.programs.length === 1) {
+          setOpenError('');
+          openPlayer(r.programs[0].programId).catch((e) => setOpenError(errorText(e)));
+        }
       } catch (e) {
         if (seq !== loadSeqRef.current) return;
         setError(errorText(e));
@@ -301,6 +308,10 @@ export function LiveView(): JSX.Element {
   useEffect(() => {
     setTsMessage(null);
     if (subTab === 'search') {
+      if (skipSubTabSearchLoadRef.current) {
+        skipSubTabSearchLoadRef.current = false;
+        return;
+      }
       setSearchPage(1);
       void load('search', searched, false, 0);
     } else {
@@ -331,7 +342,8 @@ export function LiveView(): JSX.Element {
     };
     setSearched(cond);
     setSearchPage(1);
-    void load('search', cond, false, 0);
+    // 番組ID/URL を入力した検索で1件だけ見つかった場合は自動で再生する
+    void load('search', cond, false, 0, extractLiveIdFromInput(word) !== null);
   };
 
   /** 検索結果のページ移動 (動画の検索画面と同じ ◀ 前 / 次 ▶) */
@@ -349,6 +361,7 @@ export function LiveView(): JSX.Element {
   useEffect(() => {
     if (!pendingLiveSearch) return;
     setPendingLiveSearch(null);
+    if (subTab !== 'search') skipSubTabSearchLoadRef.current = true;
     setSubTab('search');
     setKeyword(pendingLiveSearch);
     runSearch(pendingLiveSearch);
