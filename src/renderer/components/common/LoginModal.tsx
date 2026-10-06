@@ -61,6 +61,17 @@ export function LoginModal({ onClose, onLoggedIn, initialStage, initialMfaSubmit
     })();
   }, []);
 
+  // ログイン処理中に main から2FAコード要求が来たらコード入力段へ切り替える
+  useEffect(() => {
+    return window.nndd.on(window.nndd.channels.AUTH_MFA_REQUEST, (payload: unknown) => {
+      const { error: reqError } = (payload ?? {}) as { error?: string };
+      setStage('mfa');
+      setMfaCode('');
+      setError(reqError ?? null);
+      setBusy(false);
+    });
+  }, []);
+
   const saveCredentialsIfNeeded = async (): Promise<void> => {
     if (savePassword && email && password) {
       const result = await window.nndd.invoke<{ ok: boolean; error?: string }>(
@@ -119,18 +130,24 @@ export function LoginModal({ onClose, onLoggedIn, initialStage, initialMfaSubmit
         window.nndd.channels.AUTH_LOGIN_MFA,
         { mfaSubmitUrl, code: mfaCode }
       );
-      if (res.ok) {
-        await saveCredentialsIfNeeded();
-        onLoggedIn();
-        onClose();
-        return;
+      if (!res.ok) {
+        setError(res.error ?? '2段階認証に失敗しました');
+        setBusy(false);
       }
-      setError(res.error ?? '2段階認証に失敗しました');
+      // 成功時はコードを main へ渡しただけ。ログイン完了は AUTH_LOGIN_FORM 側の結果で処理する (busy 維持)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
-    } finally {
       setBusy(false);
     }
+  };
+
+  const handleClose = (): void => {
+    if (stage === 'mfa') {
+      void window.nndd
+        .invoke(window.nndd.channels.AUTH_LOGIN_MFA, { mfaSubmitUrl, code: '' })
+        .catch(() => undefined);
+    }
+    onClose();
   };
 
   const openBrowserLogin = async (ssoProvider?: SsoProvider): Promise<void> => {
@@ -156,7 +173,7 @@ export function LoginModal({ onClose, onLoggedIn, initialStage, initialMfaSubmit
       <div className="bg-nndd-panel border border-nndd-border rounded p-5 w-[360px] text-sm">
         <div className="flex justify-between items-center mb-3">
           <div className="font-bold">ニコニコ動画 ログイン</div>
-          <button onClick={onClose} className="text-nndd-subtext hover:text-nndd-text">
+          <button onClick={handleClose} className="text-nndd-subtext hover:text-nndd-text">
             ×
           </button>
         </div>

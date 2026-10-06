@@ -28,6 +28,11 @@ export interface LoginWindowOptions {
    * 指定しない場合はタイムアウトせず、ユーザーがウィンドウを閉じるまで待つ。
    */
   timeoutMs?: number;
+  /**
+   * 2段階認証ページ検知時にコードを取得する。null (キャンセル) ならウィンドウを表示して手動入力に任せる。
+   * error は前回コードが通らなかった場合のメッセージ。
+   */
+  requestMfaCode?: (error?: string) => Promise<string | null>;
 }
 
 /**
@@ -55,11 +60,13 @@ export class LoginWindow {
     cookieStore: CookieStore,
     options: LoginWindowOptions = {}
   ): Promise<boolean> {
-    const { parent, ssoProvider, credentials, show = true, timeoutMs } = options;
+    const { parent, ssoProvider, credentials, show = true, timeoutMs, requestMfaCode } = options;
+    // 専用のpartitionでセッションを分離 (メインのwebContentsと干渉させない)
+    const partition = 'persist:nndd-login';
+    const ses = session.fromPartition(partition);
+    // 前回の user_session が残っていると、フォーム送信前に「ログイン成功」と誤判定するためクリアする
+    if (credentials) await ses.clearStorageData();
     return new Promise<boolean>((resolve) => {
-      // 専用のpartitionでセッションを分離 (メインのwebContentsと干渉させない)
-      const partition = 'persist:nndd-login';
-      const ses = session.fromPartition(partition);
 
       const win = new BrowserWindow({
         width: 480,
@@ -122,6 +129,51 @@ export class LoginWindow {
       win.webContents.on('did-navigate', checkAndCapture);
       win.webContents.on('did-frame-navigate', checkAndCapture);
       win.webContents.on('did-finish-load', checkAndCapture);
+
+      if (requestMfaCode) {
+        let mfaBusy = false;
+        const onNavigate = (): void => {
+          if (mfaBusy || resolved || win.isDestroyed()) return;
+          if (!win.webContents.getURL().includes('/mfa')) return;
+          mfaBusy = true;
+          // コード入力待ちはユーザー操作が必要なので、サイレント試行のタイムアウトを止める
+          if (timer) clearTimeout(timer);
+          void handleMfaPage().finally(() => {
+            mfaBusy = false;
+          });
+        };
+        const handleMfaPage = async (): Promise<void> => {
+          log.info('MFA page detected:', win.webContents.getURL());
+          let error: string | undefined;
+          for (let attempt = 0; attempt < 5 && !resolved && !win.isDestroyed(); attempt++) {
+            const code = await requestMfaCode(error);
+            if (resolved || win.isDestroyed()) return;
+            if (!code) {
+              win.show();
+              return;
+            }
+            const injected = await win.webContents
+              .executeJavaScript(buildMfaInjectionScript(code))
+              .catch((e) => {
+                log.warn('mfa injection failed:', e);
+                return null;
+              });
+            log.info('MFA injection result:', injected);
+            if (!injected || !(injected as { ok: boolean }).ok) {
+              win.show();
+              return;
+            }
+            // 送信後、ページ遷移 (Cookie取得で finish) を待つ。変わらなければコード誤りとみなす
+            await new Promise((r) => setTimeout(r, 12000));
+            if (resolved || win.isDestroyed()) return;
+            error = '認証コードが正しくないか、期限切れです。もう一度入力してください';
+          }
+          if (!resolved && !win.isDestroyed()) win.show();
+        };
+        win.webContents.on('did-navigate', onNavigate);
+        win.webContents.on('did-navigate-in-page', onNavigate);
+        win.webContents.on('did-finish-load', onNavigate);
+      }
 
       if (ssoProvider) {
         let ssoInjected = false;
@@ -206,5 +258,55 @@ function buildCredentialInjectionScript(credentials: {
       }
       if (tries > 480) clearInterval(iv); // ~120s で諦め (ユーザー操作待ちの上限)
     }, 250);
+  })()`;
+}
+
+/**
+ * 2段階認証ページのコード入力欄へコードを流し込み、送信ボタンを押す。
+ * DOM 構造は未確定のため、見つけた input/button の構成を返してログに残す (selector 調整用)。
+ */
+function buildMfaInjectionScript(code: string): string {
+  return `(async () => {
+    const CODE = ${JSON.stringify(code)};
+    const setValue = (el, v) => {
+      const desc = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+      desc.set.call(el, v);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    const visible = (el) => !!(el.offsetWidth || el.offsetHeight || el.getClientRects().length);
+    for (let i = 0; i < 40; i++) {
+      const inputs = Array.from(document.querySelectorAll('input')).filter(
+        (el) => visible(el) && !['hidden', 'checkbox', 'radio', 'password', 'submit', 'button'].includes(el.type)
+      );
+      if (inputs.length) {
+        const info = {
+          url: location.href,
+          inputs: inputs.map((el) => ({ name: el.name, type: el.type, ac: el.autocomplete, im: el.inputMode, max: el.maxLength })),
+          buttons: Array.from(document.querySelectorAll('button')).map((b) => (b.textContent || '').trim() + (b.disabled ? '(disabled)' : ''))
+        };
+        const boxes = inputs.filter((el) => el.maxLength === 1);
+        if (boxes.length >= CODE.length) {
+          boxes.forEach((el, idx) => setValue(el, CODE[idx] || ''));
+        } else {
+          setValue(inputs[0], CODE);
+        }
+        const device = inputs.find((el) => el.name === 'deviceName');
+        if (device && !device.value.includes('NNDD-RE')) {
+          const base = device.value.trim();
+          setValue(device, base ? base + ' (NNDD-RE)' : 'NNDD-RE');
+        }
+        for (let j = 0; j < 20; j++) {
+          await new Promise((r) => setTimeout(r, 250));
+          const btn = Array.from(document.querySelectorAll('button')).find(
+            (b) => !b.disabled && visible(b) && /認証|送信|確認|ログイン|次へ/.test(b.textContent || '')
+          );
+          if (btn) { btn.click(); return { ok: true, clicked: (btn.textContent || '').trim(), info }; }
+        }
+        return { ok: false, reason: 'no enabled submit button', info };
+      }
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    return { ok: false, reason: 'no input found', body: (document.body.innerText || '').slice(0, 300) };
   })()`;
 }

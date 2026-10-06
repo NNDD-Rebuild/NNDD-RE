@@ -74,6 +74,13 @@ export function registerAuthHandlers(): void {
 export function startSessionCheck(ctx: IpcHandlerContext): void {
   const { mainWindowGetter } = ctx;
 
+  AuthManager.setMfaNotifier((payload) => {
+    const mainWin = mainWindowGetter?.();
+    if (mainWin && !mainWin.isDestroyed()) {
+      mainWin.webContents.send(IpcChannel.AUTH_MFA_REQUEST, payload);
+    }
+  });
+
   // セッションチェック。切れていたら自動再ログイン、失敗時はrendererに通知。
   // 起動直後に1回 + 以後30分ごと (起動直後チェックがないと、数日放置後の起動でセッション切れに
   // 気付かないまま最初の動画再生を試みて失敗する)

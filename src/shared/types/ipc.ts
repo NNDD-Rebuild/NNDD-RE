@@ -35,6 +35,8 @@ export const IpcChannel = {
   AUTH_LOGIN_WITH_SAVED: 'nndd:auth:loginWithSaved',
   /** セッション期限切れ通知 (main→renderer) → { mfaRequired?: boolean; mfaSubmitUrl?: string } */
   AUTH_SESSION_EXPIRED: 'nndd:auth:sessionExpired',
+  /** ログイン中に2段階認証コードが必要になった通知 (main→renderer) → { error?: string }。応答は AUTH_LOGIN_MFA の { code } (空文字=キャンセル) */
+  AUTH_MFA_REQUEST: 'nndd:auth:mfaRequest',
 
   // ダウンロード
   DOWNLOAD_ENQUEUE: 'nndd:download:enqueue',

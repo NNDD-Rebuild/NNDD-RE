@@ -32,6 +32,24 @@ const SILENT_RELOGIN_TIMEOUT_MS = 15000;
 export class AuthManager {
   private static _loggedOut = false;
 
+  private static mfaNotifier: ((payload: { error?: string }) => void) | null = null;
+  private static pendingMfa: ((code: string | null) => void) | null = null;
+
+  /** renderer への2FAコード要求通知先を登録 (メインウィンドウ生成後に呼ぶ) */
+  static setMfaNotifier(fn: (payload: { error?: string }) => void): void {
+    this.mfaNotifier = fn;
+  }
+
+  /** renderer のフォームからコードを受け取る。キャンセル/通知先なしは null */
+  private static requestMfaCode(error?: string): Promise<string | null> {
+    return new Promise((resolve) => {
+      if (!this.mfaNotifier) return resolve(null);
+      this.pendingMfa?.(null);
+      this.pendingMfa = resolve;
+      this.mfaNotifier({ error });
+    });
+  }
+
   static get isLoggedOut(): boolean {
     return this._loggedOut;
   }
@@ -99,15 +117,20 @@ export class AuthManager {
     log.debug('api login fell through:', api.status);
 
     const credentials = { email, password };
+    const requestMfaCode = (error?: string): Promise<string | null> => this.requestMfaCode(error);
 
     // ② 隠しウィンドウ (MFA要求時はユーザー操作が要るので飛ばして③へ)
     if (api.status !== 'mfa') {
-      const hiddenOk = await this.tryLoginWindow(credentials, { show: false });
+      const hiddenOk = await this.tryLoginWindow(credentials, { show: false, requestMfaCode });
       if (hiddenOk) return { ok: true };
     }
 
     // ③ 表示ウィンドウ (Turnstile/2FA をユーザーが解く)
-    const visibleOk = await this.tryLoginWindow(credentials, { show: true, parent });
+    const visibleOk = await this.tryLoginWindow(credentials, {
+      show: true,
+      parent,
+      requestMfaCode
+    });
     if (visibleOk) return { ok: true };
     return { ok: false, error: 'ログインがキャンセルされたか、完了しませんでした' };
   }
@@ -115,28 +138,34 @@ export class AuthManager {
   /** LoginWindow でログイン試行し、成功なら _loggedOut を下ろす共通ヘルパ */
   private static async tryLoginWindow(
     credentials: { email: string; password: string },
-    opts: { show: boolean; parent?: BrowserWindow }
+    opts: {
+      show: boolean;
+      parent?: BrowserWindow;
+      requestMfaCode?: (error?: string) => Promise<string | null>;
+    }
   ): Promise<boolean> {
     const ctx = NicoContext.get();
     const ok = await LoginWindow.openAndCaptureCookie(ctx.cookieStore, {
       credentials,
       show: opts.show,
       parent: opts.parent,
-      timeoutMs: opts.show ? undefined : SILENT_RELOGIN_TIMEOUT_MS
+      timeoutMs: opts.show ? undefined : SILENT_RELOGIN_TIMEOUT_MS,
+      requestMfaCode: opts.requestMfaCode
     });
     if (ok) this._loggedOut = false;
     return ok;
   }
 
   /**
-   * (廃止) MFAコード送信。2FA は LoginWindow 上で完結するため呼ばれない。
-   * IPC 互換のため残置。
+   * 2段階認証コードをログインウィンドウへ渡す (空文字=キャンセル)。
+   * 戻り値は「受理した」ことのみを表し、ログイン完了は元の loginWithCredentials の結果で通知される。
    */
-  static async completeMfa(
-    _mfaSubmitUrl: string,
-    _code: string
-  ): Promise<FormLoginResult> {
-    return { ok: false, error: 'この認証方式は廃止されました。ログインし直してください' };
+  static async completeMfa(_mfaSubmitUrl: string, code: string): Promise<FormLoginResult> {
+    const pending = this.pendingMfa;
+    if (!pending) return { ok: false, error: '2段階認証の待機中ではありません' };
+    this.pendingMfa = null;
+    pending(code ? code : null);
+    return { ok: true };
   }
 
   /** メール/パスワードを OS セキュアストレージに保存 */
