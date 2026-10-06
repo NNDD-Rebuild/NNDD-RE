@@ -26,7 +26,9 @@ import {
   CommentLock_Status,
   CommentMode_Layout,
   Enquete_Status,
-  ProgramStatus_State
+  ProgramStatus_State,
+  TrialPanel_Mode,
+  TrialPanel_Panel
 } from './gen/dwango/nicolive/chat/data/atoms_pb';
 import { ForwardedChat_ForwardingMode } from './gen/dwango/nicolive/chat/data/atoms/forwarded_pb';
 import type { ForwardedChat } from './gen/dwango/nicolive/chat/data/atoms/forwarded_pb';
@@ -286,12 +288,20 @@ export class LiveSession {
     if (ws && ws.readyState <= WebSocket.OPEN) ws.close();
   }
 
+  private restrictedMessage(): string {
+    return this.program?.providerType === 'channel'
+      ? 'この後はチャンネル会員限定です。視聴するにはチャンネルへの加入が必要です。'
+      : 'この後は会員限定です。視聴するには視聴権限が必要です。';
+  }
+
   private send(msg: WsMessage): void {
     if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(msg));
   }
 
   private onWsMessage(msg: WsMessage): void {
     const d = msg.data ?? {};
+    if (msg.type !== 'ping' && msg.type !== 'statistics') {
+    }
     switch (msg.type) {
       case 'ping':
         this.send({ type: 'pong' });
@@ -355,6 +365,11 @@ export class LiveSession {
         if (reason === 'END_PROGRAM') {
           this.ended = true;
           this.emit({ type: 'state', state: 'ended', message: '番組が終了しました。' });
+        } else if (reason === 'NO_PERMISSION') {
+          // 無料プレビュー終了後の会員限定部分など、視聴権限が無い
+          this.ended = true;
+          this.emit({ type: 'accessRestricted', message: this.restrictedMessage() });
+          this.emit({ type: 'state', state: 'ended', message: 'この番組はここから先は視聴できません。' });
         } else if (reason === 'TAKEOVER') {
           // 同じアカウントで別の場所から視聴された
           this.ended = true;
@@ -370,9 +385,14 @@ export class LiveSession {
           void this.retryWithoutChasePlay();
           break;
         }
+        if (d.code === 'NO_PERMISSION') {
+          this.ended = true;
+          this.emit({ type: 'accessRestricted', message: this.restrictedMessage() });
+        }
         this.emit({ type: 'state', state: 'error', message: `エラー: ${String(d.code ?? 'unknown')}` });
         break;
       default:
+        log.debug(`unhandled ws message: ${msg.type} ${JSON.stringify(d).slice(0, 300)}`);
         break;
     }
   }
@@ -400,6 +420,14 @@ export class LiveSession {
     };
   }
 
+  /** お試し視聴パネルの状態変化 (表示中かつ未加入ユーザーが制限される間は restricted) */
+  private emitTrialPanel(tp: { panel: TrialPanel_Panel; unqualifiedUser: TrialPanel_Mode }, atMs: number): void {
+    if (!atMs) return;
+    const restricted = tp.panel === TrialPanel_Panel.Display && tp.unqualifiedUser !== TrialPanel_Mode.Allowed;
+    log.info(`trialPanel: panel=${tp.panel} unqualifiedUser=${tp.unqualifiedUser} at=${new Date(atMs).toISOString()} restricted=${restricted}`);
+    this.emit({ type: 'trialPanel', atMs, restricted });
+  }
+
   /** PackedSegment の中身からコメント (chat / overflowed_chat) だけ取り出す */
   private toComments(messages: ChunkedMessage[]): NNDDREComment[] {
     const comments: NNDDREComment[] = [];
@@ -410,6 +438,11 @@ export class LiveSession {
       if (data.case === 'chat') comments.push(chatToComment(data.value, at));
       else if (data.case === 'overflowedChat') comments.push(chatToComment(data.value, at, false));
       else if (data.case === 'forwardedChat') comments.push(forwardedToComment(data.value, at));
+    }
+    for (const m of messages) {
+      if (m.payload.case === 'state' && m.payload.value.trialPanel) {
+        this.emitTrialPanel(m.payload.value.trialPanel, m.meta?.at ? Number(m.meta.at.seconds) * 1000 : 0);
+      }
     }
     return comments;
   }
@@ -494,6 +527,7 @@ export class LiveSession {
       }
     } else if (p.case === 'state') {
       const s = p.value;
+      if (s.trialPanel) this.emitTrialPanel(s.trialPanel, atMs);
       if (s.statistics) {
         // 届いた項目だけ更新する (state は変更があった項目しか含まない)
         const st = s.statistics;

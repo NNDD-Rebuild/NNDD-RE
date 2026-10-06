@@ -140,6 +140,9 @@ export type LiveEvent =
   | { type: 'statistics'; statistics: LiveStatistics }
   /** 追っかけ再生を使えなかったため通常のライブ視聴に切り替えた */
   | { type: 'chasePlayUnavailable' }
+  /** 視聴権限が無くなった (チャンネル会員限定部分への到達など)。renderer がポップアップで知らせる */
+  | { type: 'accessRestricted'; message: string }
+  | { type: 'trialPanel'; atMs: number; restricted: boolean }
   /** 運営コメント (画面上部に固定表示するもの)。null で消去 */
   | { type: 'operatorComment'; notice: LiveNotice | null }
   /** アンケート。null で消去 */

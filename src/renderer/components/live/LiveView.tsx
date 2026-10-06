@@ -16,6 +16,9 @@ import { VirtualizedItemList } from '../common/VirtualizedItemList';
 type SubTab = 'followOnair' | 'followReserved' | 'ranking' | 'recent' | 'search' | 'timeshift';
 type RankingKind = 'official' | 'user';
 
+/** ログインしていないと取得できないサブタブ */
+const LOGIN_REQUIRED_TABS: SubTab[] = ['followOnair', 'followReserved', 'timeshift'];
+
 const SUB_TABS: { id: SubTab; label: string }[] = [
   { id: 'followOnair', label: 'フォロー中 (放送中)' },
   { id: 'followReserved', label: 'フォロー中 (放送予定)' },
@@ -200,6 +203,8 @@ function ProgramCard({
  */
 export function LiveView(): JSX.Element {
   const [subTab, setSubTab] = useState<SubTab>('followOnair');
+  const isLoggedIn = useAppStore((s) => s.isLoggedIn);
+  const needsLogin = LOGIN_REQUIRED_TABS.includes(subTab) && !isLoggedIn;
   const [input, setInput] = useState('');
   const [openError, setOpenError] = useState('');
   /** タイムシフト予約・解除の結果メッセージ */
@@ -319,6 +324,12 @@ export function LiveView(): JSX.Element {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- サブタブ切替時だけ読み込む (検索条件の変更では読み直さない)
   }, [subTab]);
+
+  // ログイン状態が確定/変化したらログイン必須タブを読み直す
+  useEffect(() => {
+    if (LOGIN_REQUIRED_TABS.includes(subTab)) void load(subTab, null, false, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ログイン状態の変化だけを見る
+  }, [isLoggedIn]);
 
   // 絞り込み条件の変更で読み直す
   useEffect(() => {
@@ -628,8 +639,13 @@ export function LiveView(): JSX.Element {
 
       {/* 一覧 */}
       <div ref={listScrollRef} className="flex-1 min-h-0 overflow-y-auto p-3">
-        {error && <div className="mb-2 text-xs text-red-500">{error}</div>}
-        {!loading && !error && shown.length === 0 && (
+        {needsLogin && (
+          <div className="text-xs text-nndd-subtext">
+            ログインが必要です。右上の「ログイン」からニコニコ動画にログインしてください。
+          </div>
+        )}
+        {!needsLogin && error && <div className="mb-2 text-xs text-red-500">{error}</div>}
+        {!needsLogin && !loading && !error && shown.length === 0 && (
           <div className="text-xs text-nndd-subtext">
             {subTab === 'search' && !searched ? 'キーワードを入力して検索してください。' : '番組がありません。'}
           </div>

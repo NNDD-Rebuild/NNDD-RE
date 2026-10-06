@@ -141,6 +141,8 @@ export default function LivePlayerApp(): JSX.Element {
   const [isTimeshift, setIsTimeshift] = useState(false);
   const [activationRequired, setActivationRequired] = useState(false);
   const [activating, setActivating] = useState(false);
+  const [accessRestricted, setAccessRestricted] = useState('');
+  const trialPanelsRef = useRef<{ atMs: number; restricted: boolean }[]>([]);
   /** LIVE_START のやり直し用 (タイムシフト視聴開始後に再接続する) */
   const [startSeq, setStartSeq] = useState(0);
   const [archiveLoading, setArchiveLoading] = useState(false);
@@ -185,6 +187,17 @@ export default function LivePlayerApp(): JSX.Element {
               notice: ev.notice
             }
           ]);
+          break;
+        }
+        case 'accessRestricted':
+          setAccessRestricted(ev.message);
+          break;
+        case 'trialPanel': {
+          const list = trialPanelsRef.current;
+          if (!list.some((e) => e.atMs === ev.atMs && e.restricted === ev.restricted)) {
+            list.push({ atMs: ev.atMs, restricted: ev.restricted });
+            list.sort((x, y) => x.atMs - y.atMs);
+          }
           break;
         }
         case 'chasePlayUnavailable':
@@ -313,6 +326,8 @@ export default function LivePlayerApp(): JSX.Element {
     try {
       await window.nndd.invoke(IpcChannel.LIVE_TIMESHIFT_ACTIVATE, programId);
       setState('connecting');
+      setAccessRestricted('');
+      trialPanelsRef.current = [];
       setStateMessage('');
       setStartSeq((n) => n + 1);
     } catch (e) {
@@ -324,6 +339,32 @@ export default function LivePlayerApp(): JSX.Element {
 
   // ---- HLS 再生 ----
   useLiveHls({ videoRef, hlsRef, streamUri, isTimeshiftRef, setStateMessage });
+
+  // ---- お試し視聴の終了 (NDGR の trial_panel) ----
+  useEffect(() => {
+    let prev = false;
+    const timer = setInterval(() => {
+      const events = trialPanelsRef.current;
+      const base = programRef.current?.vposBaseTimeMs ?? 0;
+      if (events.length === 0 || !base) return;
+      const playingMs = base + currentVposRef.current() * 10;
+      let restricted = false;
+      for (const e of events) {
+        if (e.atMs <= playingMs) restricted = e.restricted;
+        else break;
+      }
+      if (restricted === prev) return;
+      prev = restricted;
+      setAccessRestricted(
+        restricted
+          ? programRef.current?.providerType === 'channel'
+            ? 'この後はチャンネル会員限定です。視聴するにはチャンネルへの加入が必要です。'
+            : 'この後は会員限定です。視聴するには視聴権限が必要です。'
+          : ''
+      );
+    }, 500);
+    return () => clearInterval(timer);
+  }, [startSeq]);
 
   // ---- コメント描画 ----
   useLiveCommentRenderer({ overlayRef, videoRef, rendererRef, currentVposRef, showComments });
@@ -523,6 +564,20 @@ export default function LivePlayerApp(): JSX.Element {
           {creatorSupport && <CreatorSupportBar support={creatorSupport} lowered={moveOrder !== null} />}
           {commentLock && commentLock.status !== 'unrestricted' && <CommentLockChip lock={commentLock} />}
           {enquete && <EnqueteOverlay enquete={enquete} onClose={() => setEnquete(null)} />}
+          {accessRestricted && (
+            <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60">
+              <div className="bg-nndd-panel border border-nndd-border rounded p-5 max-w-sm text-sm text-center">
+                <div className="font-bold mb-2">視聴できません</div>
+                <div className="mb-4">{accessRestricted}</div>
+                <button
+                  onClick={() => setAccessRestricted('')}
+                  className="px-4 py-1 rounded bg-nndd-accent text-white hover:opacity-80"
+                >
+                  OK
+                </button>
+              </div>
+            </div>
+          )}
           {(state === 'error' || state === 'ended' || (!streamUri && state !== 'watching')) && (
             <LiveStatusOverlay
               state={state}
