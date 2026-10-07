@@ -129,6 +129,17 @@ export function MyListView(): JSX.Element {
     reloadPlaylists();
   }, [isLoggedIn]);
 
+  const importRevision = useAppStore((s) => s.importRevision);
+  useEffect(() => {
+    if (importRevision === 0) return;
+    // インポートで ID が振り直されるため選択は解除する
+    setSelected(null);
+    setItems([]);
+    setTotalItems(0);
+    reloadMylists();
+    reloadPlaylists();
+  }, [importRevision]);
+
   // 右ペインの一覧取得 (fetchItems / fetchPlaylistItems / showSeries 共通) の連番。
   // リスト・ページを素早く切り替えたとき、最後に投げた取得の結果だけを反映する
   const itemsSeqRef = useRef(0);

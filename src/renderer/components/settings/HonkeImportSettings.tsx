@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Section } from "./common";
+import { useAppStore } from "../../store/useAppStore";
 import {
   HonkeImportCategory,
   IpcChannel,
@@ -189,6 +190,18 @@ export function HonkeImportSettings(): JSX.Element {
         },
       );
       setReport(r);
+      useAppStore.getState().bumpImportRevision();
+      const missing = r.results.find((x) => x.category === HonkeImportCategory.PLAYLIST)?.missingVideoIds ?? [];
+      if (
+        missing.length > 0 &&
+        window.confirm(
+          `プレイリストのうち ${missing.length} 件はライブラリに無く、サムネイル等の動画情報がありません。\nダウンロードしますか?`
+        )
+      ) {
+        for (const videoId of missing) {
+          window.nndd.invoke(IpcChannel.DOWNLOAD_ENQUEUE, { videoId }).catch(console.error);
+        }
+      }
     } catch (e) {
       setSourceError(e instanceof Error ? e.message : String(e));
     } finally {

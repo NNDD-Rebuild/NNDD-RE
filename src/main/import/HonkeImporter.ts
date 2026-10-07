@@ -23,6 +23,7 @@ import {
   type NNDDRESearchTypeValue,
   type RssTypeValue
 } from '@shared/types';
+import { buildLocalUrl } from '@shared/constants';
 import { extractBracketedVideoId } from '@shared/utils/videoId';
 import { parseMylistSource } from '@shared/utils/parseMylistUrl';
 import type { LibraryManager } from '../db/LibraryManager';
@@ -99,6 +100,16 @@ function readTextIfExists(p: string | null): string | null {
   } catch {
     return null;
   }
+}
+
+/** ライブラリ動画のサムネを renderer で表示できる URL にする (ライブラリ画面と同じ [ThumbImg].jpeg / .jpg を優先) */
+function localThumbUrl(videoUri: string, thumbUrl: string): string {
+  if (/^https?:/.test(thumbUrl)) return thumbUrl;
+  const base = videoUri.replace(/\.[^.]+$/, '');
+  for (const p of [`${base}[ThumbImg].jpeg`, `${base}.jpg`, thumbUrl]) {
+    if (p && fs.existsSync(p)) return buildLocalUrl(p);
+  }
+  return '';
 }
 
 function isDirectory(p: string): boolean {
@@ -713,6 +724,8 @@ export class HonkeImporter {
   private applyPlaylists(c: Collected<PlaylistCandidate>, policy: HonkeImportPolicy): HonkeImportCategoryResult {
     if (c.error) throw new Error(c.error);
     const dao = this.deps.library.playlistDao;
+    const videoDao = this.deps.library.videoDao;
+    const missing = new Set<string>();
     let added = 0;
     let updated = 0;
     this.deps.library.db.transaction(() => {
@@ -730,7 +743,14 @@ export class HonkeImporter {
         let appended = 0;
         for (const e of p.entries) {
           if (have.has(e.videoId)) continue;
-          dao.addVideo(id, { videoId: e.videoId, title: e.title, thumbnailUrl: '', lengthSec: e.lengthSec });
+          const local = videoDao.getByKey(e.videoId);
+          if (!local) missing.add(e.videoId);
+          dao.addVideo(id, {
+            videoId: e.videoId,
+            title: local?.videoName || e.title,
+            thumbnailUrl: local ? localThumbUrl(local.uri, local.thumbUrl) : '',
+            lengthSec: local?.time || e.lengthSec
+          });
           have.add(e.videoId);
           appended++;
         }
@@ -738,7 +758,14 @@ export class HonkeImporter {
         else if (appended > 0) updated++;
       }
     });
-    return { category: HonkeImportCategory.PLAYLIST, added, updated, skipped: 0, notes: c.skipped };
+    return {
+      category: HonkeImportCategory.PLAYLIST,
+      added,
+      updated,
+      skipped: 0,
+      notes: c.skipped,
+      missingVideoIds: [...missing]
+    };
   }
 
   // ---- ライブラリ DB ----

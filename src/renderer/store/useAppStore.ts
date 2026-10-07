@@ -44,6 +44,10 @@ interface AppState {
   pendingMylistId: string | null;
   setPendingMylistId: (id: string | null) => void;
 
+  /** 本家インポート完了ごとに加算。マイリスト/プレイリスト一覧の再読み込み契機 */
+  importRevision: number;
+  bumpImportRevision: () => void;
+
   /** 検索からシリーズを開く際のID。MyListViewが処理後 null にクリア */
   pendingSeriesId: string | null;
   setPendingSeriesId: (id: string | null) => void;
@@ -95,6 +99,8 @@ export const useAppStore = create<AppState>((set) => ({
   setStatusMessage: (s) => set({ statusMessage: s }),
   pendingMylistId: null,
   setPendingMylistId: (id) => set({ pendingMylistId: id }),
+  importRevision: 0,
+  bumpImportRevision: () => set((s) => ({ importRevision: s.importRevision + 1 })),
   pendingSeriesId: null,
   setPendingSeriesId: (id) => set({ pendingSeriesId: id }),
   pendingSearchTag: null,

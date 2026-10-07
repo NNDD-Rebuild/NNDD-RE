@@ -60,6 +60,8 @@ export interface HonkeImportCategoryResult {
   updated: number;
   skipped: number;
   notes: string[];
+  /** プレイリスト: ライブラリに無く、サムネ等の動画情報を引用できなかった動画ID */
+  missingVideoIds?: string[];
   error?: string;
 }
 
