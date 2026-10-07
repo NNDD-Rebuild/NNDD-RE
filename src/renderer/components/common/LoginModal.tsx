@@ -180,10 +180,18 @@ export function LoginModal({ onClose, onLoggedIn, initialStage, initialMfaSubmit
 
         {stage === 'credentials' && (
           <>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (canSubmit) void submitCredentials();
+              }}
+            >
             <label className="block mb-2">
               <span className="text-nndd-subtext">メールアドレス / 電話番号</span>
               <input
                 type="text"
+                name="username"
+                id="nndd-login-username"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 disabled={busy}
@@ -195,17 +203,14 @@ export function LoginModal({ onClose, onLoggedIn, initialStage, initialMfaSubmit
               <span className="text-nndd-subtext">パスワード</span>
               <input
                 type="password"
+                name="password"
+                id="nndd-login-password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={busy}
                 className="w-full mt-1 px-2 py-1 bg-nndd-bg border border-nndd-border rounded"
                 autoComplete="current-password"
                 placeholder={hasSavedCredentials ? '●●●●●●●● (保存済み)' : ''}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && canSubmit) {
-                    void submitCredentials();
-                  }
-                }}
               />
               {hasSavedCredentials && !password && (
                 <span className="text-nndd-subtext text-xs mt-1 block">
@@ -229,12 +234,13 @@ export function LoginModal({ onClose, onLoggedIn, initialStage, initialMfaSubmit
               </div>
             )}
             <button
-              onClick={submitCredentials}
+              type="submit"
               disabled={!canSubmit}
               className="w-full py-1.5 bg-nndd-accent text-white rounded disabled:opacity-50"
             >
               {busy ? '送信中…' : 'ログイン'}
             </button>
+            </form>
             <div className="my-3 text-center text-nndd-subtext text-xs">または</div>
             <button
               onClick={() => openBrowserLogin()}
