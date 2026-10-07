@@ -55,7 +55,7 @@
     "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^4.7.0",
     "autoprefixer": "^10.4.20",
-    "electron": "^43.2.0",
+    "electron": "^43.7.7",
     "electron-builder": "^26.15.3",
     "electron-vite": "^5.0.0",
     "esbuild": "^0.28.1",
