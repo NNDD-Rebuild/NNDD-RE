@@ -82,7 +82,10 @@ export class MediabunnyMuxer {
       log.debug('total duration (ms):', totalMs);
 
       output = new Output({
-        format: new Mp4OutputFormat({ fastStart: 'in-memory' }),
+        // 'in-memory' は mdat 全体をメモリに溜めて最後に1つの Uint8Array へ連結するため、
+        // 長尺・高ビットレート (数GB) だと "Array buffer allocation failed" になる。
+        // false なら逐次ファイルへ書き出し、moov は末尾に置かれる (ローカル再生なので問題なし)。
+        format: new Mp4OutputFormat({ fastStart: false }),
         target: new FilePathTarget(opts.outputPath)
       });
 
