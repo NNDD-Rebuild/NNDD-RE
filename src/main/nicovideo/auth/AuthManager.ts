@@ -3,7 +3,6 @@ import { NicoApi, NicoEndpoint } from '@shared/constants';
 import type { AutoReloginResult } from '@shared/types';
 import { NicoContext } from '../NicoContext';
 import { LoginWindow, type SsoProvider } from './LoginWindow';
-import { ApiLoginClient } from './ApiLoginClient';
 import { getConfigStore } from '../../config/ConfigStore';
 import { createLogger } from '../../util/Logger';
 
@@ -92,40 +91,22 @@ export class AuthManager {
   }
 
   /**
-   * メールアドレス/パスワードによるアプリ内ログイン (3段フォールバック)。
-   *  ①API直叩き (v1, 無音・高速。IPクリーン時のみ通る)
-   *  → ブロック/判定不能時 ②隠しログインウィンドウ (managed Turnstile 自動解決狙い)
-   *  → 失敗時 ③ログインウィンドウ表示 (ユーザーが Turnstile/2FA を解く)
-   * ID/Pass が明確に誤り(wrongCreds)なら②③に進まず即エラーを返す。
-   * MFA 要求なら①②を飛ばして③(表示ウィンドウ)でユーザーに解かせる。
+   * メールアドレス/パスワードによるアプリ内ログイン (2段フォールバック)。
+   * ログインは Cloudflare Turnstile 保護の SPA でトークンが必須のため、API直叩きは行わない。
+   *  ① 隠しログインウィンドウ (managed Turnstile 自動解決狙い。2FA はアプリ内フォームで入力)
+   *  → 失敗時 ② ログインウィンドウ表示 (ユーザーが Turnstile/2FA を解く)
    */
   static async loginWithCredentials(
     email: string,
     password: string,
     parent?: BrowserWindow
   ): Promise<FormLoginResult> {
-    // ① API 直叩き (fast path)
-    const api = await ApiLoginClient.login(email, password);
-    if (api.status === 'ok') {
-      this._loggedOut = false;
-      return { ok: true };
-    }
-    if (api.status === 'wrongCreds') {
-      return { ok: false, error: 'メールアドレスまたはパスワードが正しくありません' };
-    }
-    // mfa / blocked → ウィンドウ方式へ
-    log.debug('api login fell through:', api.status);
-
     const credentials = { email, password };
     const requestMfaCode = (error?: string): Promise<string | null> => this.requestMfaCode(error);
 
-    // ② 隠しウィンドウ (MFA要求時はユーザー操作が要るので飛ばして③へ)
-    if (api.status !== 'mfa') {
-      const hiddenOk = await this.tryLoginWindow(credentials, { show: false, requestMfaCode });
-      if (hiddenOk) return { ok: true };
-    }
+    const hiddenOk = await this.tryLoginWindow(credentials, { show: false, requestMfaCode });
+    if (hiddenOk) return { ok: true };
 
-    // ③ 表示ウィンドウ (Turnstile/2FA をユーザーが解く)
     const visibleOk = await this.tryLoginWindow(credentials, {
       show: true,
       parent,
@@ -226,26 +207,10 @@ export class AuthManager {
 
     log.debug('auto relogin for:', email);
     try {
-      // 起動時は無音優先: ①API直叩き → ②隠しウィンドウ まで。
-      // ③表示ウィンドウは起動時に勝手に出さない (失敗時は期限切れ通知経由で
-      // ユーザーが手動ログイン→表示ウィンドウまで進める)。
-      const api = await ApiLoginClient.login(email, password);
-      if (api.status === 'ok') {
-        this._loggedOut = false;
-        return { ok: true };
-      }
-      if (api.status === 'wrongCreds') {
-        // 保存パスワードが実際に無効 (変更された等) → クリアして無限ループ防止
-        log.warn('auto relogin wrong credentials, clearing');
-        this.clearCredentials();
-        return { ok: false, error: 'メールアドレスまたはパスワードが正しくありません' };
-      }
-
-      // blocked / mfa → 隠しウィンドウでサイレント試行 (managed Turnstile 自動解決狙い)
-      if (api.status !== 'mfa') {
-        const hiddenOk = await this.tryLoginWindow({ email, password }, { show: false });
-        if (hiddenOk) return { ok: true };
-      }
+      // 起動時は無音優先: 隠しウィンドウのみ。表示ウィンドウは起動時に勝手に出さない
+      // (失敗時は期限切れ通知経由でユーザーが手動ログインに進む)。
+      const hiddenOk = await this.tryLoginWindow({ email, password }, { show: false });
+      if (hiddenOk) return { ok: true };
 
       // サイレント失敗は ID/Pass 誤りと断定できない (Turnstile/2FA 要求の可能性) ため
       // 保存情報は消さず、ユーザーの手動ログインに委ねる。
@@ -281,10 +246,16 @@ export class AuthManager {
     const ctx = NicoContext.get();
     try {
       // サーバー側にも通知 (失敗してもCookie破棄は続行)
-      await ctx.http.fetch(NicoApi.LOGOUT, {
-        method: 'GET',
-        redirect: 'manual'
+      const res = await ctx.http.fetch(NicoApi.LOGOUT, {
+        method: 'DELETE',
+        headers: {
+          Origin: NicoApi.ACCOUNT_BASE,
+          Referer: `${NicoApi.ACCOUNT_BASE}/`,
+          'X-Frontend-Id': NicoApi.ACCOUNT_FRONTEND_ID,
+          'X-Frontend-Version': NicoApi.ACCOUNT_FRONTEND_VERSION
+        }
       });
+      log.debug('server logout status:', res.status);
     } catch (e) {
       log.warn('Server logout failed (ignored):', e);
     }
