@@ -41,7 +41,7 @@ export function LibraryGridView({
               : 'border-nndd-border hover:border-nndd-accent'
           ].join(' ')}
           onClick={(e) => onClick(v, e)}
-          onDoubleClick={() => onPlay(v)}
+          onDoubleClick={onPlay && (() => onPlay(v))}
           onDragStart={(e) => onDragStart(e, v)}
           onContextMenu={(e) => onContextMenu(e, v)}
         >
@@ -79,9 +79,9 @@ export function LibraryGridView({
           </div>
           <div className="p-1.5 bg-nndd-panel flex-1 flex flex-col gap-0.5">
             <div
-              className="text-xs line-clamp-2 leading-tight cursor-pointer hover:underline"
+              className={`text-xs line-clamp-2 leading-tight${onPlay ? ' cursor-pointer hover:underline' : ''}`}
               title={v.videoName}
-              onClick={(e) => { e.stopPropagation(); onPlay(v); }}
+              onClick={onPlay && ((e) => { e.stopPropagation(); onPlay(v); })}
             >
               {v.videoName}
             </div>
@@ -89,7 +89,9 @@ export function LibraryGridView({
               {v.pubDate ? v.pubDate.toLocaleDateString('ja-JP') : '-'}
             </div>
             <div className="flex gap-1 mt-1 flex-wrap">
-              <button onClick={(e) => { e.stopPropagation(); onPlay(v); }} className="text-xs px-2 py-0.5 bg-nndd-accent text-white rounded">再生</button>
+              {onPlay && (
+                <button onClick={(e) => { e.stopPropagation(); onPlay(v); }} className="text-xs px-2 py-0.5 bg-nndd-accent text-white rounded">再生</button>
+              )}
               <button onClick={(e) => { e.stopPropagation(); onOpenFolder(v); }} className="text-xs px-2 py-0.5 bg-nndd-border rounded">フォルダ</button>
               {extractVideoId(v.videoName) && (
                 <button onClick={(e) => { e.stopPropagation(); onOpenNiconico(v); }} className="text-xs px-2 py-0.5 bg-nndd-border rounded" title="ニコニコ動画で開く">nico</button>

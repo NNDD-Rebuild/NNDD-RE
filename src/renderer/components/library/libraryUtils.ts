@@ -2,7 +2,7 @@ import type { NNDDREVideo } from '@shared/types';
 import { buildLocalUrl } from '@shared/constants';
 import { extractBracketedVideoId } from '@shared/utils/videoId';
 
-export type ViewMode = 'tag' | 'folder';
+export type ViewMode = 'tag' | 'folder' | 'commentOnly';
 export type LibraryDisplayMode = 'table' | 'grid';
 export type SortCol = 'videoName' | 'time' | 'playCount' | 'pubDate' | 'creationDate';
 export type SortDir = 'asc' | 'desc';
@@ -19,7 +19,8 @@ export const LAN_FOLDER = '__lan__';
 /** ローカル動画一覧 (グリッド / テーブル) の各行に渡す操作 */
 export interface LibraryItemHandlers {
   onClick: (v: NNDDREVideo, e: React.MouseEvent) => void;
-  onPlay: (v: NNDDREVideo) => void;
+  /** 省略時は再生操作 (ボタン・ダブルクリック・タイトルクリック) を出さない。動画ファイルが無い「コメントのみ」用 */
+  onPlay?: (v: NNDDREVideo) => void;
   onDragStart: (e: React.DragEvent, v: NNDDREVideo) => void;
   onContextMenu: (e: React.MouseEvent, v: NNDDREVideo) => void;
   onToggleFavorite: (v: NNDDREVideo) => void;

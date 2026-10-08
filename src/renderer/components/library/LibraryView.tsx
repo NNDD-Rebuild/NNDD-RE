@@ -4,6 +4,7 @@ import { IpcChannel } from '@shared/types';
 import { watchUrl } from '@shared/utils/nicoUrl';
 import { ContextMenuPopup, MenuItem } from '../common/VideoCard';
 import { useAppStore } from '@renderer/store/useAppStore';
+import { enqueueDownload } from '../../util/enqueueDownload';
 import { useLibraryVideos } from '@renderer/hooks/library/useLibraryVideos';
 import { useLibraryFolderTree } from '@renderer/hooks/library/useLibraryFolderTree';
 import { useLanLibrary } from '@renderer/hooks/library/useLanLibrary';
@@ -36,6 +37,8 @@ export function LibraryView(): JSX.Element {
   const [sortCol, setSortCol] = useState<SortCol>('pubDate');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; video: NNDDREVideo } | null>(null);
+  const showToast = useAppStore((s) => s.showToast);
+  const ctxVideoId = ctxMenu ? extractVideoId(ctxMenu.video.videoName) : null;
 
   // LAN
   const [lanEnabled, setLanEnabled] = useState(false);
@@ -64,7 +67,7 @@ export function LibraryView(): JSX.Element {
   const [moving, setMoving] = useState(false);
 
   // 動画一覧の読み込み (初回・タブ復帰時・DL 完了時に reload)
-  const { videos, setVideos, loading, fsFolders, reload } = useLibraryVideos();
+  const { videos, setVideos, commentOnlyVideos, setCommentOnlyVideos, loading, fsFolders, reload } = useLibraryVideos();
 
   const folderCreate = useLibraryFolderCreate(reload);
 
@@ -90,8 +93,8 @@ export function LibraryView(): JSX.Element {
   };
 
   const filtered = useMemo(() => {
-    if (selectedFolder === LAN_FOLDER) return [];
-    return videos.filter((v) => {
+    if (selectedFolder === LAN_FOLDER && mode !== 'commentOnly') return [];
+    return (mode === 'commentOnly' ? commentOnlyVideos : videos).filter((v) => {
       if (mode === 'tag' && selectedTag) {
         if (!v.tagStrings.includes(selectedTag)) return false;
       }
@@ -110,7 +113,7 @@ export function LibraryView(): JSX.Element {
       }
       return true;
     });
-  }, [videos, mode, selectedTag, selectedFolder, favoriteOnly, searchText]);
+  }, [videos, commentOnlyVideos, mode, selectedTag, selectedFolder, favoriteOnly, searchText]);
 
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
@@ -217,7 +220,10 @@ export function LibraryView(): JSX.Element {
   const handleToggleFavorite = async (v: NNDDREVideo): Promise<void> => {
     const next = !v.isFavorite;
     await window.nndd.invoke(window.nndd.channels.LIBRARY_SET_FAVORITE, v.id, next);
-    setVideos((prev) => prev.map((x) => (x.id === v.id ? { ...x, isFavorite: next } : x)));
+    const apply = (prev: NNDDREVideo[]): NNDDREVideo[] =>
+      prev.map((x) => (x.id === v.id ? { ...x, isFavorite: next } : x));
+    setVideos(apply);
+    setCommentOnlyVideos(apply);
   };
 
   const handleVideoContextMenu = (e: React.MouseEvent, v: NNDDREVideo): void => {
@@ -279,7 +285,8 @@ export function LibraryView(): JSX.Element {
 
   const itemHandlers: LibraryItemHandlers = {
     onClick: handleVideoClick,
-    onPlay: handlePlay,
+    // 「コメントのみ」は動画ファイルが無いので再生操作を出さない
+    onPlay: mode === 'commentOnly' ? undefined : handlePlay,
     onDragStart: handleVideoDragStart,
     onContextMenu: handleVideoContextMenu,
     onToggleFavorite: handleToggleFavorite,
@@ -288,7 +295,7 @@ export function LibraryView(): JSX.Element {
     onDelete: handleDelete
   };
 
-  const isLanTab = selectedFolder === LAN_FOLDER;
+  const isLanTab = selectedFolder === LAN_FOLDER && mode !== 'commentOnly';
 
   return (
     <div className="h-full flex">
@@ -297,6 +304,7 @@ export function LibraryView(): JSX.Element {
         <div className="flex border-b border-nndd-border text-xs">
           <TabBtn active={mode === 'folder'} onClick={() => setMode('folder')}>フォルダ</TabBtn>
           <TabBtn active={mode === 'tag'} onClick={() => setMode('tag')}>タグ</TabBtn>
+          <TabBtn active={mode === 'commentOnly'} onClick={() => setMode('commentOnly')}>コメントのみ</TabBtn>
         </div>
 
         <div className="flex-1 overflow-auto p-2 text-sm">
@@ -371,7 +379,7 @@ export function LibraryView(): JSX.Element {
               moveError={moveError}
               displayMode={displayMode}
               onToggleDisplayMode={() => setDisplayMode(displayMode === 'table' ? 'grid' : 'table')}
-              continuousPlayDisabled={sorted.length === 0}
+              continuousPlayDisabled={sorted.length === 0 || mode === 'commentOnly'}
               onContinuousPlay={handleContinuousPlay}
               scanning={scanning}
               onScan={handleScan}
@@ -381,7 +389,9 @@ export function LibraryView(): JSX.Element {
                 <div className="p-4 text-nndd-subtext">読み込み中…</div>
               ) : filtered.length === 0 ? (
                 <div className="p-4 text-nndd-subtext">
-                  {videos.length === 0
+                  {mode === 'commentOnly' && commentOnlyVideos.length === 0
+                    ? 'コメントのみで取得した動画はありません。動画カードのDLメニューから「コメントのみダウンロード」するとここに表示されます。'
+                    : mode !== 'commentOnly' && videos.length === 0
                     ? 'ライブラリは空です。動画をダウンロードするとここに表示されます。'
                     : '該当する動画はありません。'}
                 </div>
@@ -415,6 +425,21 @@ export function LibraryView(): JSX.Element {
           <MenuItem onClick={() => { void handleToggleFavorite(ctxMenu.video); setCtxMenu(null); }}>
             {ctxMenu.video.isFavorite ? '☆ お気に入りから外す' : '★ お気に入りに追加'}
           </MenuItem>
+          {ctxVideoId && (
+            <>
+              {mode === 'commentOnly' && (
+                <MenuItem onClick={() => { showToast(enqueueDownload(ctxVideoId, false, 'video')); setCtxMenu(null); }}>
+                  ⬇ 動画をダウンロード
+                </MenuItem>
+              )}
+              <MenuItem onClick={() => { showToast(enqueueDownload(ctxVideoId, true, 'commentDiff')); setCtxMenu(null); }}>
+                💬 コメント差分取得 (今コメ更新)
+              </MenuItem>
+              <MenuItem onClick={() => { showToast(enqueueDownload(ctxVideoId, true, 'comment')); setCtxMenu(null); }}>
+                💬 コメント全件再取得
+              </MenuItem>
+            </>
+          )}
         </ContextMenuPopup>
       )}
     </div>

@@ -9,6 +9,8 @@ import { useAppStore } from '@renderer/store/useAppStore';
  */
 export function useLibraryVideos() {
   const [videos, setVideos] = useState<NNDDREVideo[]>([]);
+  /** 「コメントのみ」で取得した (動画ファイルを持たない) 動画 */
+  const [commentOnlyVideos, setCommentOnlyVideos] = useState<NNDDREVideo[]>([]);
   const [loading, setLoading] = useState(true);
   const [fsFolders, setFsFolders] = useState<string[]>([]);
 
@@ -18,20 +20,23 @@ export function useLibraryVideos() {
   const reloadSeqRef = useRef(0);
   const reload = (): void => {
     const seq = ++reloadSeqRef.current;
+    const fixDates = (rows: NNDDREVideo[]): NNDDREVideo[] =>
+      rows.map((v) => ({
+        ...v,
+        modificationDate: new Date(v.modificationDate),
+        creationDate: new Date(v.creationDate),
+        lastPlayDate: v.lastPlayDate ? new Date(v.lastPlayDate) : null,
+        pubDate: v.pubDate ? new Date(v.pubDate) : null
+      }));
     Promise.all([
       window.nndd.invoke<NNDDREVideo[]>(window.nndd.channels.LIBRARY_LIST),
-      window.nndd.invoke<string[]>(window.nndd.channels.LIBRARY_FOLDER_LIST)
+      window.nndd.invoke<string[]>(window.nndd.channels.LIBRARY_FOLDER_LIST),
+      window.nndd.invoke<NNDDREVideo[]>(window.nndd.channels.LIBRARY_LIST_COMMENT_ONLY)
     ])
-      .then(([rows, dirs]) => {
+      .then(([rows, dirs, commentOnlyRows]) => {
         if (seq !== reloadSeqRef.current) return;
-        const fixed = rows.map((v) => ({
-          ...v,
-          modificationDate: new Date(v.modificationDate),
-          creationDate: new Date(v.creationDate),
-          lastPlayDate: v.lastPlayDate ? new Date(v.lastPlayDate) : null,
-          pubDate: v.pubDate ? new Date(v.pubDate) : null
-        }));
-        setVideos(fixed);
+        setVideos(fixDates(rows));
+        setCommentOnlyVideos(fixDates(commentOnlyRows));
         setFsFolders(dirs);
         setLoading(false);
       })
@@ -64,5 +69,5 @@ export function useLibraryVideos() {
     return off;
   }, []);
 
-  return { videos, setVideos, loading, fsFolders, reload };
+  return { videos, setVideos, commentOnlyVideos, setCommentOnlyVideos, loading, fsFolders, reload };
 }

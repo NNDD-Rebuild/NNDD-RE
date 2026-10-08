@@ -53,7 +53,7 @@ export function LibraryTableView({
               selectedVideoIds.has(v.id) ? 'selected ring-1 ring-nndd-accent' : selected === v.id ? 'selected' : ''
             ].join(' ')}
             onClick={(e) => onClick(v, e)}
-            onDoubleClick={() => onPlay(v)}
+            onDoubleClick={onPlay && (() => onPlay(v))}
             onDragStart={(e) => onDragStart(e, v)}
             onContextMenu={(e) => onContextMenu(e, v)}
           >
@@ -80,8 +80,8 @@ export function LibraryTableView({
             </td>
             <td
               title={v.videoName}
-              className="cursor-pointer hover:underline"
-              onClick={(e) => { e.stopPropagation(); onPlay(v); }}
+              className={onPlay ? 'cursor-pointer hover:underline' : undefined}
+              onClick={onPlay && ((e) => { e.stopPropagation(); onPlay(v); })}
             >
               {v.videoName}
               {isAudioOnlyVideo(v) && (
@@ -94,7 +94,9 @@ export function LibraryTableView({
             <td>{v.playCount}</td>
             <td>{v.pubDate ? v.pubDate.toLocaleDateString('ja-JP') : '-'}</td>
             <td className="whitespace-nowrap">
-              <button onClick={(e) => { e.stopPropagation(); onPlay(v); }} className="text-xs px-2 py-0.5 bg-nndd-accent text-white rounded mr-1">再生</button>
+              {onPlay && (
+                <button onClick={(e) => { e.stopPropagation(); onPlay(v); }} className="text-xs px-2 py-0.5 bg-nndd-accent text-white rounded mr-1">再生</button>
+              )}
               <button onClick={(e) => { e.stopPropagation(); onOpenFolder(v); }} className="text-xs px-2 py-0.5 bg-nndd-border rounded mr-1">フォルダ</button>
               {extractVideoId(v.videoName) && (
                 <button onClick={(e) => { e.stopPropagation(); onOpenNiconico(v); }} className="text-xs px-2 py-0.5 bg-nndd-border rounded mr-1" title="ニコニコ動画で開く">nico</button>
