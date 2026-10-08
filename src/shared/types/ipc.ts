@@ -205,6 +205,8 @@ export const IpcChannel = {
   LIVE_TIMESHIFT_CANCEL: 'nndd:live:timeshiftCancel',
   /** 画質変更 (quality) */
   LIVE_CHANGE_QUALITY: 'nndd:live:changeQuality',
+  /** 追っかけ再生 (巻き戻し可能・高遅延) / 通常のライブ視聴 (低遅延) の切り替え (enabled: boolean) */
+  LIVE_SET_CHASE_PLAY: 'nndd:live:setChasePlay',
   /** フォロー中の番組一覧 ({ status: 'onair' | 'reserved', offset }) → LiveProgramListResult */
   LIVE_LIST_FOLLOWING: 'nndd:live:listFollowing',
   /** 番組検索 (LiveSearchParams) → LiveProgramListResult */

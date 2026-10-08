@@ -26,7 +26,8 @@ export interface LiveCommentFeedOptions {
   /** 今映っている映像の vpos (1/100秒) を返す関数 */
   currentVposRef: MutableRefObject<() => number>;
   isTimeshiftRef: MutableRefObject<boolean>;
-  chasePlayRef: MutableRefObject<boolean>;
+  /** 追っかけ再生へ切り替えられるか。巻き戻して流す分があるので、生コメントを件数上限で捨てない */
+  chasePlayAvailableRef: MutableRefObject<boolean>;
   commentFetchModeRef: MutableRefObject<LiveStartResult['commentFetchMode']>;
   addListItems: (items: LiveListItem[]) => void;
   setArchiveLoading: Dispatch<SetStateAction<boolean>>;
@@ -47,7 +48,7 @@ export function useLiveCommentFeed({
   rendererRef,
   currentVposRef,
   isTimeshiftRef,
-  chasePlayRef,
+  chasePlayAvailableRef,
   commentFetchModeRef,
   addListItems,
   setArchiveLoading
@@ -82,14 +83,14 @@ export function useLiveCommentFeed({
           ? { ...c, vposMs: Math.ceil(appearMs) }
           : c;
       });
-      // 追っかけ再生では過去コメントも保持しているため件数上限で捨てない
-      rendererRef.current?.addComments(adjusted, chasePlayRef.current ? Infinity : undefined);
+      // 追っかけ再生に切り替えられるときは過去コメントも保持しているため件数上限で捨てない
+      rendererRef.current?.addComments(adjusted, chasePlayAvailableRef.current ? Infinity : undefined);
       // 過去コメントとの突き合わせ用に受信分を覚えておく
       liveAddedRef.current.push(...adjusted);
       for (const c of comments) liveKeysRef.current.add(commentKey(c));
       addListItems(comments.map((c) => ({ key: commentKey(c), vposMs: c.vposMs, comment: c })));
     },
-    [currentVposRef, rendererRef, chasePlayRef, addListItems]
+    [currentVposRef, rendererRef, chasePlayAvailableRef, addListItems]
   );
 
   const handleArchiveComments = useCallback(

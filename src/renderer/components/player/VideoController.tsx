@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { DomandStreamCandidate } from '@shared/types';
 import { useConfig } from '@renderer/hooks/useConfig';
 import { ControlBarSelect } from './ControlBarSelect';
+import { LiveRewindBar } from './LiveRewindBar';
 
 /**
  * 生放送の画質選択欄。選択肢が多く、ネイティブ select は一番長い選択肢の幅になって
@@ -42,6 +43,11 @@ interface Props {
    */
   live?: {
     chasePlay: boolean;
+    /**
+     * 低遅延のライブ視聴中に、追っかけ再生へ切り替えて巻き戻せる場合に指定する。
+     * 指定するとシークバーを (番組開始〜現在の) 仮のバーで出し、操作すると onSeekTo で巻き戻しを要求する
+     */
+    rewind?: { beginMs: number; getPlayingMs: () => number; onSeekTo: (ms: number) => void };
     onSeekToLive: () => void;
     /**
      * 通常のライブ再生位置 (秒)。HLS はバッファの余裕を取るため最新セグメントの少し手前を再生するので、
@@ -389,7 +395,7 @@ export function VideoController({
   // シークバーの範囲: 通常は 0〜duration、生放送 (追っかけ再生) はシーク可能範囲
   const barStart = live ? seekStart : 0;
   const barLen = live ? Math.max(0, seekEnd - seekStart) : duration;
-  const showBar = live ? live.chasePlay && barLen > 0 : isFinite(duration) && duration > 0;
+  const showBar = live ? !live.rewind && live.chasePlay && barLen > 0 : isFinite(duration) && duration > 0;
   const qualityLabel = (q: DomandStreamCandidate): string =>
     formatQualityLabel ? formatQualityLabel(q) : q.height ? `${q.height}p` : (q.id.match(/(\d+p)$/)?.[1] ?? q.id);
 
@@ -486,6 +492,8 @@ export function VideoController({
             </div>
           </div>
         </div>
+      ) : live?.rewind ? (
+        <LiveRewindBar {...live.rewind} />
       ) : live ? (
         /* 生放送 (追っかけ再生なし): シークできないのでバーは出さない */
         <div className="flex-1" />
@@ -507,7 +515,10 @@ export function VideoController({
               return edge - currentTime > 5 ? `-${fmt(edge - currentTime)}` : 'LIVE';
             })()}
           </span>
-          <Btn onClick={live.onSeekToLive} title="最新の位置へ">
+          <Btn
+            onClick={live.onSeekToLive}
+            title={live.chasePlay ? '低遅延のライブ視聴に戻る' : '最新の位置へ'}
+          >
             最新
           </Btn>
         </>

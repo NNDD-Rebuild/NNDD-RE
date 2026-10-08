@@ -130,6 +130,8 @@ export class LiveSession {
   private isTimeshift = false;
   /** 追っかけ再生 (放送中に過去へ巻き戻せる HLS) で視聴するか */
   private chasePlay = false;
+  /** 追っかけ再生を要求できるか (放送中・プレミアム会員) */
+  private chasePlayAvailable = false;
   /** 過去コメント取得用 (タイムシフト / 追っかけ再生)。再接続しても取り直さない */
   private archiveNdgr: NdgrClient | null = null;
   /** 周辺取得用 (commentFetchMode = seek) */
@@ -154,10 +156,13 @@ export class LiveSession {
     this.isTimeshift = /\/timeshift(\?|$)/.test(page.webSocketUrl);
     // 追っかけ再生はプレミアム会員限定。program.isChasePlayEnabled は会員種別に関係なく true になるため、
     // 一般会員・未ログインで chasePlay: true を送ると NO_PERMISSION / NO_STREAM_AVAILABLE で断られる
-    this.chasePlay = !this.isTimeshift && page.program.chasePlayEnabled && page.accountType === 'premium';
+    this.chasePlayAvailable = !this.isTimeshift && page.program.chasePlayEnabled && page.accountType === 'premium';
+    // 追っかけ再生の HLS は 6 秒セグメントの通常 HLS で、公式プレイヤーの低遅延 (LL-HLS: 0.5 秒 part) より 10 秒前後遅れる。
+    // 公式プレイヤーと同じく通常は chasePlay: false で受け、巻き戻したいときだけ setChasePlay(true) で切り替える
+    this.chasePlay = false;
     log.info(
       `start ${this.programId}: status=${page.program.status} loggedIn=${page.isLoggedIn} account=${page.accountType} ` +
-        `timeshift=${this.isTimeshift} chasePlay=${this.chasePlay}`
+        `timeshift=${this.isTimeshift} chasePlayAvailable=${this.chasePlayAvailable}`
     );
     this.commentFetchMode = page.program.commentCount > FULL_ARCHIVE_LIMIT ? 'seek' : 'all';
     this.emit({ type: 'state', state: 'connecting' });
@@ -166,6 +171,7 @@ export class LiveSession {
       program: page.program,
       isTimeshift: this.isTimeshift,
       chasePlay: this.chasePlay,
+      chasePlayAvailable: this.chasePlayAvailable,
       commentFetchMode: this.commentFetchMode
     };
   }
@@ -183,6 +189,14 @@ export class LiveSession {
 
   changeQuality(quality: string): void {
     this.quality = quality;
+    this.send({ type: 'changeStream', data: this.streamRequest() });
+  }
+
+  /** 追っかけ再生 (巻き戻し可能・高遅延) と通常のライブ視聴 (低遅延) を切り替える。新しい stream が届く */
+  setChasePlay(enabled: boolean): void {
+    const next = enabled && this.chasePlayAvailable;
+    if (next === this.chasePlay) return;
+    this.chasePlay = next;
     this.send({ type: 'changeStream', data: this.streamRequest() });
   }
 
@@ -241,6 +255,7 @@ export class LiveSession {
   private async retryWithoutChasePlay(): Promise<void> {
     log.info(`chasePlay unavailable, retry without chasePlay (${this.programId})`);
     this.chasePlay = false;
+    this.chasePlayAvailable = false;
     this.emit({ type: 'chasePlayUnavailable' });
     // cleanupConnection で this.ws を外してから閉じるので、close ハンドラの自動再接続は走らない
     this.cleanupConnection();
@@ -321,6 +336,7 @@ export class LiveSession {
           type: 'stream',
           uri: String(d.uri ?? ''),
           quality: String(d.quality ?? this.quality),
+          chasePlay: this.chasePlay,
           availableQualities: Array.isArray(d.availableQualities) ? d.availableQualities.map(String) : []
         });
         break;

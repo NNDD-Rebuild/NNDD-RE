@@ -132,7 +132,8 @@ export interface LiveCreatorSupport {
 
 export type LiveEvent =
   | { type: 'state'; state: LiveConnectionState; message?: string }
-  | { type: 'stream'; uri: string; quality: string; availableQualities: string[] }
+  /** chasePlay: この stream が追っかけ再生 (通常 HLS) か低遅延 (LL-HLS) か */
+  | { type: 'stream'; uri: string; quality: string; chasePlay: boolean; availableQualities: string[] }
   | { type: 'comments'; comments: NNDDREComment[] }
   /** タイムシフト: 過去コメントの取得分 (新しい区間から順に届く)。done=true で全件取得完了 */
   | { type: 'archiveComments'; comments: NNDDREComment[]; done: boolean }
@@ -162,8 +163,10 @@ export interface LiveStartResult {
   program: LiveProgramInfo;
   /** タイムシフト視聴か */
   isTimeshift: boolean;
-  /** 追っかけ再生で視聴しているか (放送中のみ) */
+  /** 追っかけ再生で視聴しているか (放送中のみ)。通常は低遅延の false で始まる */
   chasePlay: boolean;
+  /** 追っかけ再生へ切り替えられるか (放送中・プレミアム会員) */
+  chasePlayAvailable: boolean;
   /**
    * 過去コメントの取得方法。
    * all: 開いたときに全件をバックグラウンドで取得 / seek: コメントが多いので再生位置の周辺だけ取得

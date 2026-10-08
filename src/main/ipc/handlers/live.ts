@@ -76,4 +76,7 @@ export function registerLiveHandlers(): void {
   ipcMain.handle(IpcChannel.LIVE_CHANGE_QUALITY, (e, quality: string) => {
     LivePlayerManager.get().changeQuality(e.sender.id, String(quality));
   });
+  ipcMain.handle(IpcChannel.LIVE_SET_CHASE_PLAY, (e, enabled: boolean) => {
+    LivePlayerManager.get().setChasePlay(e.sender.id, Boolean(enabled));
+  });
 }

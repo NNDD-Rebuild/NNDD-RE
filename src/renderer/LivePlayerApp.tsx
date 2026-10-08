@@ -66,6 +66,9 @@ export default function LivePlayerApp(): JSX.Element {
   const controlsHideTimer = useRef<number | null>(null);
   const isTimeshiftRef = useRef(false);
   const chasePlayRef = useRef(false);
+  const chasePlayAvailableRef = useRef(false);
+  /** true の間、新しい Hls を作っても再生を始めない (追っかけ再生へ切り替えて巻き戻す途中) */
+  const holdPlaybackRef = useRef(false);
   const { listItems, listItemsRef, pendingPushRef, commentWindowOpenRef, addListItems } = useLiveCommentList();
   const statisticsRef = useRef<LiveStatistics | null>(null);
   /**
@@ -83,7 +86,7 @@ export default function LivePlayerApp(): JSX.Element {
       items: listItemsRef.current,
       program: programRef.current,
       statistics: statisticsRef.current,
-      canSeek: isTimeshiftRef.current || chasePlayRef.current,
+      canSeek: isTimeshiftRef.current || chasePlayAvailableRef.current,
       ssngList: [...ssngMapRef.current.values()]
     });
   });
@@ -147,12 +150,18 @@ export default function LivePlayerApp(): JSX.Element {
   const [startSeq, setStartSeq] = useState(0);
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [chasePlay, setChasePlay] = useState(false);
+  /** 追っかけ再生 (巻き戻し) に切り替えられるか。通常は低遅延のライブ視聴で、切り替えたときだけ chasePlay になる */
+  const [chasePlayAvailable, setChasePlayAvailable] = useState(false);
+  /** 追っかけ再生へ切り替えて巻き戻している途中 (開始位置の映像を見せないよう映像とコメントを隠す) */
+  const [rewinding, setRewinding] = useState(false);
+  /** 巻き戻し先の vposMs (切り替え中、シークバーのつまみをここに留めておく)。巻き戻しをしていないときは null */
+  const [rewindTargetVposMs, setRewindTargetVposMs] = useState<number | null>(null);
 
   const { handleLiveComments, handleArchiveComments } = useLiveCommentFeed({
     rendererRef,
     currentVposRef,
     isTimeshiftRef,
-    chasePlayRef,
+    chasePlayAvailableRef,
     commentFetchModeRef,
     addListItems,
     setArchiveLoading
@@ -168,6 +177,21 @@ export default function LivePlayerApp(): JSX.Element {
           setStateMessage(ev.message ?? '');
           break;
         case 'stream':
+          // hls.js の作り直し (streamUri の変更) より先に、この stream が追っかけ再生かどうかを反映する
+          chasePlayRef.current = ev.chasePlay;
+          setChasePlay(ev.chasePlay);
+          if (holdPlaybackRef.current) {
+            if (ev.chasePlay) {
+              setRewinding(true);
+            } else {
+              // 巻き戻しの途中で低遅延に戻された: 巻き戻しはやめて普通に再生する
+              holdPlaybackRef.current = false;
+              if (pendingChaseSeekRef.current) window.clearInterval(pendingChaseSeekRef.current.timer);
+              pendingChaseSeekRef.current = null;
+              setRewinding(false);
+              setRewindTargetVposMs(null);
+            }
+          }
           setStreamUri(ev.uri);
           setQuality(ev.quality);
           if (ev.availableQualities.length > 0) setQualities(ev.availableQualities);
@@ -203,7 +227,9 @@ export default function LivePlayerApp(): JSX.Element {
         case 'chasePlayUnavailable':
           // 追っかけ再生の映像が無かった番組: シークバーを出さない通常のライブ表示にする
           chasePlayRef.current = false;
+          chasePlayAvailableRef.current = false;
           setChasePlay(false);
+          setChasePlayAvailable(false);
           break;
         case 'statistics':
           setStatistics(ev.statistics);
@@ -292,8 +318,10 @@ export default function LivePlayerApp(): JSX.Element {
         programRef.current = r.program;
         isTimeshiftRef.current = r.isTimeshift;
         chasePlayRef.current = r.chasePlay;
+        chasePlayAvailableRef.current = r.chasePlayAvailable;
         setIsTimeshift(r.isTimeshift);
         setChasePlay(r.chasePlay);
+        setChasePlayAvailable(r.chasePlayAvailable);
         commentFetchModeRef.current = r.commentFetchMode;
         connectedAtRef.current = Date.now();
         // 周辺取得モードは必要になった時点で取得するので、ここでは取得中にしない
@@ -338,7 +366,7 @@ export default function LivePlayerApp(): JSX.Element {
   };
 
   // ---- HLS 再生 ----
-  useLiveHls({ videoRef, hlsRef, streamUri, isTimeshiftRef, setStateMessage });
+  useLiveHls({ videoRef, hlsRef, streamUri, isTimeshiftRef, chasePlayRef, holdPlaybackRef, setStateMessage });
 
   // ---- お試し視聴の終了 (NDGR の trial_panel) ----
   useEffect(() => {
@@ -416,8 +444,79 @@ export default function LivePlayerApp(): JSX.Element {
     commentDisplayLoading
   });
 
-  /** コメントリストから指定時刻へシークする (タイムシフト・追っかけ再生のみ) */
+  /**
+   * 追っかけ再生への切り替え待ちのシーク先 (vposMs) と、切り替え前の Hls。
+   * 切り替え後の新しい Hls で再生位置が分かるようになったら、そこへシークする
+   */
+  const pendingChaseSeekRef = useRef<{ vposMs: number; fromHls: Hls | null; timer: number } | null>(null);
+
+  /** 追っかけ再生 (巻き戻し可能・高遅延) と低遅延のライブ視聴を切り替える。新しい stream が届くと映像が読み込み直される */
+  const setChasePlayMode = (enabled: boolean): void => {
+    void window.nndd.invoke(IpcChannel.LIVE_SET_CHASE_PLAY, enabled).catch(() => {});
+  };
+
+  /**
+   * 低遅延のライブ視聴から追っかけ再生へ切り替え、読み込めたら vposMs へシークする。
+   * 新しいストリームは hls.js がいったんライブ端付近から始めるので、その間は再生を止めて映像を隠し、
+   * 開始位置への移動が終わってからシークして再生を始める (ライブ端の映像・音が一瞬出るのを防ぐ)
+   */
+  const rewindToVpos = (vposMs: number): void => {
+    const pending = pendingChaseSeekRef.current;
+    if (pending) window.clearInterval(pending.timer);
+    const startedAt = Date.now();
+    /** 再生を再開して映像を出す */
+    const release = (): void => {
+      holdPlaybackRef.current = false;
+      setRewinding(false);
+      setRewindTargetVposMs(null);
+      const v = videoRef.current;
+      if (v?.paused) void v.play().catch(() => {});
+    };
+    const timer = window.setInterval(() => {
+      const p = pendingChaseSeekRef.current;
+      const hls = hlsRef.current;
+      const v = videoRef.current;
+      const timedOut = Date.now() - startedAt > 20_000;
+      // 新しい Hls が開始位置 (ライブ端付近) への移動を終えてから動かす (その前にシークすると上書きされてライブ端に戻される)。
+      // 再生は止めているので、移動済みかは currentTime が 0 でなくなったことで見る
+      const ready =
+        chasePlayRef.current &&
+        hls &&
+        hls !== p?.fromHls &&
+        hls.playingDate &&
+        v &&
+        v.seekable.length > 0 &&
+        v.currentTime > 0 &&
+        v.readyState >= 2 &&
+        !v.seeking;
+      if (!ready && !timedOut) return;
+      window.clearInterval(timer);
+      pendingChaseSeekRef.current = null;
+      if (!ready || !v) {
+        release();
+        return;
+      }
+      const done = (): void => {
+        window.clearTimeout(fallback);
+        release();
+      };
+      const fallback = window.setTimeout(done, 3000);
+      v.addEventListener('seeked', done, { once: true });
+      seekToVposRef.current(vposMs);
+    }, 200);
+    pendingChaseSeekRef.current = { vposMs, fromHls: hlsRef.current, timer };
+    holdPlaybackRef.current = true;
+    setRewindTargetVposMs(vposMs);
+    setChasePlayMode(true);
+  };
+
+  /** コメントリスト・シークバー・キー操作から指定時刻へシークする (タイムシフト・追っかけ再生。低遅延中なら追っかけ再生へ切り替えて) */
   const seekToVpos = (vposMs: number): void => {
+    if (!isTimeshiftRef.current && chasePlayAvailableRef.current && !chasePlayRef.current) {
+      // 低遅延中は今の位置より少し前 (5 秒以上) への巻き戻しだけ追っかけ再生へ切り替える。バーのつまみをクリックしただけ等では切り替えない
+      if (vposMs < currentVposRef.current() * 10 - 5000) rewindToVpos(vposMs);
+      return;
+    }
     const v = videoRef.current;
     if (!v) return;
     let target = v.currentTime + (vposMs - currentVposRef.current() * 10) / 1000;
@@ -435,8 +534,12 @@ export default function LivePlayerApp(): JSX.Element {
     else video.pause();
   };
 
-  /** ライブの最新位置へ移動 */
+  /** ライブの最新位置へ移動 (追っかけ再生中は低遅延のライブ視聴に戻る) */
   const seekToLive = (): void => {
+    if (chasePlayRef.current) {
+      setChasePlayMode(false);
+      return;
+    }
     const video = videoRef.current;
     const pos = hlsRef.current?.liveSyncPosition;
     if (video && pos != null) video.currentTime = pos;
@@ -459,7 +562,13 @@ export default function LivePlayerApp(): JSX.Element {
     autoFollowLoading
   });
 
-  const canSeek = isTimeshift || chasePlay;
+  // 低遅延のライブ視聴中でも、追っかけ再生へ切り替えられるならシークできる (操作すると切り替わる)
+  const canSeek = isTimeshift || chasePlayAvailable;
+
+  // シーク可否が変わったら、開いているコメントウィンドウへ送り直す
+  useEffect(() => {
+    if (commentWindowOpenRef.current) sendSnapshotRef.current();
+  }, [canSeek]);
 
   useKeyboardShortcuts({
     togglePlay,
@@ -537,7 +646,7 @@ export default function LivePlayerApp(): JSX.Element {
               (videoRef as React.MutableRefObject<HTMLVideoElement | null>).current = el;
               setVideoEl(el);
             }}
-            className="absolute inset-0 w-full h-full object-contain"
+            className={['absolute inset-0 w-full h-full object-contain', rewinding ? 'opacity-0' : ''].join(' ')}
           />
           {/*
             放送者が指定するコメントの表示レイアウト (comment_mode) に合わせる。
@@ -549,7 +658,7 @@ export default function LivePlayerApp(): JSX.Element {
             className="absolute inset-0 pointer-events-none"
             style={{
               bottom: commentLayout === 'splitTop' ? '50%' : undefined,
-              opacity: commentLayout === 'background' ? 0.4 : undefined
+              opacity: rewinding ? 0 : commentLayout === 'background' ? 0.4 : undefined
             }}
           />
           {operatorComment && <OperatorCommentBanner notice={operatorComment} />}
@@ -615,6 +724,18 @@ export default function LivePlayerApp(): JSX.Element {
                 ? undefined
                 : {
                     chasePlay,
+                    // 低遅延中と巻き戻しの切り替え中は仮のバー。切り替え中はつまみを巻き戻し先に留めて、バーが動き回らないようにする
+                    rewind:
+                      chasePlayAvailable && (!chasePlay || rewindTargetVposMs !== null) && program && program.vposBaseTimeMs
+                        ? {
+                            beginMs: program.vposBaseTimeMs,
+                            getPlayingMs: () =>
+                              program.vposBaseTimeMs + (rewindTargetVposMs ?? currentVposRef.current() * 10),
+                            onSeekTo: (ms) => {
+                              if (rewindTargetVposMs === null) seekToVpos(ms - program.vposBaseTimeMs);
+                            }
+                          }
+                        : undefined,
                     onSeekToLive: seekToLive,
                     getLiveSyncPosition: () => hlsRef.current?.liveSyncPosition ?? null
                   }
