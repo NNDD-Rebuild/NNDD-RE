@@ -217,6 +217,8 @@ export const IpcChannel = {
   LIVE_RANKING: 'nndd:live:ranking',
   /** カテゴリ別の放送中番組 (LiveRecentParams) → LiveProgramListResult */
   LIVE_RECENT: 'nndd:live:recent',
+  /** アニメ生放送 (anime.nicovideo.jp/live) の番組一覧 (LiveAnimeParams) → LiveAnimeResult */
+  LIVE_ANIME: 'nndd:live:anime',
   /** タイムシフト予約一覧 → LiveProgramListResult */
   LIVE_LIST_TIMESHIFT_RESERVATIONS: 'nndd:live:listTimeshiftReservations',
   /** 生放送のコメントウィンドウ (フロート) を開く / 閉じる (プレイヤーから invoke) */

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
+  LiveAnimeParams,
+  LiveAnimeResult,
   LiveProgramListResult,
   LiveProgramSummary,
   LiveRankingParams,
@@ -13,7 +15,7 @@ import { extractLiveIdFromInput } from '@shared/utils/liveId';
 import { useAppStore } from '@renderer/store/useAppStore';
 import { VirtualizedItemList } from '../common/VirtualizedItemList';
 
-type SubTab = 'followOnair' | 'followReserved' | 'ranking' | 'recent' | 'search' | 'timeshift';
+type SubTab = 'followOnair' | 'followReserved' | 'ranking' | 'recent' | 'anime' | 'search' | 'timeshift';
 type RankingKind = 'official' | 'user';
 
 /** ログインしていないと取得できないサブタブ */
@@ -24,6 +26,7 @@ const SUB_TABS: { id: SubTab; label: string }[] = [
   { id: 'followReserved', label: 'フォロー中 (放送予定)' },
   { id: 'ranking', label: 'ランキング' },
   { id: 'recent', label: 'カテゴリ' },
+  { id: 'anime', label: 'アニメ' },
   { id: 'search', label: '検索' },
   { id: 'timeshift', label: 'タイムシフト予約' }
 ];
@@ -50,6 +53,18 @@ const RECENT_SORTS: { value: LiveRecentParams['sortOrder']; label: string }[] = 
   { value: 'viewCountDesc', label: '来場者が多い順' },
   { value: 'commentCountDesc', label: 'コメントが多い順' },
   { value: 'userLevelDesc', label: '放送者レベルが高い順' }
+];
+
+const ANIME_SCOPES: { value: LiveAnimeParams['scope']; label: string }[] = [
+  { value: 'reserved', label: '放送中・放送予定' },
+  { value: 'past', label: '見逃し配信' }
+];
+
+const ANIME_KINDS: { value: LiveAnimeParams['kind']; label: string }[] = [
+  { value: 'all', label: '全て' },
+  { value: 'regular', label: '今期最新話' },
+  { value: 'ikkyo', label: '一挙放送' },
+  { value: 'tokuban', label: '声優特番' }
 ];
 
 /** カテゴリ別一覧の 1 ページの件数 (API 側で固定) */
@@ -230,9 +245,13 @@ export function LiveView(): JSX.Element {
   const [rankingDate, setRankingDate] = useState(todayInput());
   const [recentCategory, setRecentCategory] = useState<LiveRecentCategory>('common');
   const [recentSort, setRecentSort] = useState<LiveRecentParams['sortOrder']>('viewCountDesc');
+  const [animeScope, setAnimeScope] = useState<LiveAnimeParams['scope']>('reserved');
+  const [animeKind, setAnimeKind] = useState<LiveAnimeParams['kind']>('all');
+  /** アニメ生放送ページから読めた会員情報 (見逃し配信の案内に使う) */
+  const [animeUser, setAnimeUser] = useState<Pick<LiveAnimeResult, 'isLoggedIn' | 'isPremium'> | null>(null);
   /** fetchList から最新の絞り込み条件を読むための参照 */
-  const filterRef = useRef({ rankingType, rankingDate, recentCategory, recentSort });
-  filterRef.current = { rankingType, rankingDate, recentCategory, recentSort };
+  const filterRef = useRef({ rankingType, rankingDate, recentCategory, recentSort, animeScope, animeKind });
+  filterRef.current = { rankingType, rankingDate, recentCategory, recentSort, animeScope, animeKind };
   /**
    * 一覧読み込み (load) の連番。読み込み中にサブタブ・絞り込み条件・検索ページを切り替えた場合、
    * 最後に投げた読み込みの結果だけを反映する (前のタブの番組一覧が新しいタブに出ないようにする)
@@ -270,6 +289,13 @@ export function LiveView(): JSX.Element {
             page: Math.floor(offset / RECENT_PAGE_SIZE)
           };
           return window.nndd.invoke<LiveProgramListResult>(IpcChannel.LIVE_RECENT, params);
+        }
+        case 'anime': {
+          const f = filterRef.current;
+          const params: LiveAnimeParams = { scope: f.animeScope, kind: f.animeKind };
+          const r = await window.nndd.invoke<LiveAnimeResult>(IpcChannel.LIVE_ANIME, params);
+          if (seq === loadSeqRef.current) setAnimeUser({ isLoggedIn: r.isLoggedIn, isPremium: r.isPremium });
+          return r;
         }
         case 'search':
           if (!search) return null;
@@ -341,6 +367,11 @@ export function LiveView(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- サブタブ切替時の読込は上の effect が行うため、ここでは絞り込み条件の変化だけを見る
   }, [recentCategory, recentSort]);
 
+  useEffect(() => {
+    if (subTab === 'anime') void load('anime', null, false, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- サブタブ切替時の読込は上の effect が行うため、ここでは絞り込み条件の変化だけを見る
+  }, [animeScope, animeKind]);
+
   const runSearch = (wordArg?: string): void => {
     const word = (wordArg ?? keyword).trim();
     if (!word) return;
@@ -408,6 +439,7 @@ export function LiveView(): JSX.Element {
   /** カードに出すタイムシフト操作。予約一覧では解除、それ以外は予約 (視聴不可の終了番組には出さない) */
   const tsActionFor = (p: LiveProgramSummary): 'reserve' | 'cancel' | undefined => {
     if (subTab === 'timeshift') return 'cancel';
+    if (p.timeshiftEnabled === false) return undefined;
     if (p.status === 'ENDED' && p.timeshiftPlayable === false) return undefined;
     return 'reserve';
   };
@@ -427,6 +459,8 @@ export function LiveView(): JSX.Element {
     !isRanking &&
     subTab !== 'timeshift' &&
     subTab !== 'search' &&
+    // アニメ生放送はページから一度に全件読むので続きは無い
+    subTab !== 'anime' &&
     // 放送予定はページの埋め込みデータから一度に全件読むので続きは無い
     subTab !== 'followReserved' &&
     programs.length < total &&
@@ -604,6 +638,56 @@ export function LiveView(): JSX.Element {
               </option>
             ))}
           </select>
+        </div>
+      )}
+
+      {/* アニメ生放送 (anime.nicovideo.jp/live) */}
+      {subTab === 'anime' && (
+        <div className="px-3 pt-2 space-y-1.5">
+          <div className="flex flex-wrap items-center gap-1">
+            {ANIME_SCOPES.map((c) => (
+              <button
+                key={c.value}
+                onClick={() => setAnimeScope(c.value)}
+                className={[
+                  'px-3 py-0.5 text-xs rounded border',
+                  animeScope === c.value
+                    ? 'bg-nndd-accent text-white border-nndd-accent'
+                    : 'border-nndd-border hover:bg-nndd-border'
+                ].join(' ')}
+              >
+                {c.label}
+              </button>
+            ))}
+            <span className="mx-1 text-nndd-border">|</span>
+            {ANIME_KINDS.map((c) => (
+              <button
+                key={c.value}
+                onClick={() => setAnimeKind(c.value)}
+                className={[
+                  'px-3 py-0.5 text-xs rounded border',
+                  animeKind === c.value
+                    ? 'bg-nndd-accent text-white border-nndd-accent'
+                    : 'border-nndd-border hover:bg-nndd-border'
+                ].join(' ')}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+          {animeScope === 'past' && animeUser && (
+            <div className="text-xs text-nndd-subtext">
+              {animeUser.isPremium
+                ? 'プレミアム会員: 事前予約をしていなくても、見逃し配信を視聴できます。'
+                : 'ニコニコプレミアムなら事前予約をしていなくても過去番組を視聴できます。一般会員は放送前にタイムシフト予約をした番組のみ視聴できます (ログインが必要)。'}
+              {animeUser.isLoggedIn && animeUser.isPremium === null && ' (会員種別を判定できませんでした)'}
+            </div>
+          )}
+          {animeScope === 'reserved' && (
+            <div className="text-xs text-nndd-subtext">
+              「プレミアム限定」と題された番組はプレミアム会員のみ視聴できます。タイムシフト予約はログインが必要です。
+            </div>
+          )}
         </div>
       )}
 

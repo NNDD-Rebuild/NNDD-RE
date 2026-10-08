@@ -2,6 +2,7 @@ import { ipcMain } from 'electron';
 import { IpcChannel } from '@shared/types';
 import type {
   LiveAkashicApiRequest,
+  LiveAnimeParams,
   LiveCommentWindowMessage,
   LiveRankingParams,
   LiveRecentParams,
@@ -11,6 +12,7 @@ import { LivePlayerManager } from '../../player/LivePlayerManager';
 import { sendAkashicApi } from '../../nicovideo/live/AkashicApi';
 import { LiveCommentWindowManager } from '../../player/LiveCommentWindowManager';
 import { activateTimeshift, cancelTimeshiftReservations, normalizeLiveId, reserveTimeshift } from '../../nicovideo/live/LiveWatchPage';
+import { fetchAnimeLivePrograms } from '../../nicovideo/live/LiveAnimeClient';
 import {
   fetchFollowingPrograms,
   fetchLiveRanking,
@@ -54,6 +56,7 @@ export function registerLiveHandlers(): void {
   ipcMain.handle(IpcChannel.LIVE_LIST_TIMESHIFT_RESERVATIONS, () => fetchTimeshiftReservations());
   ipcMain.handle(IpcChannel.LIVE_RANKING, (_e, params: LiveRankingParams) => fetchLiveRanking(params));
   ipcMain.handle(IpcChannel.LIVE_RECENT, (_e, params: LiveRecentParams) => fetchRecentPrograms(params));
+  ipcMain.handle(IpcChannel.LIVE_ANIME, (_e, params: LiveAnimeParams) => fetchAnimeLivePrograms(params));
   ipcMain.handle(IpcChannel.LIVE_STOP, (e) => {
     LivePlayerManager.get().stopSession(e.sender.id);
   });

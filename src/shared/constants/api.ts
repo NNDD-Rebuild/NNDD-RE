@@ -65,7 +65,9 @@ export const NicoApi = {
   /** 生放送API (タイムシフト予約等) のオリジン */
   LIVE2_API_BASE: 'https://live2.nicovideo.jp',
   /** 生放送 番組検索API のオリジン */
-  CAS_API_BASE: 'https://api.cas.nicovideo.jp'
+  CAS_API_BASE: 'https://api.cas.nicovideo.jp',
+  /** ニコニコアニメ (Nアニメ) のオリジン */
+  ANIME_BASE: 'https://anime.nicovideo.jp'
 } as const;
 
 /**
@@ -203,7 +205,9 @@ export const NicoEndpoint = {
     `${NicoApi.LIVE_BASE}/front/api/pages/follow/v1/programs?status=${status}&offset=${offset}`,
   /** 生放送: カテゴリ別の放送中番組 */
   liveRecentPrograms: (query: Query) =>
-    `${NicoApi.LIVE_BASE}/front/api/pages/recent/v1/programs?${query}`
+    `${NicoApi.LIVE_BASE}/front/api/pages/recent/v1/programs?${query}`,
+  /** アニメ生放送のページ (page: '' | 'reserved-regular' | 'past' 等。番組一覧は HTML の inline script に埋まっている) */
+  liveAnimePage: (page: string) => `${NicoApi.ANIME_BASE}/live/${page ? `${page}.html` : ''}`
 } as const;
 
 /**

@@ -251,6 +251,8 @@ export interface LiveProgramSummary {
   timeshiftViewingLimitMs?: number;
   /** タイムシフトの公開終了 (unix ms)。分かる場合のみ */
   timeshiftPublicationEndMs?: number;
+  /** タイムシフト予約に対応した番組か (分かる場合のみ。false なら予約ボタンを出さない) */
+  timeshiftEnabled?: boolean;
 }
 
 export interface LiveProgramListResult {
@@ -293,6 +295,20 @@ export interface LiveRecentParams {
     | 'userLevelDesc';
   /** ページ番号 (0 始まり、1 ページ 70 件) */
   page: number;
+}
+
+/** アニメ生放送 (anime.nicovideo.jp/live) の取得条件 */
+export interface LiveAnimeParams {
+  /** reserved: 放送中・放送予定 / past: 見逃し配信 */
+  scope: 'reserved' | 'past';
+  /** all: 全て / regular: 今期最新話 / ikkyo: 一挙放送 / tokuban: 声優特番 */
+  kind: 'all' | 'regular' | 'ikkyo' | 'tokuban';
+}
+
+export interface LiveAnimeResult extends LiveProgramListResult {
+  isLoggedIn: boolean;
+  /** プレミアム会員か。ログイン済みでも判定できなかった場合は null */
+  isPremium: boolean | null;
 }
 
 /** ランキングの種類 (live.nicovideo.jp/ranking の type) */
