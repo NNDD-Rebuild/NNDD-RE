@@ -175,7 +175,7 @@ export class PlayerManager {
    */
   private applyAudioOnlyDetection(params: OpenPlayerParams): OpenPlayerParams {
     if (params.localPath && path.extname(params.localPath).toLowerCase() === '.m4a') {
-      return { ...params, audioOnly: true };
+      return { ...params, audioOnly: true, audioOnlyDetected: !params.audioOnly };
     }
     return params;
   }

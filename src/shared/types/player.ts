@@ -35,6 +35,8 @@ export interface OpenPlayerParams {
   autoNext?: boolean;
   /** 音声のみ再生モード */
   audioOnly?: boolean;
+  /** audioOnly が拡張子 (.m4a) から自動判定されたものか (連続再生・スキップで次の動画へ引き継がない) */
+  audioOnlyDetected?: boolean;
   /** レジューム再生開始秒数 (VIDEO_OPEN_PLAYER ハンドラが DB から解決してセット) */
   resumeSec?: number;
 }

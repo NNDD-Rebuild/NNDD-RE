@@ -91,6 +91,8 @@ export default function PlayerApp(): JSX.Element {
   const [streamProgress] = useState<StreamProgress | null>(null);
   const [audioOnly, setAudioOnly] = useState(false);
   const audioOnlyRef = useRef(false);
+  // スキップ・連続再生で次の動画に引き継ぐ音声のみ指定。.m4a の自動判定分は含めない
+  const inheritAudioOnlyRef = useRef(false);
   const [availableQualities, setAvailableQualities] = useState<DomandStreamCandidate[]>([]);
   const [selectedQualityId, setSelectedQualityId] = useState<string | null>(null);
   const consecutiveSkipRef = useRef(0);
@@ -139,7 +141,7 @@ export default function PlayerApp(): JSX.Element {
     isLocalRef,
     watchRef,
     playInfoRef,
-    audioOnlyRef
+    audioOnlyRef: inheritAudioOnlyRef
   });
 
   useApplyTheme();
@@ -194,6 +196,7 @@ export default function PlayerApp(): JSX.Element {
           pausedByNicowariRef.current = false;
           const isAudioOnly = !!params.audioOnly;
           audioOnlyRef.current = isAudioOnly;
+          inheritAudioOnlyRef.current = isAudioOnly && !params.audioOnlyDetected;
           setAudioOnly(isAudioOnly);
           if (params.enableFolderAutoNext) enableAutoNextFolder();
           if (params.searchPlaylist && params.searchPlaylist.length > 0) {
