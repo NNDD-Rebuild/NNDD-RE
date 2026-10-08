@@ -291,13 +291,63 @@ export class DownloadManager extends EventEmitter {
       const downloadAllComments = getConfigStore().get('downloadAllComments') ?? false;
 
       // コメント取得
-      // コメント全量取得 (過去ログ含む — fetchAllComments でループ遡り)
       this.updateStatus(item, DownloadStatusType.COMMENT);
+
+      // 今コメは全量取得より先に取る。全量取得は数分〜数時間かかり、その間に threadKey の期限が
+      // 切れて失敗し、DL後検証が今コメJSON不足で commentOnly を再投入してしまうため
+      // [NowComment].json: fetchComments (ストリーミング今コメ相当) の no 一覧を保存
+      // → ローカル再生時に fetchAllComments XML から今コメを再現するために使用
+      if (!skipComments) {
+      try {
+        const nowComments = await CommentClient.fetchComments(watch);
+        LocalFileHandler.writeNowCommentJson(
+          path.join(baseDir, LocalFileNaming.nowCommentJsonFileName(watch.title, watch.videoId)),
+          nowComments.map((c) => c.no)
+        );
+        // 全件取得オフ時は下のfetchAllCommentsブロックが実行されず通常コメントXMLが
+        // 生成されないため、今コメの内容をそのまま通常コメントXMLとしても書き出す
+        if (!downloadAllComments) {
+          const threadId =
+            watch.commentThreads.find((t) => t.fork === 'main')?.id ??
+            watch.commentThreads[0]?.id ??
+            '';
+          LocalFileHandler.writeCommentXml(
+            path.join(
+              baseDir,
+              LocalFileNaming.commentXmlFileName(watch.title, watch.videoId)
+            ),
+            nowComments.filter((c) => c.fork !== 'owner'),
+            threadId,
+            watch.videoId,
+            'main'
+          );
+          const ownerNowComments = nowComments.filter((c) => c.fork === 'owner');
+          const ownerThread =
+            watch.commentThreads.find((t) => t.fork === 'owner')?.id ?? '';
+          LocalFileHandler.writeCommentXml(
+            path.join(
+              baseDir,
+              LocalFileNaming.ownerCommentXmlFileName(watch.title, watch.videoId)
+            ),
+            ownerNowComments,
+            ownerThread,
+            watch.videoId,
+            'owner'
+          );
+        }
+      } catch (e) {
+        log.warn('now comment fetch failed (continuing):', e);
+      }
+      } // skipComments
+
+      // コメント全量取得 (過去ログ含む — fetchAllComments でループ遡り)
       if (!skipComments && downloadAllComments) {
       try {
         const comments = await CommentClient.fetchAllComments(watch, {
           includeEasy: getConfigStore().get('downloadEasyComments') ?? false,
           comment429RetryWaitSec: getConfigStore().get('comment429RetryWaitSec') ?? 60,
+          // threadKey は約8分で期限切れになるため、切れたら視聴情報を取り直して続きから再開する
+          refreshWatch: () => WatchInfoHandler.fetchWatchInfoRaw(item.videoId, true),
           signal: ac.signal,
           onProgress: (msg) => {
             item.message = msg;
@@ -335,51 +385,6 @@ export class DownloadManager extends EventEmitter {
         log.warn('comment download failed (continuing):', e);
       }
       } // downloadAllComments
-
-      // [NowComment].json: fetchComments (ストリーミング今コメ相当) の no 一覧を保存
-      // → ローカル再生時に fetchAllComments XML から今コメを再現するために使用
-      if (!skipComments) {
-      try {
-        const nowComments = await CommentClient.fetchComments(watch);
-        LocalFileHandler.writeNowCommentJson(
-          path.join(baseDir, LocalFileNaming.nowCommentJsonFileName(watch.title, watch.videoId)),
-          nowComments.map((c) => c.no)
-        );
-        // 全件取得オフ時は上のfetchAllCommentsブロックが実行されず通常コメントXMLが
-        // 生成されないため、今コメの内容をそのまま通常コメントXMLとしても書き出す
-        if (!downloadAllComments) {
-          const threadId =
-            watch.commentThreads.find((t) => t.fork === 'main')?.id ??
-            watch.commentThreads[0]?.id ??
-            '';
-          LocalFileHandler.writeCommentXml(
-            path.join(
-              baseDir,
-              LocalFileNaming.commentXmlFileName(watch.title, watch.videoId)
-            ),
-            nowComments.filter((c) => c.fork !== 'owner'),
-            threadId,
-            watch.videoId,
-            'main'
-          );
-          const ownerNowComments = nowComments.filter((c) => c.fork === 'owner');
-          const ownerThread =
-            watch.commentThreads.find((t) => t.fork === 'owner')?.id ?? '';
-          LocalFileHandler.writeCommentXml(
-            path.join(
-              baseDir,
-              LocalFileNaming.ownerCommentXmlFileName(watch.title, watch.videoId)
-            ),
-            ownerNowComments,
-            ownerThread,
-            watch.videoId,
-            'owner'
-          );
-        }
-      } catch (e) {
-        log.warn('now comment fetch failed (continuing):', e);
-      }
-      } // skipComments
 
       // サムネ取得
       this.updateStatus(item, DownloadStatusType.THUMB);

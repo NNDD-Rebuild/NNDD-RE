@@ -9,32 +9,52 @@ import type { NicoV3CommentResponse, NicoV3CommentItem } from '../apiTypes';
 
 const log = createLogger('CommentClient');
 
-/** コメントAPI グローバルレートリミッター (3 req/sec) */
-class CommentRateLimiter {
-  private lastTime = 0;
-  private lock = Promise.resolve();
-  private readonly intervalMs: number;
+/**
+ * コメントAPI グローバルレートリミッター (トークンバケット)。
+ * 実機計測 (2026-10-08) で、約100リクエストのバーストで 429 になり、約3分で回復することを確認した。
+ * 補充速度は実測 (約0.5 req/s) より低い 0.4 req/s にして、容量も 60 に抑える。
+ * 全DL・再生取得で共有するので、並列DLでも合算で制御される。
+ */
+const BUCKET_CAPACITY = 60;
+const REFILL_PER_SEC = 0.4;
 
-  constructor(requestsPerSec: number) {
-    this.intervalMs = Math.ceil(1000 / requestsPerSec);
+class CommentRateLimiter {
+  private tokens = BUCKET_CAPACITY;
+  private lastRefill = Date.now();
+  private lock = Promise.resolve();
+
+  private refill(): void {
+    const now = Date.now();
+    this.tokens = Math.min(BUCKET_CAPACITY, this.tokens + ((now - this.lastRefill) / 1000) * REFILL_PER_SEC);
+    this.lastRefill = now;
   }
 
   acquire(signal?: AbortSignal): Promise<void> {
     this.lock = this.lock.then(async () => {
-      const wait = this.intervalMs - (Date.now() - this.lastTime);
-      if (wait > 0 && !signal?.aborted) {
+      if (signal?.aborted) return;
+      this.refill();
+      if (this.tokens < 1) {
+        const wait = Math.ceil(((1 - this.tokens) / REFILL_PER_SEC) * 1000);
         await new Promise<void>((resolve) => {
           const timer = setTimeout(resolve, wait);
           signal?.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true });
         });
+        if (signal?.aborted) return;
+        this.refill();
       }
-      this.lastTime = Date.now();
+      this.tokens = Math.max(0, this.tokens - 1);
     });
     return this.lock;
   }
+
+  /** 429 を受けたとき枠を空にする (待機明けから補充速度で再開させる) */
+  drain(): void {
+    this.tokens = 0;
+    this.lastRefill = Date.now();
+  }
 }
 
-const rateLimiter = new CommentRateLimiter(3);
+const rateLimiter = new CommentRateLimiter();
 
 /**
  * 新コメントAPI (V3) クライアント。
@@ -88,10 +108,16 @@ export class CommentClient {
     }
 
     await rateLimiter.acquire();
-    const res = await NicoContext.get().http.postJson<NicoV3CommentResponse>(url, body, {
-      debugDumpPath,
-      debugLabel: 'comment'
-    });
+    let res: NicoV3CommentResponse;
+    try {
+      res = await NicoContext.get().http.postJson<NicoV3CommentResponse>(url, body, {
+        debugDumpPath,
+        debugLabel: 'comment'
+      });
+    } catch (e) {
+      if (e instanceof NicoApiError && e.httpStatus === 429) rateLimiter.drain();
+      throw e;
+    }
 
     const out: NNDDREComment[] = [];
     for (const t of res?.data?.threads ?? []) {
@@ -122,6 +148,12 @@ export class CommentClient {
       comment429RetryWaitSec?: number;
       /** キャンセル用シグナル */
       signal?: AbortSignal;
+      /**
+       * threadKey が期限切れ (EXPIRED_TOKEN) になったときに視聴情報を取り直す関数。
+       * threadKey の寿命は約8分で、大量コメントの取得は途中で切れるため、指定すると
+       * 新しい threadKey で中断位置から再開する。未指定なら期限切れで取得を打ち切る
+       */
+      refreshWatch?: () => Promise<WatchPageInfo>;
       /** 遡り開始時刻 (Unix秒)。未指定なら現在時刻 */
       startWhenUnixSec?: number;
       /** 累積取得件数の上限。到達したら全スレッドの取得を打ち切る */
@@ -142,6 +174,10 @@ export class CommentClient {
     const retryWaitSec = options?.comment429RetryWaitSec ?? 60;
     const signal = options?.signal;
     const MAX_429_RETRIES = 5;
+    // 取り直した直後にまた期限切れになる場合に備えた、成功を挟まない連続リフレッシュの上限
+    const MAX_CONSECUTIVE_REFRESHES = 3;
+    let threadKey = watch.threadKey;
+    let consecutiveRefreshes = 0;
     const delay = (ms: number): Promise<void> => new Promise<void>((resolve) => {
       const timer = setTimeout(resolve, ms);
       signal?.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true });
@@ -198,7 +234,7 @@ export class CommentClient {
 
         const body = {
           params: { targets: [target], language },
-          threadKey: watch.threadKey,
+          threadKey,
           additionals: {
             when: lastTime,
             res_from: -1000
@@ -214,12 +250,32 @@ export class CommentClient {
             debugLabel: `comment-${target.fork}-r${round}`
           });
           retries429 = 0;
+          consecutiveRefreshes = 0;
         } catch (e) {
+          if (e instanceof NicoApiError && e.errorCode === 'EXPIRED_TOKEN' && options?.refreshWatch
+              && consecutiveRefreshes < MAX_CONSECUTIVE_REFRESHES && !signal?.aborted) {
+            consecutiveRefreshes++;
+            try {
+              const fresh = await options.refreshWatch();
+              if (fresh.threadKey) {
+                threadKey = fresh.threadKey;
+                log.info(`threadKey expired, refreshed (${consecutiveRefreshes}/${MAX_CONSECUTIVE_REFRESHES}) thread=${target.id} round=${round}`);
+                onProgress?.(`threadKey を更新して再開 (${target.fork} / ${seen.size} 件取得)`);
+                round--;
+                continue;
+              }
+            } catch (refreshErr) {
+              log.warn('threadKey refresh failed:', refreshErr);
+            }
+          }
+          if (e instanceof NicoApiError && e.httpStatus === 429) rateLimiter.drain();
           if (e instanceof NicoApiError && e.httpStatus === 429 && retryWaitSec > 0 && retries429 < MAX_429_RETRIES) {
             retries429++;
             onProgress?.(`429 レート制限: ${retryWaitSec}秒待機中... (${retries429}/${MAX_429_RETRIES})`);
             log.warn(`429 rate limit, waiting ${retryWaitSec}s (retry ${retries429}/${MAX_429_RETRIES})`);
             await delay(retryWaitSec * 1000);
+            // 待機中に溜まったトークンで再びバーストして 429 を繰り返さないよう、補充速度から再開する
+            rateLimiter.drain();
             round--;
             continue;
           }
