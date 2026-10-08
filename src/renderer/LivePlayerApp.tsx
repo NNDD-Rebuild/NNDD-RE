@@ -10,6 +10,7 @@ import type {
   LiveMoveOrder,
   LiveNotice,
   LiveProgramInfo,
+  LiveAkashicInfo,
   LiveStartResult,
   LiveStatistics,
   NgListItem
@@ -21,6 +22,7 @@ import { useNgList } from './hooks/player/useNgList';
 import { VideoController } from './components/player/VideoController';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { CommentLockChip, CreatorSupportBar, EnqueteOverlay, MoveOrderBanner } from './components/live/LiveOverlays';
+import { AkashicLayer, createAkashicBus, pushAkashicBatch } from './components/live/akashic/AkashicLayer';
 import { LiveProgramInfo as ProgramInfo } from './components/live/LiveProgramInfo';
 import { LiveSidePanel } from './components/live/LiveSidePanel';
 import { LiveStatusOverlay, OperatorCommentBanner } from './components/live/LivePlayerStatus';
@@ -113,6 +115,9 @@ export default function LivePlayerApp(): JSX.Element {
   });
 
   const [program, setProgram] = useState<LiveProgramInfo | null>(null);
+  /** ニコ生ゲーム (クルーズの行き先投票など)。有効な番組だけ映像の上にゲームを重ねる */
+  const [akashicInfo, setAkashicInfo] = useState<LiveAkashicInfo | null>(null);
+  const akashicBusRef = useRef(createAkashicBus());
   const [state, setState] = useState<LiveConnectionState>('connecting');
   const [stateMessage, setStateMessage] = useState('');
   const [statistics, setStatistics] = useState<LiveStatistics | null>(null);
@@ -195,6 +200,9 @@ export default function LivePlayerApp(): JSX.Element {
           setStreamUri(ev.uri);
           setQuality(ev.quality);
           if (ev.availableQualities.length > 0) setQualities(ev.availableQualities);
+          break;
+        case 'akashic':
+          pushAkashicBatch(akashicBusRef.current, ev.batch);
           break;
         case 'comments':
           handleLiveComments(ev.comments);
@@ -311,6 +319,8 @@ export default function LivePlayerApp(): JSX.Element {
     }
     let cancelled = false;
     setActivationRequired(false);
+    setAkashicInfo(null);
+    akashicBusRef.current.buffer.length = 0;
     window.nndd
       .invoke<LiveStartResult>(IpcChannel.LIVE_START, programId)
       .then((r) => {
@@ -327,6 +337,7 @@ export default function LivePlayerApp(): JSX.Element {
         // 周辺取得モードは必要になった時点で取得するので、ここでは取得中にしない
         setArchiveLoading(r.commentFetchMode === 'all');
         setProgram(r.program);
+        setAkashicInfo(r.akashic.enabled ? r.akashic : null);
         document.title = `${r.program.title} - NNDD-RE Live`;
         // 番組情報より先にコメントウィンドウが開いていたら、番組情報込みで送り直す
         if (commentWindowOpenRef.current) sendSnapshotRef.current();
@@ -648,6 +659,15 @@ export default function LivePlayerApp(): JSX.Element {
             }}
             className={['absolute inset-0 w-full h-full object-contain', rewinding ? 'opacity-0' : ''].join(' ')}
           />
+          {akashicInfo && program && !isTimeshift && (
+            <AkashicLayer
+              key={program.programId}
+              bus={akashicBusRef.current}
+              info={akashicInfo}
+              program={program}
+              videoEl={videoEl}
+            />
+          )}
           {/*
             放送者が指定するコメントの表示レイアウト (comment_mode) に合わせる。
             splitTop: 映像の下半分を放送者が使うため、コメントは上半分だけに流す (領域を半分にして描画エンジンにも縮小を伝える)
