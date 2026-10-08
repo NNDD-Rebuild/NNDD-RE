@@ -431,6 +431,8 @@ export function LiveView(): JSX.Element {
     subTab !== 'followReserved' &&
     programs.length < total &&
     !loading;
+  const loadMore = useCallback(() => void load(subTab, null, true, programs.length), [load, subTab, programs.length]);
+  const onNearEnd = canLoadMore ? loadMore : undefined;
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -655,6 +657,7 @@ export function LiveView(): JSX.Element {
           items={cardItems}
           layout="grid"
           scrollElementRef={listScrollRef}
+          onNearEnd={onNearEnd}
           getKey={(c) => c.key}
           renderItem={(c) => (
             <ProgramCard

@@ -21,6 +21,8 @@ interface VirtualizedItemListProps<T> {
   renderItem: (item: T) => React.ReactNode;
   /** 既存のスクロールコンテナ (overflow-auto) の ref をそのまま渡す */
   scrollElementRef: React.RefObject<HTMLDivElement>;
+  /** 最後から2行目が表示範囲に入ったとき (入っている間は onNearEnd の参照が変わるたび) 呼ぶ。自動読み込み用 */
+  onNearEnd?: () => void;
 }
 
 export function VirtualizedItemList<T>({
@@ -28,7 +30,8 @@ export function VirtualizedItemList<T>({
   layout,
   getKey,
   renderItem,
-  scrollElementRef
+  scrollElementRef,
+  onNearEnd
 }: VirtualizedItemListProps<T>): JSX.Element | null {
   const [containerWidth, setContainerWidth] = useState(0);
 
@@ -85,6 +88,11 @@ export function VirtualizedItemList<T>({
       return size;
     }
   });
+
+  const visibleEndRow = virtualizer.range?.endIndex ?? -1;
+  useEffect(() => {
+    if (onNearEnd && rowCount > 0 && visibleEndRow >= rowCount - 2) onNearEnd();
+  }, [onNearEnd, visibleEndRow, rowCount]);
 
   // コンテナ幅計測前は描画しない (列数0での誤描画を避ける)
   if (containerWidth === 0 || items.length === 0) return null;
