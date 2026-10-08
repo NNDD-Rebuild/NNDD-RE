@@ -222,6 +222,50 @@ live.nicovideo.jp/watch/lvXXX の #embedded-data (data-props)
 - **転送コメント** (`forwarded_chat`): 別番組から転送されたコメント。コメントリストで「転送」の表示を付ける。コラボは画面にも流し、クルーズはリストのみ
 - **タイムシフト予約数**: `state.statistics` の `timeshift_reservations`。番組情報とコメントウィンドウのヘッダーに出す
 
+#### ニコ生ゲーム (akashic) とニコ生クルーズ
+
+ニコ生クルーズの「次の行き先を選ぶ投票」と「下部の番組情報 (フォロー星ボタン付き)」は HTML ではなく、**ニコ生ゲーム (akashic) の canvas ゲーム**として描画される。`enquete` / `move_order` は使われない。公式プレイヤーと同じく、公式 CDN のゲームコードをそのまま実行して映像の上に重ねている (クルーズ以外のニコ生ゲームも同じ仕組みで動く見込み)。
+
+**データの流れ**
+
+1. watch ページの embedded-data から `akashic.enabled` と `site.coe.coeContentBaseUrl` を読む (`LiveWatchPage.ts` → `LiveStartResult.akashic`)。ログイン中ならユーザー ID・名前・プレミアムかどうかも渡す
+2. 視聴 WebSocket の `akashicMessageServer.viewUri` (mpn) を `AkashicClient` が購読する。形式はコメントサーバーと同じ NDGR で、`NicoliveState.akashic_state` (`epoch` / `join` / `continuation` / `shared`) にゲームの進行イベントが入る。`NdgrClient` の `readSnapshot` で、接続時の状態スナップショット (`backward.snapshot`) も先に読む (途中参加でも進行中のゲームを復元するため)
+3. `LiveEvent` の `akashic` で renderer へ送り、`AkashicLayer` が sandbox 付き iframe (`public/akashic/akashic-host.html`。親の CSP を引き継がないよう別文書にしている) の中のホスト (`akashic-host.js`) に postMessage で渡す
+4. ホストは公式 CDN のランタイム (`engineFilesV3_13_4_Canvas.js` など) を読み込み、土台のゲーム (`nicocas/5.0.2.0`) を起動する。イベントは `[32, 2, ":akashic", payload]` として注入する。子ゲーム (クルーズなど) は、土台のゲームが `external.coe.startSession` を呼んだときに起動する
+
+**イベントの適用ルール** (ホストの `applyBatch`)
+
+- `epoch` の昇順に適用し、すでに適用した `epoch` 以下は捨てる
+- 接続時のスナップショットは `join` + `shared`、以降は `continuation` + `shared` を適用する (`join` は途中参加者向け、`continuation` は参加済みの視聴者向け、`shared` は全員向け)
+- 途中参加時は、スナップショットの後に過去分の更新が短時間にまとめて届き、子ゲームが立て続けに入れ替わる。起動中に破棄された子ゲームは起動せずに片付ける
+
+**ホストが用意する plugin** (`external.*`)
+
+- `api`: 投票・フォローの HTTP。iframe → 親 → main (`LIVE_AKASHIC_API`、`AkashicApi.ts`) の順に渡し、ログイン済みの Cookie と `X-Frontend-Id: 9` を付けて送る。宛先は https の `nicovideo.jp` ドメインに限る
+  - 投票: `POST {voteBaseURL}/v1/services/cruise/programs/{番組ID}/votes`、body `{"id":"0|1"}`。ゲームは締め切り時に1回だけ送る (選択していなければ送らない)
+  - フォロー: `POST {followBaseURL}/v1/slowly/follow/user/followees/{ユーザーID}`。成功は 202
+- `send`: `nx:open` だけ処理する (http(s) の URL を開く。生放送の URL ならこのアプリのプレイヤーで開く)
+- `nico`: フロントエンド情報・番組・アカウント・視聴状態を返す。`coe`: `startSession` / `exitSession`。`ichiba`・`agvSupplement`・`instanceStorage` は何もしないか、メモリ上だけで動く
+
+**安全面**
+
+- ゲームのコードは外部から読み込んだものなので、preload (`window.nndd`) の無い sandbox 付きの iframe で動かし (本番の file:// は `allow-scripts allow-same-origin`。file:// は 1 ファイルごとに別 origin なので親には届かない。開発サーバーは `allow-scripts` だけ)、ホストの文書自身の CSP でスクリプトの読み込み元を `resource.akashic.coe.nicovideo.jp` に絞る
+- 子ゲームの URL も同じ配信元のものだけ実行する (公式の `trustedChildOrigin` と同じ)。iframe 実行を求める untrusted なゲームは対応しない
+- ゲーム画面が出ている間 (子ゲームの実行中) だけ iframe がマウスを受け取り、それ以外は映像の操作を邪魔しない
+
+**クルーズの仕様 (公式の採取結果、約72秒周期)**
+
+- 投票画面 (「次の行き先を選んでください」→ 締め切りまで5秒のカウントダウン → 結果) → 番組情報パネル (約30秒) の繰り返し。選択肢は2つの番組で、番組のタグが並ぶだけ。結果は整数の %
+- 投票・フォローはログインが必要 (未ログインはサーバーが拒否する)
+- 土台の `nicocas` の版 (5.0.2.0) は公式 (usecase) も固定値で使っている。公式が更新したら `akashic/akashic-host.js` の `NICOCAS_VERSION` を追従させる
+
+**未確認・未対応**
+
+- ログイン状態での投票・フォローの実送信 (応答の形式、`X-Frontend-Id` 以外のヘッダの要否)
+- タイムシフト視聴では表示しない (進行を再現できないため)
+- ゲーム側の `platform` (alert など)・`ichiba`・非 local セッション (playlog サーバが必要) は未対応
+- 音量は映像の `volume` / `muted` に連動 (公式と同じく最大 0.4 倍)
+
 #### タイムシフト予約と通知
 
 - 番組一覧の各カードに「TS予約」、タイムシフト予約一覧に「予約解除」のボタンがある。予約は `POST /api/v2/programs/{id}/timeshift/reservation` (視聴開始はしない)、解除は `DELETE /api/v2/timeshift/reservations?programIds=lv…` (いずれも live2.nicovideo.jp)。エラーコードは `LiveWatchPage.ts` の `TIMESHIFT_ERROR_MESSAGES` で日本語の文面にする
