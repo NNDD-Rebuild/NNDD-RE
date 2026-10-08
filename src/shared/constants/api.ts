@@ -24,11 +24,11 @@ export const NicoApi = {
 
   /** ログインページ */
   LOGIN: 'https://account.nicovideo.jp/login',
-  /** ログイン送信URL */
-  LOGIN_POST:
-    'https://account.nicovideo.jp/api/v1/login?site=niconico&next_url=%2F',
-  /** ログアウトURL */
-  LOGOUT: 'https://secure.nicovideo.jp/secure/logout',
+  /** セッション削除 (ログアウト) API。DELETE。Origin ヘッダ必須 */
+  LOGOUT: 'https://api.id.nicovideo.jp/v1/sessions/me',
+  /** アカウントSPA (api.id) 呼び出し用の X-Frontend-Id / X-Frontend-Version */
+  ACCOUNT_FRONTEND_ID: '8',
+  ACCOUNT_FRONTEND_VERSION: '2',
 
   /** DMC (旧 HLS セッション API) のオリジン */
   DMC_API_BASE: 'https://api.dmc.nico',
