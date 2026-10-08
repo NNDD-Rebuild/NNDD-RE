@@ -28,6 +28,8 @@ import { MyListHeader } from './MyListHeader';
 import { MyListFilterBar } from './MyListFilterBar';
 import { MyListPagination } from './MyListPagination';
 import { MyListItemCell } from './MyListItemCell';
+import type { DownloadKind } from '@shared/types/download';
+import { enqueueDownload } from '../../util/enqueueDownload';
 
 /**
  * マイリストタブ。
@@ -334,14 +336,8 @@ export function MyListView(): JSX.Element {
   const handlePlayAudioOnly = (videoId: string): void => {
     window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, { videoId, audioOnly: true });
   };
-  const handleDownload = (videoId: string, audioOnly?: boolean): void => {
-    const commentOnly = !audioOnly && downloadedIds.has(videoId);
-    window.nndd.invoke(IpcChannel.DOWNLOAD_ENQUEUE, { videoId, commentOnly, audioOnly });
-    showToast(
-      audioOnly ? '音声のみDLリストに追加しました'
-        : commentOnly ? 'コメントのみDLリストに追加しました'
-        : 'DLリストに追加しました'
-    );
+  const handleDownload = (videoId: string, kind?: DownloadKind): void => {
+    showToast(enqueueDownload(videoId, downloadedIds.has(videoId), kind));
   };
   const handleNiconico = (videoId: string): void => {
     window.nndd.invoke(window.nndd.channels.SYS_OPEN_PATH, watchUrl(videoId));

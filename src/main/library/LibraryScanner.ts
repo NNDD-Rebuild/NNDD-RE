@@ -42,6 +42,10 @@ export class LibraryScanner {
       return { added, updated, removed: 0, total };
     }
 
+    // 「コメントのみ」登録の候補 (動画ファイルが無くコメントXMLだけある動画) を拾うための集計
+    const videoIdsWithFile = new Set<string>();
+    const commentXmls: { dir: string; baseName: string; videoId: string; filePath: string }[] = [];
+
     const walk = async (dir: string): Promise<void> => {
       let entries: fs.Dirent[];
       try {
@@ -56,7 +60,18 @@ export class LibraryScanner {
           await walk(p);
         } else if (ent.isFile()) {
           const ext = path.extname(ent.name).toLowerCase();
+          if (ext === '.xml') {
+            const baseName = ent.name.slice(0, -ext.length);
+            const videoId = this.extractVideoId(baseName);
+            // `タイトル - [sm12345].xml` だけがコメントXML ([ThumbInfo] 等は末尾が動画IDではない)
+            if (videoId && baseName.endsWith(`[${videoId}]`)) {
+              commentXmls.push({ dir, baseName, videoId, filePath: p });
+            }
+            continue;
+          }
           if (!this.VIDEO_EXTS.includes(ext)) continue;
+          const fileVideoId = this.extractVideoId(ent.name.replace(/\.[^.]+$/, ''));
+          if (fileVideoId && !ent.name.includes('[Nicowari]')) videoIdsWithFile.add(fileVideoId);
           total++;
           onProgress?.(p, total);
           const result = await this.registerOne(library, p);
@@ -68,9 +83,25 @@ export class LibraryScanner {
 
     await walk(root);
 
+    // 動画ファイルが無くコメントXMLと [ThumbInfo].xml だけある動画を「コメントのみ」として登録する
+    for (const c of commentXmls) {
+      if (videoIdsWithFile.has(c.videoId) || library.videoDao.getByKey(c.videoId)) continue;
+      const result = this.registerCommentOnly(library, c.dir, c.baseName, c.filePath);
+      if (result === 'added') added++;
+      else if (result === 'updated') updated++;
+    }
+
     // ディスク上から消えた動画をDBからも削除する。
     let removed = 0;
     for (const video of library.videoDao.list()) {
+      if (!fs.existsSync(video.uri)) {
+        library.videoDao.delete(video.id);
+        removed++;
+      }
+    }
+
+    // コメントXMLが無くなった「コメントのみ」登録も削除する
+    for (const video of library.videoDao.listCommentOnly()) {
       if (!fs.existsSync(video.uri)) {
         library.videoDao.delete(video.id);
         removed++;
@@ -177,6 +208,44 @@ export class LibraryScanner {
 
     const dirId = library.videoDao.ensureFileDir(dir);
     library.videoDao.insertOrUpdate(video, dirId);
+    return existing ? 'updated' : 'added';
+  }
+
+  /**
+   * 動画ファイルを持たない動画を、コメントXMLを uri として登録する。
+   * `[ThumbInfo].xml` が無ければ動画の情報が分からないので登録しない。
+   */
+  private static registerCommentOnly(
+    library: LibraryManager,
+    dir: string,
+    baseName: string,
+    commentXmlPath: string
+  ): 'added' | 'updated' | 'skipped' {
+    const meta = this.readThumbInfoXml(path.join(dir, `${baseName}${VideoFileSuffix.THUMB_INFO_XML}`));
+    if (!meta) return 'skipped';
+    const videoId = this.extractVideoId(baseName);
+    if (!videoId) return 'skipped';
+    const existing = library.videoDao.getByKey(videoId, true);
+    const stat = fs.statSync(commentXmlPath);
+    const thumbNew = path.join(dir, `${baseName}${VideoFileSuffix.THUMB_IMAGE}`);
+    const thumbLegacy = path.join(dir, `${baseName}${VideoFileSuffix.THUMB_IMAGE_LEGACY}`);
+    const video: NNDDREVideo = {
+      id: existing?.id ?? 0,
+      uri: commentXmlPath,
+      videoName: path.basename(commentXmlPath),
+      tagStrings: meta.tags,
+      modificationDate: stat.mtime,
+      creationDate: existing?.creationDate ?? (stat.birthtime || stat.ctime),
+      thumbUrl: fs.existsSync(thumbNew) ? thumbNew : fs.existsSync(thumbLegacy) ? thumbLegacy : '',
+      playCount: existing?.playCount ?? 0,
+      time: meta.length,
+      lastPlayDate: existing?.lastPlayDate ?? null,
+      yetReading: existing?.yetReading ?? true,
+      pubDate: meta.pubDate,
+      isFavorite: existing?.isFavorite ?? false,
+      description: meta.description
+    };
+    library.videoDao.insertOrUpdate(video, library.videoDao.ensureFileDir(dir));
     return existing ? 'updated' : 'added';
   }
 

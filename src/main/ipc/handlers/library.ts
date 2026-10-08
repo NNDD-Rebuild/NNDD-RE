@@ -26,6 +26,12 @@ export function registerLibraryHandlers(ctx: IpcHandlerContext): void {
     });
   });
 
+  // 「コメントのみ」で取得した動画 (コメントXMLが残っているものだけ)
+  ipcMain.handle(IpcChannel.LIBRARY_LIST_COMMENT_ONLY, async () => {
+    const fsmod = await import('node:fs');
+    return library.videoDao.listCommentOnly().filter((v) => fsmod.existsSync(v.uri));
+  });
+
   ipcMain.handle(IpcChannel.LIBRARY_GET, (_e, id: number) => {
     return library.videoDao.getById(id);
   });

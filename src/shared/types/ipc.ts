@@ -6,6 +6,7 @@
 export const IpcChannel = {
   // ライブラリ
   LIBRARY_LIST: 'nndd:library:list',
+  LIBRARY_LIST_COMMENT_ONLY: 'nndd:library:listCommentOnly',
   LIBRARY_GET: 'nndd:library:get',
   LIBRARY_DELETE: 'nndd:library:delete',
   LIBRARY_SCAN: 'nndd:library:scan',

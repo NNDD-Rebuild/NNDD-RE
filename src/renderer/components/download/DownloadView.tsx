@@ -266,8 +266,8 @@ export function DownloadView(): JSX.Element {
                       </span>
                     )}
                     {it.isCommentOnly && (
-                      <span className="ml-1.5 text-xs px-1 py-0.5 rounded bg-nndd-border" title="コメントのみ再取得">
-                        💬 コメントのみ
+                      <span className="ml-1.5 text-xs px-1 py-0.5 rounded bg-nndd-border" title={it.isCommentDiff ? 'コメントを差分取得して今コメを更新' : 'コメントのみ再取得'}>
+                        {it.isCommentDiff ? '💬 コメント差分' : '💬 コメントのみ'}
                       </span>
                     )}
                     <span className="text-nndd-subtext ml-2 text-xs">

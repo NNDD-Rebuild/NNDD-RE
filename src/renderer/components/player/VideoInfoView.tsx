@@ -190,7 +190,7 @@ export function VideoInfoView({
   const handleRefetchComments = useCallback(async (): Promise<string | undefined> => {
     if (!videoId) return;
     if (localCommentXmlPath) {
-      // ローカル再生: 全量再取得 + diff マージ → XML 再読み込み
+      // ローカル再生: 差分取得 + 今コメ更新 → XML 再読み込み
       const result = await window.nndd.invoke<{ added: number }>(
         IpcChannel.PAST_COMMENT_REFETCH,
         videoId,

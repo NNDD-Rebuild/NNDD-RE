@@ -10,8 +10,11 @@ import type {
   WatchPageInfo
 } from '@shared/types';
 import { DownloadStatusType } from '@shared/types';
+import { VideoFileSuffix } from '@shared/constants/paths';
+import { isCommentOnlyUri } from '@shared/utils/commentOnly';
 import { WatchInfoHandler } from '../nicovideo/watch/WatchInfoHandler';
 import { CommentClient } from '../nicovideo/comment/CommentClient';
+import { CommentDiffUpdater } from '../nicovideo/comment/CommentDiffUpdater';
 import { YtDlpDownloader } from '../nicovideo/video/YtDlpDownloader';
 import { VideoDownloader } from '../nicovideo/video/VideoDownloader';
 import type { VideoDownloadPhase } from '../nicovideo/video/VideoDownloader';
@@ -56,6 +59,16 @@ export interface EnqueueOptions {
   subDir?: string;
   /** コメントのみ */
   commentOnly?: boolean;
+  /**
+   * 動画だけ取得する (コメント・サムネ・ThumbInfo は取り直さない)。
+   * 「コメントのみ」で取得済みの動画に動画本体を足す用途
+   */
+  videoOnly?: boolean;
+  /**
+   * コメントを差分だけ取得して既存XMLにマージし、今コメ ([NowComment].json) も更新する。
+   * DL済み動画向け。commentOnly を暗黙に有効化する
+   */
+  commentDiff?: boolean;
   /** 音声のみ (.m4a、映像トラックなし) */
   audioOnly?: boolean;
 }
@@ -91,7 +104,16 @@ export class DownloadManager extends EventEmitter {
   }
 
   enqueue(opts: EnqueueOptions): DownloadQueueItem {
-    const baseDir = opts.saveDir ?? this.library.videoDir;
+    // コメントのみ・差分取得、および「コメントのみ」登録済みの動画の動画DLは、既存のコメントXMLの隣に
+    // 書くため、保存先未指定ならライブラリ上の記録と同じフォルダにする
+    let existingVideoPath: string | undefined;
+    if (!opts.saveDir && !opts.subDir) {
+      const existing = this.library.videoDao.getByKey(opts.videoId, true);
+      if (existing && (opts.commentOnly || opts.commentDiff || isCommentOnlyUri(existing.uri))) {
+        existingVideoPath = existing.uri;
+      }
+    }
+    const baseDir = opts.saveDir ?? (existingVideoPath ? path.dirname(existingVideoPath) : this.library.videoDir);
     const saveDir = opts.subDir
       ? path.join(baseDir, LocalFileNaming.sanitize(opts.subDir) || opts.subDir)
       : baseDir;
@@ -104,7 +126,9 @@ export class DownloadManager extends EventEmitter {
       message: '',
       retryCount: 0,
       saveDir,
-      isCommentOnly: opts.commentOnly ?? false,
+      isCommentOnly: Boolean(opts.commentOnly || opts.commentDiff),
+      isCommentDiff: opts.commentDiff ?? false,
+      isVideoOnly: opts.videoOnly ?? false,
       isAudioOnly: opts.audioOnly ?? false,
       startTime: null,
       endTime: null,
@@ -270,6 +294,47 @@ export class DownloadManager extends EventEmitter {
     }
   }
 
+  /** ライブラリ上の動画ファイル名から拡張子を除いたもの。同じフォルダにない・未登録なら null */
+  private existingBaseName(videoId: string, baseDir: string): string | null {
+    const uri = this.library.videoDao.getByKey(videoId, true)?.uri;
+    if (!uri || path.dirname(uri) !== baseDir) return null;
+    return path.basename(uri, path.extname(uri));
+  }
+
+  /**
+   * 「コメントのみ」で取得した動画をライブラリに登録する。uri はコメントXML。
+   * すでに動画ファイルを持つ記録があれば何もしない。コメントのみの記録があれば
+   * 再生回数などを引き継いで情報だけ更新する。
+   */
+  private registerCommentOnly(
+    watch: WatchPageInfo,
+    baseDir: string,
+    baseName: string,
+    commentXmlPath: string
+  ): void {
+    const existing = this.library.videoDao.getByKey(watch.videoId, true);
+    if (existing && !isCommentOnlyUri(existing.uri)) return;
+    if (!fs.existsSync(commentXmlPath)) return;
+    const now = new Date();
+    const video: NNDDREVideo = {
+      id: existing?.id ?? 0,
+      uri: commentXmlPath,
+      videoName: `${baseName}${VideoFileSuffix.COMMENT_XML}`,
+      tagStrings: watch.tags,
+      modificationDate: now,
+      creationDate: existing?.creationDate ?? now,
+      thumbUrl: path.join(baseDir, LocalFileNaming.thumbImageFileName(watch.title, watch.videoId)),
+      playCount: existing?.playCount ?? 0,
+      time: watch.duration,
+      lastPlayDate: existing?.lastPlayDate ?? null,
+      yetReading: existing?.yetReading ?? true,
+      pubDate: watch.registeredAt ? new Date(watch.registeredAt) : null,
+      isFavorite: existing?.isFavorite ?? false,
+      description: watch.description ?? ''
+    };
+    this.library.videoDao.insertOrUpdate(video, this.library.videoDao.ensureFileDir(baseDir));
+  }
+
   private async runItem(item: DownloadQueueItem): Promise<void> {
     const ac = new AbortController();
     this.running.set(item.id, ac);
@@ -285,8 +350,19 @@ export class DownloadManager extends EventEmitter {
 
       const baseDir = item.saveDir;
       fs.mkdirSync(baseDir, { recursive: true });
-      const baseName = LocalFileNaming.baseName(watch.title, watch.videoId);
-      const skipComments = item.isAudioOnly && (getConfigStore().get('skipCommentsOnAudioOnly') ?? false);
+      // 動画のみ指定 (「コメントのみ」取得済みへの動画追加) は、動画の改題でファイル名がずれていても
+      // 既存のコメントXML等と同じベース名で保存し、再生時に付帯ファイルが見つかるようにする
+      const baseName = (item.isVideoOnly ? this.existingBaseName(watch.videoId, baseDir) : null)
+        ?? LocalFileNaming.baseName(watch.title, watch.videoId);
+      // 差分取得は、動画の改題でファイル名がずれていても既存のコメントXMLへマージできるよう
+      // ライブラリ上の動画ファイル名 (拡張子除く) を基準にする
+      const diffBaseName = item.isCommentDiff
+        ? this.existingBaseName(watch.videoId, baseDir)
+        : null;
+      const commentXmlPath = path.join(baseDir, diffBaseName ? `${diffBaseName}${VideoFileSuffix.COMMENT_XML}` : LocalFileNaming.commentXmlFileName(watch.title, watch.videoId));
+      const ownerXmlPath = path.join(baseDir, diffBaseName ? `${diffBaseName}${VideoFileSuffix.OWNER_COMMENT_XML}` : LocalFileNaming.ownerCommentXmlFileName(watch.title, watch.videoId));
+      const nowCommentJsonPath = path.join(baseDir, diffBaseName ? `${diffBaseName}${VideoFileSuffix.NOW_COMMENT_JSON}` : LocalFileNaming.nowCommentJsonFileName(watch.title, watch.videoId));
+      const skipComments = item.isVideoOnly || (item.isAudioOnly && (getConfigStore().get('skipCommentsOnAudioOnly') ?? false));
       // DL途中で設定が変わっても取得処理と完了検証の判定がずれないよう、ここで1回だけ読む
       const downloadAllComments = getConfigStore().get('downloadAllComments') ?? false;
 
@@ -297,13 +373,28 @@ export class DownloadManager extends EventEmitter {
       // 切れて失敗し、DL後検証が今コメJSON不足で commentOnly を再投入してしまうため
       // [NowComment].json: fetchComments (ストリーミング今コメ相当) の no 一覧を保存
       // → ローカル再生時に fetchAllComments XML から今コメを再現するために使用
-      if (!skipComments) {
+      if (!skipComments && item.isCommentDiff) {
+        // 差分取得: 設定「全コメントDL」に関わらず、既存XMLの最新コメントに届くまで遡ってマージする
+        try {
+          await CommentDiffUpdater.update(
+            watch,
+            { commentXml: commentXmlPath, ownerXml: ownerXmlPath, nowJson: nowCommentJsonPath },
+            {
+              refreshWatch: () => WatchInfoHandler.fetchWatchInfoRaw(item.videoId, true),
+              signal: ac.signal,
+              onProgress: (msg) => {
+                item.message = msg;
+                this.emit('change', item);
+              }
+            }
+          );
+        } catch (e) {
+          log.warn('comment diff failed (continuing):', e);
+        }
+      } else if (!skipComments) {
       try {
         const nowComments = await CommentClient.fetchComments(watch);
-        LocalFileHandler.writeNowCommentJson(
-          path.join(baseDir, LocalFileNaming.nowCommentJsonFileName(watch.title, watch.videoId)),
-          nowComments.map((c) => c.no)
-        );
+        LocalFileHandler.writeNowCommentJson(nowCommentJsonPath, nowComments.map((c) => c.no));
         // 全件取得オフ時は下のfetchAllCommentsブロックが実行されず通常コメントXMLが
         // 生成されないため、今コメの内容をそのまま通常コメントXMLとしても書き出す
         if (!downloadAllComments) {
@@ -312,10 +403,7 @@ export class DownloadManager extends EventEmitter {
             watch.commentThreads[0]?.id ??
             '';
           LocalFileHandler.writeCommentXml(
-            path.join(
-              baseDir,
-              LocalFileNaming.commentXmlFileName(watch.title, watch.videoId)
-            ),
+            commentXmlPath,
             nowComments.filter((c) => c.fork !== 'owner'),
             threadId,
             watch.videoId,
@@ -324,16 +412,7 @@ export class DownloadManager extends EventEmitter {
           const ownerNowComments = nowComments.filter((c) => c.fork === 'owner');
           const ownerThread =
             watch.commentThreads.find((t) => t.fork === 'owner')?.id ?? '';
-          LocalFileHandler.writeCommentXml(
-            path.join(
-              baseDir,
-              LocalFileNaming.ownerCommentXmlFileName(watch.title, watch.videoId)
-            ),
-            ownerNowComments,
-            ownerThread,
-            watch.videoId,
-            'owner'
-          );
+          LocalFileHandler.writeCommentXml(ownerXmlPath, ownerNowComments, ownerThread, watch.videoId, 'owner');
         }
       } catch (e) {
         log.warn('now comment fetch failed (continuing):', e);
@@ -341,7 +420,7 @@ export class DownloadManager extends EventEmitter {
       } // skipComments
 
       // コメント全量取得 (過去ログ含む — fetchAllComments でループ遡り)
-      if (!skipComments && downloadAllComments) {
+      if (!skipComments && !item.isCommentDiff && downloadAllComments) {
       try {
         const comments = await CommentClient.fetchAllComments(watch, {
           includeEasy: getConfigStore().get('downloadEasyComments') ?? false,
@@ -359,10 +438,7 @@ export class DownloadManager extends EventEmitter {
           watch.commentThreads[0]?.id ??
           '';
         LocalFileHandler.writeCommentXml(
-          path.join(
-            baseDir,
-            LocalFileNaming.commentXmlFileName(watch.title, watch.videoId)
-          ),
+          commentXmlPath,
           comments.filter((c) => c.fork !== 'owner'),
           threadId,
           watch.videoId,
@@ -371,41 +447,34 @@ export class DownloadManager extends EventEmitter {
         const ownerComments = comments.filter((c) => c.fork === 'owner');
         const ownerThread =
           watch.commentThreads.find((t) => t.fork === 'owner')?.id ?? '';
-        LocalFileHandler.writeCommentXml(
-          path.join(
-            baseDir,
-            LocalFileNaming.ownerCommentXmlFileName(watch.title, watch.videoId)
-          ),
-          ownerComments,
-          ownerThread,
-          watch.videoId,
-          'owner'
-        );
+        LocalFileHandler.writeCommentXml(ownerXmlPath, ownerComments, ownerThread, watch.videoId, 'owner');
       } catch (e) {
         log.warn('comment download failed (continuing):', e);
       }
       } // downloadAllComments
 
-      // サムネ取得
-      this.updateStatus(item, DownloadStatusType.THUMB);
-      try {
-        const thumbUrl = watch.thumbnail.largeUrl || watch.thumbnail.url;
-        await LocalFileHandler.downloadThumbnail(
-          thumbUrl,
-          path.join(
-            baseDir,
-            LocalFileNaming.thumbImageFileName(watch.title, watch.videoId)
-          )
-        );
-        LocalFileHandler.writeThumbInfoXml(
-          path.join(
-            baseDir,
-            LocalFileNaming.thumbInfoXmlFileName(watch.title, watch.videoId)
-          ),
-          watch
-        );
-      } catch (e) {
-        log.warn('thumb download failed (continuing):', e);
+      // サムネ取得 (動画のみ指定では取り直さない)
+      if (!item.isVideoOnly) {
+        this.updateStatus(item, DownloadStatusType.THUMB);
+        try {
+          const thumbUrl = watch.thumbnail.largeUrl || watch.thumbnail.url;
+          await LocalFileHandler.downloadThumbnail(
+            thumbUrl,
+            path.join(
+              baseDir,
+              LocalFileNaming.thumbImageFileName(watch.title, watch.videoId)
+            )
+          );
+          LocalFileHandler.writeThumbInfoXml(
+            path.join(
+              baseDir,
+              LocalFileNaming.thumbInfoXmlFileName(watch.title, watch.videoId)
+            ),
+            watch
+          );
+        } catch (e) {
+          log.warn('thumb download failed (continuing):', e);
+        }
       }
 
       // 動画ダウンロード (コメントのみモードでなければ)
@@ -413,7 +482,7 @@ export class DownloadManager extends EventEmitter {
         const ext = item.isAudioOnly ? 'm4a' : 'mp4';
         const outputPath = path.join(
           baseDir,
-          LocalFileNaming.videoFileName(watch.title, watch.videoId, ext)
+          `${baseName}.${ext}`
         );
 
         this.updateStatus(item, DownloadStatusType.VIDEO);
@@ -443,11 +512,26 @@ export class DownloadManager extends EventEmitter {
         this.library.videoDao.insertOrUpdate(video, dirId);
       }
 
+      // コメントのみ: 動画ファイルが無い動画をライブラリの「コメントのみ」タブに出すため、
+      // コメントXMLを uri とした記録を登録・更新する (動画ファイルありの記録は触らない)
+      if (item.isCommentOnly) {
+        try {
+          this.registerCommentOnly(
+            watch,
+            baseDir,
+            diffBaseName ?? baseName,
+            commentXmlPath
+          );
+        } catch (e) {
+          log.warn('comment-only library register failed (continuing):', e);
+        }
+      }
+
       // ファイル検証: 不足ファイルがあれば補完キューに追加
       if (!item.isCommentOnly) {
         const videoPath = path.join(
           baseDir,
-          LocalFileNaming.videoFileName(watch.title, watch.videoId, item.isAudioOnly ? 'm4a' : 'mp4')
+          `${baseName}.${item.isAudioOnly ? 'm4a' : 'mp4'}`
         );
         if (!fs.existsSync(videoPath)) {
           throw new Error(`動画ファイルが見つかりません (DL後検証): ${videoPath}`);
@@ -459,12 +543,12 @@ export class DownloadManager extends EventEmitter {
             const p = path.join(baseDir, LocalFileNaming.commentXmlFileName(watch.title, watch.videoId));
             if (!fs.existsSync(p)) missingSecondary.push('コメントXML');
           }
-          const nowCommentPath = path.join(baseDir, LocalFileNaming.nowCommentJsonFileName(watch.title, watch.videoId));
+          const nowCommentPath = path.join(baseDir, `${baseName}${VideoFileSuffix.NOW_COMMENT_JSON}`);
           if (!fs.existsSync(nowCommentPath)) missingSecondary.push('今コメJSON');
         }
-        const thumbInfoPath = path.join(baseDir, LocalFileNaming.thumbInfoXmlFileName(watch.title, watch.videoId));
+        const thumbInfoPath = path.join(baseDir, `${baseName}${VideoFileSuffix.THUMB_INFO_XML}`);
         if (!fs.existsSync(thumbInfoPath)) missingSecondary.push('ThumbInfo');
-        const thumbImagePath = path.join(baseDir, LocalFileNaming.thumbImageFileName(watch.title, watch.videoId));
+        const thumbImagePath = path.join(baseDir, `${baseName}${VideoFileSuffix.THUMB_IMAGE}`);
         if (!fs.existsSync(thumbImagePath)) missingSecondary.push('サムネ');
 
         if (missingSecondary.length > 0) {

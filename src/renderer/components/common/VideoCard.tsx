@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import type { DownloadKind } from '@shared/types/download';
 import { AddToPlaylistMenuItem } from './AddToPlaylistMenuItem';
 
 /**
@@ -32,7 +33,7 @@ interface Props {
   data: VideoCardData;
   onPlay?: (videoId: string) => void;
   /** ダウンロード。第2引数 true で音声のみDL */
-  onDownload?: (videoId: string, audioOnly?: boolean) => void;
+  onDownload?: (videoId: string, kind?: DownloadKind) => void;
   onOpenInfo?: (videoId: string) => void;
   /** ニコニコで開く */
   onNiconico?: (videoId: string) => void;
@@ -82,9 +83,14 @@ export function VideoCard({
       {onPlayAudioOnly && (
         <MenuItem onClick={() => { onPlayAudioOnly(data.videoId); setCtxMenu(null); }}>♪ 音声のみ再生</MenuItem>
       )}
+      {onDownload && isDownloaded && (
+        <MenuItem onClick={() => { onDownload(data.videoId, 'commentDiff'); setCtxMenu(null); }}>
+          💬 コメント差分取得 (今コメ更新)
+        </MenuItem>
+      )}
       {onDownload && (
         <MenuItem onClick={() => { onDownload(data.videoId); setCtxMenu(null); }}>
-          {isDownloaded ? '💬 コメント再取得' : '⬇ ダウンロード'}
+          {isDownloaded ? '💬 コメント全件再取得' : '⬇ ダウンロード'}
         </MenuItem>
       )}
       {onNiconico && (
@@ -415,7 +421,7 @@ function Actions({
 }: {
   data: VideoCardData;
   onPlay?: (id: string) => void;
-  onDownload?: (id: string, audioOnly?: boolean) => void;
+  onDownload?: (id: string, kind?: DownloadKind) => void;
   onOpenInfo?: (id: string) => void;
   onNiconico?: (id: string) => void;
   onUserPage?: (userId: string) => void;
@@ -485,7 +491,7 @@ function DownloadSplitButton({
 }: {
   videoId: string;
   isDownloaded: boolean;
-  onDownload: (videoId: string, audioOnly?: boolean) => void;
+  onDownload: (videoId: string, kind?: DownloadKind) => void;
 }): JSX.Element {
   const [menuPos, setMenuPos] = useState<{ x: number; y: number } | null>(null);
   const btnRef = useRef<HTMLButtonElement>(null);
@@ -499,7 +505,7 @@ function DownloadSplitButton({
       <button
         onClick={() => onDownload(videoId)}
         className={`nndd-card-actions-btn text-xs px-2 py-0.5 rounded-l ${baseCls}`}
-        title={isDownloaded ? 'コメントのみ再取得' : 'ダウンロード'}
+        title={isDownloaded ? 'コメントのみ再取得 (全件)' : 'ダウンロード'}
       >
         DL
       </button>
@@ -520,10 +526,26 @@ function DownloadSplitButton({
       </button>
       {menuPos && (
         <ContextMenuPopup x={menuPos.x} y={menuPos.y} onClose={() => setMenuPos(null)}>
-          <MenuItem onClick={() => { onDownload(videoId, false); setMenuPos(null); }}>
-            ⬇ 通常ダウンロード
-          </MenuItem>
-          <MenuItem onClick={() => { onDownload(videoId, true); setMenuPos(null); }}>
+          {isDownloaded ? (
+            <>
+              <MenuItem onClick={() => { onDownload(videoId, 'commentDiff'); setMenuPos(null); }}>
+                💬 コメント差分取得 (今コメ更新)
+              </MenuItem>
+              <MenuItem onClick={() => { onDownload(videoId, 'comment'); setMenuPos(null); }}>
+                💬 コメント全件再取得
+              </MenuItem>
+            </>
+          ) : (
+            <>
+              <MenuItem onClick={() => { onDownload(videoId); setMenuPos(null); }}>
+                ⬇ 通常ダウンロード
+              </MenuItem>
+              <MenuItem onClick={() => { onDownload(videoId, 'comment'); setMenuPos(null); }}>
+                💬 コメントのみダウンロード
+              </MenuItem>
+            </>
+          )}
+          <MenuItem onClick={() => { onDownload(videoId, 'audio'); setMenuPos(null); }}>
             ♪ 音声のみダウンロード
           </MenuItem>
         </ContextMenuPopup>

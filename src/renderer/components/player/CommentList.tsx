@@ -361,7 +361,7 @@ export function CommentList({
             onClick={handleRefetch}
             disabled={refetching}
             className="text-xs text-nndd-subtext hover:text-nndd-text shrink-0 px-1 disabled:opacity-50"
-            title="全コメントを再取得して差分を保存"
+            title="コメントを差分取得して保存 (今コメも更新)"
           >
             {refetching ? '取得中…' : '再取得'}
           </button>

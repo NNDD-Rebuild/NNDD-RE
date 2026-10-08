@@ -15,6 +15,8 @@ import { useWatchedIds } from '@renderer/hooks/useWatchedIds';
 import { useLibraryCheck } from '@renderer/hooks/useLibraryCheck';
 import { extractLiveIdFromInput } from '@shared/utils/liveId';
 import { extractVideoIdFromInput } from '@shared/utils/videoId';
+import type { DownloadKind } from '@shared/types/download';
+import { enqueueDownload } from '../../util/enqueueDownload';
 
 /**
  * 検索タブ。
@@ -256,14 +258,8 @@ export function SearchView(): JSX.Element {
     setActiveTab('follow');
   };
 
-  const handleDownload = (videoId: string, audioOnly?: boolean): void => {
-    const commentOnly = !audioOnly && downloadedIds.has(videoId);
-    window.nndd.invoke(window.nndd.channels.DOWNLOAD_ENQUEUE, { videoId, commentOnly, audioOnly });
-    showToast(
-      audioOnly ? '音声のみDLリストに追加しました'
-        : commentOnly ? 'コメントのみDLリストに追加しました'
-        : 'DLリストに追加しました'
-    );
+  const handleDownload = (videoId: string, kind?: DownloadKind): void => {
+    showToast(enqueueDownload(videoId, downloadedIds.has(videoId), kind));
   };
 
   const handleSave = async (): Promise<void> => {

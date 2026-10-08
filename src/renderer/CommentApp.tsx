@@ -125,7 +125,7 @@ export default function CommentApp(): JSX.Element {
 
   const handleRefetch = useCallback(async (): Promise<string | undefined> => {
     if (!videoId || !localXmlPath) return;
-    // 全量再取得 + diff マージ
+    // 差分取得 + 今コメ更新
     const result = await window.nndd.invoke<{ added: number }>(
       IpcChannel.PAST_COMMENT_REFETCH,
       videoId,

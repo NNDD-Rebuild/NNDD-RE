@@ -1,3 +1,4 @@
+import { isCommentOnlyUri } from '@shared/utils/commentOnly';
 import fs from 'node:fs';
 import { ipcMain } from 'electron';
 import type { Session } from 'electron';
@@ -48,7 +49,11 @@ export function registerVideoHandlers(ctx: IpcHandlerContext): {
     return WatchInfoHandler.fetchWatchInfo(videoId, forceAllowHistory);
   });
 
-  async function openPlayer(params: OpenPlayerParams): Promise<void> {
+  async function openPlayer(rawParams: OpenPlayerParams): Promise<void> {
+    // 「コメントのみ」登録の uri (コメントXML) は再生できないので、ストリーミング再生に回す
+    const params = rawParams.localPath && isCommentOnlyUri(rawParams.localPath)
+      ? { ...rawParams, localPath: undefined, localFiles: undefined, folderPlaylist: undefined }
+      : rawParams;
     // streamUrl 指定 → LANライブラリのHTTPストリームをそのまま再生 (videoId不明のためレジューム対象外)
     if (params.streamUrl) {
       PlayerManager.get().open(params);

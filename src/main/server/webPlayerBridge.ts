@@ -41,6 +41,7 @@ const ALLOWED: Record<string, Guard> = {
   [IpcChannel.LIBRARY_FOLDER_VIDEOS]: pathArg(0),
   // ライブラリ一覧 (読み取りのみ。削除・移動・スキャン等の変更系は許可しない)
   [IpcChannel.LIBRARY_LIST]: anyArgs,
+  [IpcChannel.LIBRARY_LIST_COMMENT_ONLY]: anyArgs,
   [IpcChannel.LIBRARY_FOLDER_LIST]: anyArgs,
   // 動画情報 (シリーズ・関連動画・投稿者アイコン等。ホスト側のニコニコAPIを叩く)
   [IpcChannel.VIDEO_GET_WATCH_INFO]: anyArgs,

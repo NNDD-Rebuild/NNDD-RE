@@ -8,6 +8,8 @@ import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
 import { watchUrl } from '@shared/utils/nicoUrl';
 import { useWatchedIds } from '@renderer/hooks/useWatchedIds';
 import { useLibraryCheck } from '@renderer/hooks/useLibraryCheck';
+import type { DownloadKind } from '@shared/types/download';
+import { enqueueDownload } from '../../util/enqueueDownload';
 
 const ALL_TAG = '';
 
@@ -91,14 +93,8 @@ export function RankingView(): JSX.Element {
   const handlePlay = (videoId: string): void => {
     window.nndd.invoke(window.nndd.channels.VIDEO_OPEN_PLAYER, { videoId });
   };
-  const handleDownload = (videoId: string, audioOnly?: boolean): void => {
-    const commentOnly = !audioOnly && downloadedIds.has(videoId);
-    window.nndd.invoke(window.nndd.channels.DOWNLOAD_ENQUEUE, { videoId, commentOnly, audioOnly });
-    showToast(
-      audioOnly ? '音声のみDLリストに追加しました'
-        : commentOnly ? 'コメントのみDLリストに追加しました'
-        : 'DLリストに追加しました'
-    );
+  const handleDownload = (videoId: string, kind?: DownloadKind): void => {
+    showToast(enqueueDownload(videoId, downloadedIds.has(videoId), kind));
   };
   const handleNiconico = (videoId: string): void => {
     window.nndd.invoke(window.nndd.channels.SYS_OPEN_PATH, watchUrl(videoId));

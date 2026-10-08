@@ -63,6 +63,10 @@ export interface DownloadQueueItem {
   saveDir: string;
   /** コメントのみダウンロードか */
   isCommentOnly: boolean;
+  /** 動画だけ取得するか (コメント・サムネは取り直さない) */
+  isVideoOnly: boolean;
+  /** 既存コメントXMLとの差分だけ取得してマージするか (isCommentOnly 時のみ有効) */
+  isCommentDiff: boolean;
   /** 音声のみダウンロードか */
   isAudioOnly: boolean;
   /** 開始時刻 */
@@ -111,3 +115,12 @@ export interface Schedule {
   /** 最終実行 */
   lastRun: Date | null;
 }
+
+/**
+ * 動画カードの DL ボタンが選べるダウンロード種別。
+ * - audio: 音声のみ (.m4a)
+ * - comment: コメントのみ (全件取得して上書き)
+ * - video: 動画だけ (コメント・サムネは取り直さない。「コメントのみ」取得済みの動画向け)
+ * - commentDiff: DL済み動画のコメントを差分だけ取得してマージ + 今コメ更新
+ */
+export type DownloadKind = 'audio' | 'comment' | 'commentDiff' | 'video';

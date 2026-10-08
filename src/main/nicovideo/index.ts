@@ -25,6 +25,7 @@ export { LocalFileHandler, LocalFileNaming } from './video/LocalFileHandler';
 export { CommentClient } from './comment/CommentClient';
 export { CommentCommandParser } from './comment/CommentCommandParser';
 export { CommentXmlReader } from './comment/CommentXmlReader';
+export { CommentDiffUpdater } from './comment/CommentDiffUpdater';
 export { SearchClient } from './search/SearchClient';
 export type { SearchOptions } from './search/SearchClient';
 export { MyListClient } from './mylist/MyListClient';

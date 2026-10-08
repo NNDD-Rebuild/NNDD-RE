@@ -1,5 +1,6 @@
 import type { NNDDREVideo } from '@shared/types';
 import { extractBracketedVideoId } from '@shared/utils/videoId';
+import { isCommentOnlyUri } from '@shared/utils/commentOnly';
 import { NnddDatabase } from '../Database';
 import { Q } from '../schema';
 
@@ -27,9 +28,10 @@ interface VideoRow {
 export class VideoDao {
   constructor(private readonly db: NnddDatabase) {}
 
+  /** 動画ファイルを持つ動画の一覧 (「コメントのみ」登録は含まない) */
   list(): NNDDREVideo[] {
     const rows = this.db.prepare(Q.SELECT_VIDEO_ALL).all() as VideoRow[];
-    return rows.map((r) => this.rowToVideo(r, []));
+    return rows.filter((r) => !isCommentOnlyUri(r.uri)).map((r) => this.rowToVideo(r, []));
   }
 
   /**
@@ -37,7 +39,16 @@ export class VideoDao {
    * 大量データ向けに JOIN ではなく後段でまとめてバルクロードする。
    */
   listWithTags(): NNDDREVideo[] {
-    const rows = this.db.prepare(Q.SELECT_VIDEO_ALL).all() as VideoRow[];
+    return this.withTags((r) => !isCommentOnlyUri(r.uri));
+  }
+
+  /** 「コメントのみ」で取得した (動画ファイルを持たない) 動画の一覧。タグ付き */
+  listCommentOnly(): NNDDREVideo[] {
+    return this.withTags((r) => isCommentOnlyUri(r.uri));
+  }
+
+  private withTags(pick: (r: VideoRow) => boolean): NNDDREVideo[] {
+    const rows = (this.db.prepare(Q.SELECT_VIDEO_ALL).all() as VideoRow[]).filter(pick);
     const result: NNDDREVideo[] = [];
     const tagStmt = this.db.prepare(Q.SELECT_TAGS_BY_VIDEO);
     for (const r of rows) {
@@ -47,11 +58,16 @@ export class VideoDao {
     return result;
   }
 
-  getByKey(key: string): NNDDREVideo | null {
+  /**
+   * @param includeCommentOnly 「コメントのみ」登録 (uri が .xml) も返すか。
+   *   既定は動画ファイルを持つ動画だけ (DL済み判定・再生・スキャンはこちら)
+   */
+  getByKey(key: string, includeCommentOnly = false): NNDDREVideo | null {
     const row = this.db.prepare(Q.SELECT_VIDEO_BY_KEY).get(key) as
       | VideoRow
       | undefined;
     if (!row) return null;
+    if (!includeCommentOnly && isCommentOnlyUri(row.uri)) return null;
     const tags = (
       this.db.prepare(Q.SELECT_TAGS_BY_VIDEO).all(row.id) as { tag: string }[]
     ).map((t) => t.tag);

@@ -2,7 +2,7 @@ import { ipcMain, BrowserWindow } from 'electron';
 import { IpcChannel } from '@shared/types';
 import type { NgListItem, NNDDREComment, WatchPageInfo } from '@shared/types';
 import { getConfigStore } from '../../config/ConfigStore';
-import { WatchInfoHandler, CommentClient, CommentXmlReader } from '../../nicovideo';
+import { WatchInfoHandler, CommentClient, CommentXmlReader, CommentDiffUpdater } from '../../nicovideo';
 import { CommentWindowManager } from '../../player/CommentWindowManager';
 import { createLogger } from '../../util/Logger';
 import type { IpcHandlerContext } from './context';
@@ -102,35 +102,14 @@ export function registerCommentHandlers(ctx: IpcHandlerContext): void {
     }
   );
 
-  // --- 過去コメント差分取得・ローカルXMLにマージ保存 ---
+  // --- コメント差分取得・ローカルXMLにマージ保存 (今コメも更新) ---
   ipcMain.handle(
     IpcChannel.PAST_COMMENT_REFETCH,
     async (_e, videoId: string, xmlPath: string) => {
-      const { LocalFileHandler } = await import('../../nicovideo/video/LocalFileHandler');
-      const watch = await WatchInfoHandler.fetchWatchInfo(videoId);
-      const fresh = await CommentClient.fetchAllComments(watch);
-
-      // 既存XMLを読んで重複排除
-      const existing = CommentXmlReader.readFile(xmlPath);
-      const existingKeys = new Set(existing.map((c) => `${c.thread}:${c.no}`));
-      const diff = fresh.filter((c) => !existingKeys.has(`${c.thread}:${c.no}`));
-
-      if (diff.length > 0) {
-        const merged = [...existing, ...diff];
-        const threadId =
-          watch.commentThreads.find((t) => t.fork === 'main')?.id ??
-          watch.commentThreads[0]?.id ??
-          '';
-        LocalFileHandler.writeCommentXml(
-          xmlPath,
-          merged.filter((c) => c.fork !== 'owner'),
-          threadId,
-          videoId,
-          'main'
-        );
-        log.verbose(`PAST_COMMENT_REFETCH: +${diff.length} new comments`);
-      }
-      return { added: diff.length };
+      const watch = await WatchInfoHandler.fetchWatchInfoRaw(videoId, true);
+      return CommentDiffUpdater.update(watch, CommentDiffUpdater.pathsFromCommentXml(xmlPath), {
+        refreshWatch: () => WatchInfoHandler.fetchWatchInfoRaw(videoId, true)
+      });
     }
   );
 

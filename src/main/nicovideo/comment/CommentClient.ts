@@ -156,6 +156,11 @@ export class CommentClient {
       refreshWatch?: () => Promise<WatchPageInfo>;
       /** 遡り開始時刻 (Unix秒)。未指定なら現在時刻 */
       startWhenUnixSec?: number;
+      /**
+       * 遡りの打ち切り時刻 (Unix秒)。取得済みコメントの最新投稿時刻を渡すと、
+       * その時刻を含む区間まで遡った時点でスレッドの取得を終える (差分取得用)
+       */
+      stopAtUnixSec?: number;
       /** 累積取得件数の上限。到達したら全スレッドの取得を打ち切る */
       maxTotalCount?: number;
     }
@@ -331,6 +336,12 @@ export class CommentClient {
         const earliestSec = earliest.postedAt
           ? Math.floor(new Date(earliest.postedAt).getTime() / 1000)
           : lastTime - 1;
+
+        // 取得済みの区間まで遡った。重複分は呼び出し側で (thread, no) 照合して除く
+        if (options?.stopAtUnixSec && earliestSec <= options.stopAtUnixSec) {
+          log.debug(`thread=${target.id}: reached stopAt at round=${round}`);
+          break;
+        }
 
         if (earliestSec >= lastTime) {
           // 同一秒に1000件以上集中 → 1秒前にスキップして継続

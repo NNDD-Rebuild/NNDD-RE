@@ -1,3 +1,4 @@
+import type { DownloadKind } from '@shared/types/download';
 import { VideoCard, type VideoCardData } from '../common/VideoCard';
 
 /**
@@ -34,7 +35,7 @@ export function MyListItemCell({
   onItemClick: (videoId: string, e: React.MouseEvent) => void;
   onMove: (index: number, dir: -1 | 1) => void;
   onPlay: (videoId: string) => void;
-  onDownload: (videoId: string, audioOnly?: boolean) => void;
+  onDownload: (videoId: string, kind?: DownloadKind) => void;
   onNiconico: (videoId: string) => void;
   onPlayAudioOnly: (videoId: string) => void;
   onRemove: ((videoId: string) => void) | undefined;
