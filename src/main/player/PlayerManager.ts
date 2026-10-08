@@ -1,4 +1,4 @@
-import { BrowserWindow, shell } from 'electron';
+import { BrowserWindow, screen, shell } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import { CommentWindowManager } from './CommentWindowManager';
@@ -34,6 +34,8 @@ export class PlayerManager {
 
   /** window ごとの hideWatchHistory 状態 (partition分離判定用) */
   private windowHideHistory = new WeakMap<BrowserWindow, boolean>();
+  /** 音声のみ用に小型化・リサイズ/最大化ロックしているウィンドウ */
+  private miniLockedWindows = new WeakSet<BrowserWindow>();
 
   /**
    * プレイヤーウィンドウを開く。既存ウィンドウがあれば再利用して新しい動画パラメータを送信。
@@ -56,15 +58,7 @@ export class PlayerManager {
         if (resolved.localPath && !resolved.localFiles) {
           resolved.localFiles = this.resolveLocalFiles(resolved.localPath);
         }
-        if (params.audioOnly) {
-          existing.setMinimumSize(300, 100);
-          existing.setSize(1100, 120);
-        } else {
-          existing.setMinimumSize(640, 400);
-          if (existing.getSize()[1] < 400) {
-            existing.setSize(1440, 900);
-          }
-        }
+        this.applyWindowMode(existing, !!params.audioOnly);
         existing.webContents.send('nndd:player:init', resolved);
         if (!params.autoNext || !existing.isMinimized()) {
           existing.show();
@@ -77,16 +71,21 @@ export class PlayerManager {
     const bgColor = config.get('ui').theme === 'light' ? '#f0f0f0' : '#000000';
 
     const isMini = !!params.audioOnly;
+    const workArea = screen.getPrimaryDisplay().workArea;
     // hideWatchHistory=ON時は Cookie を共有しない一時partitionを使う。
     // persist: プレフィックス無し = メモリセッション (アプリ再起動やwindow破棄で消える)。
     // これで default session の nicovideo.jp Cookie が player の HLS リクエストに送られなくなり、
     // guest access-rights で発行された CloudFront URL が uid 不整合で 403 になるのを回避する。
     const partition = hideHistory ? `nndd-guest-${Date.now()}` : undefined;
     const win = new BrowserWindow({
-      width: isMini ? 1100 : 1440,
-      height: isMini ? 120 : 900,
+      width: Math.min(isMini ? 1100 : 1440, workArea.width),
+      height: Math.min(isMini ? 120 : 900, workArea.height),
       minWidth: isMini ? 300 : 640,
       minHeight: isMini ? 100 : 400,
+      // 音声のみ (ミニ) は最大化・全画面・サイズ変更しても意味がないため無効化
+      resizable: !isMini,
+      maximizable: !isMini,
+      fullscreenable: !isMini,
       autoHideMenuBar: true,
       backgroundColor: bgColor,
       title: 'NNDD-RE Player',
@@ -101,6 +100,7 @@ export class PlayerManager {
       }
     });
     this.windowHideHistory.set(win, hideHistory);
+    if (isMini) this.miniLockedWindows.add(win);
 
     // 概要欄等のリンクを新規BrowserWindowで開こうとするとハンドラ未設定でクラッシュしうるため、
     // 既定の新規ウィンドウ生成を拒否し外部ブラウザで開く。
@@ -168,6 +168,53 @@ export class PlayerManager {
 
     this.windows.set(win.id, win);
     return win;
+  }
+
+  /**
+   * 既存ウィンドウを音声のみ (小型・ロック) / 通常に切り替える。
+   * ロックしていないウィンドウ、特に最大化中のウィンドウには resizable 等を触らない
+   * (最大化中に切り替えるとウィンドウ状態が壊れ、最大化を解除できなくなるため)。
+   */
+  private applyWindowMode(win: BrowserWindow, audioOnly: boolean): void {
+    if (win.isDestroyed()) return;
+    if (audioOnly) {
+      // 最大化・全画面中は音声のみに切り替わってもウィンドウをそのままにする
+      // (全画面は renderer 側が音声のみ画面でも維持し、全画面ボタンで解除できる)
+      if (win.isMaximized() || win.isFullScreen()) return;
+      // 音声のみは最大化・全画面・サイズ変更しても意味がないため無効化。
+      // 非リサイズ化すると setSize が効かない環境があるため、サイズ設定後にロックする
+      win.setResizable(true);
+      win.setMinimumSize(300, 100);
+      this.resizeWithinWorkArea(win, 1100, 120);
+      win.setResizable(false);
+      win.setMaximizable(false);
+      win.setFullScreenable(false);
+      this.miniLockedWindows.add(win);
+    } else if (this.miniLockedWindows.delete(win)) {
+      // 音声のみ用のロックを解除して通常サイズへ戻す
+      win.setResizable(true);
+      win.setMaximizable(true);
+      win.setFullScreenable(true);
+      win.setMinimumSize(640, 400);
+      this.resizeWithinWorkArea(win, 1440, 900);
+    }
+  }
+
+  /**
+   * ウィンドウをディスプレイの作業領域に収まる範囲で指定サイズにする。
+   * 小さい画面でウィンドウがはみ出さないよう、サイズを縮め、位置も作業領域内に寄せる。
+   */
+  private resizeWithinWorkArea(win: BrowserWindow, width: number, height: number): void {
+    const { x, y } = win.getBounds();
+    const wa = screen.getDisplayMatching(win.getBounds()).workArea;
+    const w = Math.min(width, wa.width);
+    const h = Math.min(height, wa.height);
+    win.setBounds({
+      x: Math.max(wa.x, Math.min(x, wa.x + wa.width - w)),
+      y: Math.max(wa.y, Math.min(y, wa.y + wa.height - h)),
+      width: w,
+      height: h
+    });
   }
 
   /**

@@ -604,47 +604,71 @@ export default function PlayerApp(): JSX.Element {
   })();
 
   if (audioOnly) {
+    // 全画面のまま通常→音声のみに切り替わったとき全画面を保つため、
+    // 通常レイアウトと同じ要素構成 (外枠 div > [ドラッグ用overlay枠, containerRef の div]) にして
+    // containerRef の要素を再利用する (別要素になると DOM フルスクリーンが解除される)。
     return (
-      <div className="flex flex-col h-full bg-nndd-bg text-nndd-text select-none">
-        {src && (
-          <VideoPlayer
-            src={src}
-            isHls={isHls}
-            comments={[]}
-            videoRefCallback={setVideoWithRef}
-            pendingSeekRef={pendingSeekRef}
-            videoId={watch?.videoId ?? playInfoRef.current?.videoId}
-            className="w-0 h-0"
-            audioOnly
-            onVideoError={(code) => { handleVideoError(code).catch(console.error); }}
-            onEnded={() => { consecutiveSkipRef.current = 0; advanceToNextVideo(); }}
-          />
-        )}
-        <div className="flex-1 flex items-center px-3 gap-3 min-w-0">
-          <div className="truncate text-sm font-semibold flex-1">
-            ♪ {watch?.title ?? playInfoRef.current?.title ?? ''}
+      <div className="flex h-full bg-nndd-bg text-nndd-text select-none">
+        {false}
+        <div
+          ref={containerRef}
+          className={[
+            'flex-1 flex flex-col min-w-0 min-h-0 relative bg-nndd-bg',
+            isFullscreen && !showControls ? 'cursor-none' : ''
+          ].join(' ')}
+        >
+          {src && (
+            <VideoPlayer
+              src={src}
+              isHls={isHls}
+              comments={[]}
+              videoRefCallback={setVideoWithRef}
+              pendingSeekRef={pendingSeekRef}
+              videoId={watch?.videoId ?? playInfoRef.current?.videoId}
+              className="w-0 h-0"
+              audioOnly
+              onVideoError={(code) => { handleVideoError(code).catch(console.error); }}
+              onEnded={() => { consecutiveSkipRef.current = 0; advanceToNextVideo(); }}
+            />
+          )}
+          <div className="flex-1 flex items-center px-3 gap-3 min-w-0">
+            <div className="truncate text-sm font-semibold flex-1">
+              ♪ {watch?.title ?? playInfoRef.current?.title ?? ''}
+            </div>
           </div>
+          <div
+            className={[
+              'transition-opacity duration-200',
+              isFullscreen ? 'absolute left-0 right-0 bottom-0 z-10' : 'static',
+              !isFullscreen || showControls
+                ? 'opacity-100 pointer-events-auto'
+                : 'opacity-0 pointer-events-none'
+            ].join(' ')}
+          >
+            <VideoController
+              video={video}
+              isLocal={isLocal}
+              showComments={false}
+              onToggleComments={() => {}}
+              hideCommentToggle
+              // 音声のみでは全画面にする意味がないので、全画面中 (動画から引き継いだ場合) だけ解除用に出す
+              onToggleFullscreen={isFullscreen ? toggleFullscreen : undefined}
+              canSkipPrev={canSkipPrev}
+              canSkipNext={canSkipNext}
+              onSkipPrev={skipToPrev}
+              onSkipNext={skipToNext}
+              availableQualities={availableQualities}
+              currentQualityId={selectedQualityId ?? undefined}
+              onQualityChange={(id) => { handleQualityChange(id).catch(console.error); }}
+              audioOnly={audioOnly}
+            />
+          </div>
+          {(loading || error) && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/70 text-white text-xs">
+              {error ?? '読み込み中...'}
+            </div>
+          )}
         </div>
-        <VideoController
-          video={video}
-          isLocal={isLocal}
-          showComments={false}
-          onToggleComments={() => {}}
-          hideCommentToggle
-          canSkipPrev={canSkipPrev}
-          canSkipNext={canSkipNext}
-          onSkipPrev={skipToPrev}
-          onSkipNext={skipToNext}
-          availableQualities={availableQualities}
-          currentQualityId={selectedQualityId ?? undefined}
-          onQualityChange={(id) => { handleQualityChange(id).catch(console.error); }}
-          audioOnly={audioOnly}
-        />
-        {(loading || error) && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/70 text-white text-xs">
-            {error ?? '読み込み中...'}
-          </div>
-        )}
       </div>
     );
   }
