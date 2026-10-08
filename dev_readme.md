@@ -202,6 +202,9 @@ live.nicovideo.jp/watch/lvXXX の #embedded-data (data-props)
 - **カテゴリ別**: `/front/api/pages/recent/v1/programs?tab=…&offset=…&sortOrder=…`。`offset` は件数ではなくページ番号 (1ページ70件)
 - **コメント描画**: niconicomments の流れコメントは vpos の1秒前に右端から出現する。生放送コメントの vpos は投稿した瞬間なので、流れコメントは +1秒して渡す。遅れて届いたリアルタイムのコメントは出現位置を「今」に寄せる (接続直後にまとめて届く直前区間の分は寄せない)
 - **追っかけ再生はプレミアム会員限定**: watchページの `program.isChasePlayEnabled` は会員種別に関係なく `true` になる。一般会員・未ログインで `chasePlay: true` を送ると、公式番組は `NO_PERMISSION`、チャンネル・ユーザー番組は `NO_STREAM_AVAILABLE` で断られる (`chasePlay: false` なら視聴できる)。`LiveSession` は `user.accountType === 'premium'` のときだけ追っかけ再生で要求し、念のため上記エラー時は通常視聴でつなぎ直す。同種の「フラグは会員種別を反映しない」問題は他機能にも起こりうる → 実装前に `nico-account-diff` スキルを参照
+- **低遅延 (LL-HLS) と追っかけ再生の切り替え**: 公式プレイヤーは常に `chasePlay: false` で受信する。このとき HLS は LL-HLS (`TARGETDURATION` 3秒、`PART-TARGET` 0.5秒、`PART-HOLD-BACK` 1秒) で、遅延はライブ端から約1〜2秒になる。`chasePlay: true` だと part の無い6秒セグメントの通常 HLS になり、再生位置の工夫では遅延を詰められない (ブラウザより8秒以上遅れる原因だった)。NNDD-RE は放送中は `chasePlay: false` で始め、巻き戻したいときだけ `changeStream` で `chasePlay: true` に切り替え、「最新」で戻す。公式プレイヤーの「通信モード」(`latency: high | low`) は `chasePlay` に影響せず、どちらも LL-HLS のままだった
+- **低遅延の hls.js 設定**: `liveSyncDuration` を指定すると `PART-HOLD-BACK` より優先されて遅延が固定されるので、低遅延では指定しない (追っかけ再生の通常 HLS だけ `liveSyncDuration: 8` に詰める)
+- **巻き戻しの切り替え** (`LivePlayerApp.tsx` の `rewindToVpos`): 低遅延中のシークバーは、巻き戻せる範囲が無いので番組開始〜現在の仮のバー (`LiveRewindBar.tsx`) にし、5秒以上前へ操作すると追っかけ再生へ切り替える。切り替え直後の新しい Hls は、いったんライブ端付近から再生を始める。その前にシークすると上書きされてライブ端に戻るので、再生を止めたまま (`holdPlaybackRef`) 開始位置への移動が終わるのを待ってからシークし、再生を始める。待つ間は映像・コメントを隠し、つまみを巻き戻し先に留める
 - **遅れ表示**: hls.js はライブ時に最新セグメントより数セグメント手前を再生する。遅れはシーク可能範囲の末尾ではなく `hls.liveSyncPosition` を基準に計算する
 
 #### 放送者の操作・番組状態の表示 (コメントサーバーの state / message)
