@@ -18,8 +18,18 @@ const SEEN_ID_LIMIT = 5000;
 const MAX_FAILURES = 5;
 
 export interface NdgrHandlers {
-  onMessage: (msg: ChunkedMessage) => void;
+  /** fromSnapshot: 接続時点の状態スナップショットから読んだメッセージか (readSnapshot 指定時のみ true になりうる) */
+  onMessage: (msg: ChunkedMessage, fromSnapshot?: boolean) => void;
   onError: (err: unknown) => void;
+}
+
+export interface NdgrOptions {
+  /**
+   * view API が返す状態スナップショット (backward.snapshot) も読む。
+   * 途中参加でも現在の状態 (ニコ生ゲームの進行など) を復元したいときに使う。
+   * スナップショットを読み終えてから segment を開くので、onMessage にはスナップショット → segment の順で届く
+   */
+  readSnapshot?: boolean;
 }
 
 /**
@@ -37,10 +47,12 @@ export class NdgrClient {
   private readonly ac = new AbortController();
   private readonly openedSegments = new Set<string>();
   private readonly seenIds = new Set<string>();
+  private snapshotRead = false;
 
   constructor(
     private readonly viewUri: string,
-    private readonly handlers: NdgrHandlers
+    private readonly handlers: NdgrHandlers,
+    private readonly options: NdgrOptions = {}
   ) {}
 
   start(): void {
@@ -143,18 +155,36 @@ export class NdgrClient {
     while (!this.stopped) {
       try {
         let next: string | null = null;
+        // スナップショットを先に流したいときだけ、それが読み終わるまで segment の購読を遅らせる
+        const deferred: string[] = [];
+        const openOrDefer = (uri: string): void => {
+          if (this.options.readSnapshot && !this.snapshotRead) deferred.push(uri);
+          else this.openSegment(uri);
+        };
         const sep = this.viewUri.includes('?') ? '&' : '?';
         for await (const entry of this.streamProto(`${this.viewUri}${sep}at=${at}`, ChunkedEntrySchema)) {
           const e = entry.entry;
           if (e.case === 'segment') {
-            this.openSegment(e.value.uri);
+            openOrDefer(e.value.uri);
           } else if (e.case === 'previous' && firstRound && at !== 'now') {
             // 接続直後だけ直前区間も読み、コメントリストを空で始めないようにする
-            this.openSegment(e.value.uri);
+            openOrDefer(e.value.uri);
+          } else if (e.case === 'backward' && this.options.readSnapshot && !this.snapshotRead) {
+            const uri = e.value.snapshot?.uri;
+            if (uri) {
+              // 応答はセグメントの区切りまで開いたままなので、終わりを待たずここで読む
+              this.snapshotRead = true;
+              await this.readSnapshotMessages(uri);
+              for (const d of deferred.splice(0)) this.openSegment(d);
+            }
           } else if (e.case === 'next') {
             next = e.value.at.toString();
           }
         }
+        // スナップショットが無かった場合 (backward が来なかった) も、溜めた segment は開く
+        for (const d of deferred.splice(0)) this.openSegment(d);
+        // スナップショットを待つのは接続直後の 1 往復だけ (以降の往復で segment の購読を遅らせない)
+        if (at !== 'now') this.snapshotRead = true;
         if (!next) throw new Error('NDGR view: next.at が返りませんでした');
         if (at !== 'now') firstRound = false;
         at = next;
@@ -172,23 +202,38 @@ export class NdgrClient {
     }
   }
 
+  /** 状態スナップショット (ChunkedMessage の連続) を読み切る。失敗しても segment の購読は続ける */
+  private async readSnapshotMessages(uri: string): Promise<void> {
+    try {
+      for await (const msg of this.streamProto(uri, ChunkedMessageSchema)) {
+        if (this.rememberId(msg)) this.handlers.onMessage(msg, true);
+      }
+    } catch (e) {
+      if (!this.stopped) log.warn('snapshot failed:', e);
+    }
+  }
+
+  /** 初めて見る meta.id なら true (重複配信の除外)。meta.id が無いメッセージは常に true */
+  private rememberId(msg: ChunkedMessage): boolean {
+    const id = msg.meta?.id;
+    if (!id) return true;
+    if (this.seenIds.has(id)) return false;
+    this.seenIds.add(id);
+    if (this.seenIds.size > SEEN_ID_LIMIT) {
+      // Set は挿入順なので先頭から古いものを捨てる
+      const oldest = this.seenIds.values().next().value;
+      if (oldest !== undefined) this.seenIds.delete(oldest);
+    }
+    return true;
+  }
+
   private openSegment(uri: string): void {
     if (this.openedSegments.has(uri)) return;
     this.openedSegments.add(uri);
     void (async () => {
       try {
         for await (const msg of this.streamProto(uri, ChunkedMessageSchema)) {
-          const id = msg.meta?.id;
-          if (id) {
-            if (this.seenIds.has(id)) continue;
-            this.seenIds.add(id);
-            if (this.seenIds.size > SEEN_ID_LIMIT) {
-              // Set は挿入順なので先頭から古いものを捨てる
-              const oldest = this.seenIds.values().next().value;
-              if (oldest !== undefined) this.seenIds.delete(oldest);
-            }
-          }
-          this.handlers.onMessage(msg);
+          if (this.rememberId(msg)) this.handlers.onMessage(msg);
         }
       } catch (e) {
         if (!this.stopped) log.warn('segment failed:', e);

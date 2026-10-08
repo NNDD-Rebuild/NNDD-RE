@@ -1,12 +1,14 @@
 import { ipcMain } from 'electron';
 import { IpcChannel } from '@shared/types';
 import type {
+  LiveAkashicApiRequest,
   LiveCommentWindowMessage,
   LiveRankingParams,
   LiveRecentParams,
   LiveSearchParams
 } from '@shared/types';
 import { LivePlayerManager } from '../../player/LivePlayerManager';
+import { sendAkashicApi } from '../../nicovideo/live/AkashicApi';
 import { LiveCommentWindowManager } from '../../player/LiveCommentWindowManager';
 import { activateTimeshift, cancelTimeshiftReservations, normalizeLiveId, reserveTimeshift } from '../../nicovideo/live/LiveWatchPage';
 import {
@@ -76,6 +78,9 @@ export function registerLiveHandlers(): void {
   ipcMain.handle(IpcChannel.LIVE_CHANGE_QUALITY, (e, quality: string) => {
     LivePlayerManager.get().changeQuality(e.sender.id, String(quality));
   });
+  ipcMain.handle(IpcChannel.LIVE_AKASHIC_API, (_e, req: LiveAkashicApiRequest) =>
+    sendAkashicApi(req)
+  );
   ipcMain.handle(IpcChannel.LIVE_SET_CHASE_PLAY, (e, enabled: boolean) => {
     LivePlayerManager.get().setChasePlay(e.sender.id, Boolean(enabled));
   });

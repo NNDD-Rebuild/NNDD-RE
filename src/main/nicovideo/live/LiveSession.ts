@@ -2,6 +2,7 @@ import type {
   LiveCommentRange,
   LiveEvent,
   LiveNotice,
+  LiveAkashicInfo,
   LiveProgramInfo,
   LiveSsngUpdate,
   LiveStartResult,
@@ -14,6 +15,7 @@ import { NicoHeaders } from '@shared/constants';
 import { NicoContext } from '../NicoContext';
 import { createLogger } from '../../util/Logger';
 import { NdgrClient } from './NdgrClient';
+import { AkashicClient } from './AkashicClient';
 import { chatToComment } from './LiveChatConverter';
 import {
   LIVE_ORIGIN,
@@ -119,6 +121,8 @@ function toSsngUpdate(u: SSNGUpdated): LiveSsngUpdate {
 export class LiveSession {
   private ws: WebSocket | null = null;
   private ndgr: NdgrClient | null = null;
+  /** ニコ生ゲーム (クルーズの行き先投票など) の進行を受ける */
+  private akashic: AkashicClient | null = null;
   private keepSeatTimer: NodeJS.Timeout | null = null;
   private flushTimer: NodeJS.Timeout | null = null;
   private pendingComments: NNDDREComment[] = [];
@@ -138,6 +142,7 @@ export class LiveSession {
   private aroundNdgr: NdgrClient | null = null;
   private viewUri: string | null = null;
   private commentFetchMode: LiveStartResult['commentFetchMode'] = 'all';
+  private akashicInfo: LiveAkashicInfo = { enabled: false, coeContentBaseUrl: '' };
   /** 最後に通知した統計。視聴 WebSocket とコメントサーバーで届く項目が違うので、合成して送る */
   private statistics: LiveStatistics = { viewers: 0, comments: 0 };
 
@@ -151,6 +156,7 @@ export class LiveSession {
   async start(): Promise<LiveStartResult> {
     const page = await fetchLiveWatchPage(this.programId);
     this.program = page.program;
+    this.akashicInfo = page.akashic;
     if (!page.webSocketUrl) throw unavailableError(page);
     // タイムシフト視聴時は視聴WebSocketの URL が .../watch/{id}/timeshift になる
     this.isTimeshift = /\/timeshift(\?|$)/.test(page.webSocketUrl);
@@ -172,7 +178,8 @@ export class LiveSession {
       isTimeshift: this.isTimeshift,
       chasePlay: this.chasePlay,
       chasePlayAvailable: this.chasePlayAvailable,
-      commentFetchMode: this.commentFetchMode
+      commentFetchMode: this.commentFetchMode,
+      akashic: this.akashicInfo
     };
   }
 
@@ -298,6 +305,8 @@ export class LiveSession {
     this.keepSeatTimer = null;
     this.ndgr?.stop();
     this.ndgr = null;
+    this.akashic?.stop();
+    this.akashic = null;
     const ws = this.ws;
     this.ws = null;
     if (ws && ws.readyState <= WebSocket.OPEN) ws.close();
@@ -354,6 +363,17 @@ export class LiveSession {
           });
           this.ndgr.start();
           this.startFlushTimer();
+        }
+        break;
+      case 'akashicMessageServer':
+        // ニコ生ゲーム (クルーズの行き先投票など)。タイムシフトでは進行を再現できないので受けない
+        if (d.viewUri && this.akashicInfo.enabled && !this.isTimeshift && !this.akashic) {
+          this.akashic = new AkashicClient(
+            String(d.viewUri),
+            (batch) => this.emit({ type: 'akashic', batch }),
+            (e) => log.warn('akashic stream failed:', e)
+          );
+          this.akashic.start();
         }
         break;
       case 'statistics':

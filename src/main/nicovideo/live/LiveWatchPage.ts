@@ -1,4 +1,4 @@
-import type { LiveProgramInfo, LiveSupplier } from '@shared/types';
+import type { LiveAkashicInfo, LiveProgramInfo, LiveSupplier } from '@shared/types';
 import { NicoApi, NicoEndpoint, NicoHeaders } from '@shared/constants';
 import { NicoContext } from '../NicoContext';
 import { createLogger } from '../../util/Logger';
@@ -18,6 +18,8 @@ export interface LiveWatchPageInfo {
   accountType: string;
   /** タイムシフト公開状態 (programTimeshift.publication.status: Before / Open 等)。無ければ空 */
   timeshiftPublication: string;
+  /** ニコ生ゲーム (akashic) の実行に必要な情報 */
+  akashic: LiveAkashicInfo;
 }
 
 /** タイムシフトの予約・視聴開始 (確認の上で実行する) が必要なことを示すエラーコード */
@@ -118,7 +120,19 @@ export async function fetchLiveWatchPage(id: string): Promise<LiveWatchPageInfo>
     webSocketUrl: String(props.site?.relive?.webSocketUrl ?? ''),
     isLoggedIn: Boolean(props.user?.isLoggedIn),
     accountType: String(props.user?.accountType ?? ''),
-    timeshiftPublication: String(props.programTimeshift?.publication?.status ?? '')
+    timeshiftPublication: String(props.programTimeshift?.publication?.status ?? ''),
+    akashic: {
+      enabled: Boolean(props.akashic?.enabled),
+      coeContentBaseUrl: String(props.site?.coe?.coeContentBaseUrl ?? ''),
+      account:
+        props.user?.isLoggedIn && props.user.id != null
+          ? {
+              id: String(props.user.id),
+              name: String(props.user.nickname ?? ''),
+              premium: Boolean(props.user.isPremium)
+            }
+          : undefined
+    }
   };
 }
 

@@ -130,6 +130,51 @@ export interface LiveCreatorSupport {
   isAchieved: boolean;
 }
 
+/** ニコ生ゲーム (akashic) を動かすための、watch ページ由来の情報 */
+export interface LiveAkashicInfo {
+  /** この番組でニコ生ゲームが有効か (embedded-data の akashic.enabled) */
+  enabled: boolean;
+  /** 土台のゲーム (nicocas) の置き場 (site.coe.coeContentBaseUrl)。末尾は `/` */
+  coeContentBaseUrl: string;
+  /** ログイン中のユーザー。未ログインなら undefined */
+  account?: { id: string; name: string; premium: boolean };
+}
+
+/** ニコ生ゲーム (akashic) のイベント 1 件。ゲームの実行基盤 (renderer) にそのまま渡す */
+export interface LiveAkashicEvent {
+  type: string;
+  playId: string;
+  ignorable?: boolean;
+  transient?: boolean;
+  parameters?: Record<string, unknown>;
+}
+
+/** ニコ生ゲーム (akashic) の状態更新 1 回分 (mpn の NicoliveState.akashic_state)。epoch の昇順に適用する */
+export interface LiveAkashicBatch {
+  epoch: number;
+  /** 接続時の状態スナップショットから読んだものか。true なら join、false なら continuation を使う */
+  snapshot: boolean;
+  join: LiveAkashicEvent[];
+  continuation: LiveAkashicEvent[];
+  shared: LiveAkashicEvent[];
+}
+
+/** ニコ生ゲームの plugin (external.api) が呼ぶ HTTP 要求。main が Cookie を付けて送る */
+export interface LiveAkashicApiRequest {
+  url: string;
+  method?: string;
+  contentType?: string;
+  queries?: Record<string, string>;
+  headers?: Record<string, string>;
+  body?: unknown;
+}
+
+export interface LiveAkashicApiResponse {
+  status: number;
+  contentType?: string;
+  body: unknown;
+}
+
 export type LiveEvent =
   | { type: 'state'; state: LiveConnectionState; message?: string }
   /** chasePlay: この stream が追っかけ再生 (通常 HLS) か低遅延 (LL-HLS) か */
@@ -156,7 +201,9 @@ export type LiveEvent =
   | { type: 'schedule'; schedule: LiveSchedule }
   | { type: 'moveOrder'; order: LiveMoveOrder }
   /** クリエイターサポートの目標ゲージ。null で非表示 */
-  | { type: 'creatorSupport'; support: LiveCreatorSupport | null };
+  | { type: 'creatorSupport'; support: LiveCreatorSupport | null }
+  /** ニコ生ゲーム (クルーズの行き先投票など) の状態更新 */
+  | { type: 'akashic'; batch: LiveAkashicBatch };
 
 /** LIVE_START の戻り値 */
 export interface LiveStartResult {
@@ -172,6 +219,8 @@ export interface LiveStartResult {
    * all: 開いたときに全件をバックグラウンドで取得 / seek: コメントが多いので再生位置の周辺だけ取得
    */
   commentFetchMode: 'all' | 'seek';
+  /** ニコ生ゲーム (クルーズの行き先投票など) の実行に必要な情報 */
+  akashic: LiveAkashicInfo;
 }
 
 /** LIVE_FETCH_COMMENTS_AROUND の戻り値: 取得できた範囲 (番組の vpos 基準、ms) */
