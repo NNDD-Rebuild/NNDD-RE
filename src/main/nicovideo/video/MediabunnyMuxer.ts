@@ -17,6 +17,9 @@ import type { MergeSegmentsOptions } from './FFmpegManager';
 
 const log = createLogger('MediabunnyMuxer');
 
+/** これ未満の出力なら moov 先頭 (in-memory) で書く。 */
+const IN_MEMORY_FAST_START_MAX_BYTES = 1024 * 1024 * 1024;
+
 /**
  * mediabunny (JS実装、ffmpeg非依存) を用いて HLS fMP4 セグメントを 1本の MP4 に結合する。
  * FFmpegManager.merge の代替実装。動作検証段階のため、失敗時は自動フォールバックせず
@@ -81,11 +84,15 @@ export class MediabunnyMuxer {
       const totalMs = totalDurationSec > 0 ? totalDurationSec * 1000 : null;
       log.debug('total duration (ms):', totalMs);
 
+      // 'in-memory' (moov 先頭、再生開始が速い) は mdat 全体を 1 つの Uint8Array に連結するため、
+      // 大きいと V8 のバッファ上限で "Array buffer allocation failed" になる。
+      // 閾値超えは false (逐次書き出し、moov は末尾) にする。PC のメモリ量ではなく V8 上限が理由なので固定値。
+      const inputBytes = fs.statSync(videoCombined).size + fs.statSync(audioCombined).size;
+      const fastStart = inputBytes < IN_MEMORY_FAST_START_MAX_BYTES ? 'in-memory' : false;
+      log.debug('fastStart:', { fastStart, inputBytes });
+
       output = new Output({
-        // 'in-memory' は mdat 全体をメモリに溜めて最後に1つの Uint8Array へ連結するため、
-        // 長尺・高ビットレート (数GB) だと "Array buffer allocation failed" になる。
-        // false なら逐次ファイルへ書き出し、moov は末尾に置かれる (ローカル再生なので問題なし)。
-        format: new Mp4OutputFormat({ fastStart: false }),
+        format: new Mp4OutputFormat({ fastStart }),
         target: new FilePathTarget(opts.outputPath)
       });
 
