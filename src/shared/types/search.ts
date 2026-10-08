@@ -62,6 +62,8 @@ export interface SearchResultItem {
   };
   /** チャンネル動画かどうか (未加入だと再生できない場合がある) */
   isChannelVideo?: boolean;
+  /** プレミアム会員向けの動画か (チャンネル動画のうちプレミアム会員が視聴できるもの。一覧から分かる場合のみ) */
+  isPremiumVideo?: boolean;
 }
 
 /**

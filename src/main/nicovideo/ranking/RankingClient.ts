@@ -52,6 +52,7 @@ export class RankingClient {
       likeCount: Number(v.count?.like ?? 0),
       registeredAt: v.registeredAt ? new Date(v.registeredAt) : new Date(),
       isChannelVideo: v.isChannelVideo === true || v.owner?.ownerType === 'channel',
+      isPremiumVideo: v.acf68865 === true,
       ...this.toAuthorFields(v.owner)
     }));
 
@@ -122,6 +123,7 @@ export class RankingClient {
         likeCount: Number(v.count?.like ?? 0),
         registeredAt: v.registeredAt ? new Date(v.registeredAt) : new Date(),
         isChannelVideo: v.isChannelVideo === true || v.owner?.ownerType === 'channel',
+        isPremiumVideo: v.acf68865 === true,
         ...this.toAuthorFields(v.owner)
       }));
     } catch (e) {

@@ -38,6 +38,8 @@ export interface NicoNvapiSearchItem {
   registeredAt: string;
   count: { view: number; comment: number; mylist: number; like: number };
   isChannelVideo?: boolean;
+  /** プレミアム会員向けの動画なら true。キー名は難読化されており仕様ではない (watch の payment.video.isPremium と一致することを実測) */
+  acf68865?: boolean;
   owner?: {
     ownerType?: 'user' | 'channel' | string;
     id: string;
@@ -57,6 +59,8 @@ export interface NicoBffRankingItem {
   shortDescription?: string;
   owner?: { id?: string; name?: string; iconUrl?: string; ownerType?: string };
   isChannelVideo?: boolean;
+  /** プレミアム会員向けの動画なら true。キー名は難読化されており仕様ではない (watch の payment.video.isPremium と一致することを実測) */
+  acf68865?: boolean;
   requireSensitiveMasking?: boolean;
 }
 

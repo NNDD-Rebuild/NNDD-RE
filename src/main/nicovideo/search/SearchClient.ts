@@ -14,6 +14,9 @@ import type { NicoSnapshotV2Response, NicoSnapshotV2Item, NicoNvapiSearchRespons
 
 const log = createLogger('SearchClient');
 
+/** スナップショット検索で、プレミアム会員向けの動画に付くタグ (「…（お試し）」は無料動画に付くので別物) */
+const PREMIUM_VIDEO_TAG = 'プレミアム限定動画（プレミアム）';
+
 export type SearchApiMode = 'snapshot' | 'nvapi';
 
 export interface SearchOptions {
@@ -103,7 +106,8 @@ export class SearchClient {
         author: parsed.ownerId
           ? { id: parsed.ownerId, nickname: parsed.ownerNickname, iconUrl }
           : undefined,
-        isChannelVideo: !!parsed.chId
+        isChannelVideo: !!parsed.chId,
+        isPremiumVideo: parsed.tags.includes(PREMIUM_VIDEO_TAG)
       };
     } catch (e) {
       log.warn('fetchByVideoId failed:', videoId, e);
@@ -225,12 +229,14 @@ export class SearchClient {
       author: d.owner
         ? { id: d.owner.id, nickname: d.owner.name, iconUrl: d.owner.iconUrl }
         : undefined,
-      isChannelVideo
+      isChannelVideo,
+      isPremiumVideo: d.acf68865 === true
     };
   }
 
   private static toItem(d: NicoSnapshotV2Item): SearchResultItem {
     const isChannelVideo = d.channelId !== null && d.channelId !== undefined;
+    const tags = (d.tags ?? '').split(/\s+/).filter(Boolean);
     return {
       videoId: d.contentId,
       title: d.title,
@@ -242,13 +248,14 @@ export class SearchClient {
       mylistCount: d.mylistCounter,
       likeCount: d.likeCounter,
       registeredAt: new Date(d.startTime),
-      tags: (d.tags ?? '').split(/\s+/).filter(Boolean),
+      tags,
       author: isChannelVideo
         ? { id: `ch${d.channelId}`, nickname: '', iconUrl: NicoEndpoint.channelIcon(d.channelId) }
         : d.userId != null
         ? { id: String(d.userId), nickname: '', iconUrl: '' }
         : undefined,
-      isChannelVideo
+      isChannelVideo,
+      isPremiumVideo: tags.includes(PREMIUM_VIDEO_TAG)
     };
   }
 }

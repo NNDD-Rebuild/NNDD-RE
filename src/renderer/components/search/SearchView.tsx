@@ -474,6 +474,7 @@ export function SearchView(): JSX.Element {
                     likeCount: r.likeCount,
                     registeredAt: r.registeredAt,
                     isChannelVideo: r.isChannelVideo,
+                    isPremiumVideo: r.isPremiumVideo,
                     authorId: r.author?.id,
                     authorNickname: r.author?.nickname,
                     authorIconUrl: r.author?.iconUrl,

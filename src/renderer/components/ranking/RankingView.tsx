@@ -209,6 +209,7 @@ export function RankingView(): JSX.Element {
                   rank: r.rank,
                   description: r.description,
                   isChannelVideo: r.isChannelVideo,
+                  isPremiumVideo: r.isPremiumVideo,
                   authorId: r.authorId,
                   authorNickname: r.authorNickname,
                   authorIconUrl: r.authorIconUrl,

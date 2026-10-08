@@ -24,6 +24,8 @@ export interface VideoCardData {
   authorNickname?: string;
   /** チャンネル動画かどうか (未加入だと再生できない場合がある) */
   isChannelVideo?: boolean;
+  /** プレミアム会員向けの動画か (P マークを出す) */
+  isPremiumVideo?: boolean;
 }
 
 interface Props {
@@ -208,13 +210,25 @@ function Thumb({
           {data.rank}位
         </span>
       )}
-      {data.isChannelVideo && (
-        <span
-          className="absolute right-1 top-1 bg-yellow-500 text-black text-xs px-1.5 py-0.5 rounded font-bold"
-          title="チャンネル動画 (未加入だと再生できない場合があります)"
-        >
-          CH
-        </span>
+      {(data.isChannelVideo || data.isPremiumVideo) && (
+        <div className="absolute right-1 top-1 flex gap-1">
+          {data.isPremiumVideo && (
+            <span
+              className="bg-orange-500 text-white text-xs px-1.5 py-0.5 rounded font-bold"
+              title="プレミアム会員向けの動画 (プレミアム会員なら視聴できます)"
+            >
+              P
+            </span>
+          )}
+          {data.isChannelVideo && (
+            <span
+              className="bg-yellow-500 text-black text-xs px-1.5 py-0.5 rounded font-bold"
+              title="チャンネル動画 (未加入だと再生できない場合があります)"
+            >
+              CH
+            </span>
+          )}
+        </div>
       )}
       {isWatched && (
         <span
