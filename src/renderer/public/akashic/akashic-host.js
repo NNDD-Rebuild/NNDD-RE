@@ -9,7 +9,7 @@
  *
  * 親とは postMessage で話す。
  *   親 → 本体: init / batch / apiRes / volume
- *   本体 → 親: ready / api / open / active / log
+ *   本体 → 親: ready / api / open / active / pointer / log
  * ES モジュールではなく単体のスクリプトとして srcdoc に埋め込むため、import は使わない。
  */
 (() => {
@@ -494,6 +494,18 @@
   }
 
   window.addEventListener('resize', () => client.relayout());
+
+  // iframe がマウスを受け取っている間 (ゲーム画面の表示中) は、親にマウスの動きが届かない。
+  // 全画面で操作バーを出すために、動きがあったことだけ親へ知らせる
+  let lastPointerPost = 0;
+  const notifyPointer = () => {
+    const now = performance.now();
+    if (now - lastPointerPost < 100) return;
+    lastPointerPost = now;
+    post({ t: 'pointer' });
+  };
+  window.addEventListener('mousemove', notifyPointer, true);
+  window.addEventListener('mousedown', notifyPointer, true);
 
   window.addEventListener('message', (e) => {
     if (e.source !== parent) return;

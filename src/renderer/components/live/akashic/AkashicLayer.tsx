@@ -46,6 +46,8 @@ interface Props {
   program: LiveProgramInfo;
   /** 映像の音量 (muted / volume) をゲームの効果音に反映する */
   videoEl: HTMLVideoElement | null;
+  /** iframe 上でマウスが動いた (全画面で操作バーを出すため。iframe は親にマウスイベントを渡さない) */
+  onPointerActivity: () => void;
 }
 
 function videoVolume(v: HTMLVideoElement | null): number {
@@ -59,11 +61,14 @@ function videoVolume(v: HTMLVideoElement | null): number {
  * sandbox 付き iframe (別文書) の中で動かし、親とは postMessage だけでやり取りする。
  * ゲームが画面を占めている間 (子ゲームの実行中) だけ iframe がマウスを受け取り、それ以外は映像の操作を邪魔しない。
  */
-export function AkashicLayer({ bus, info, program, videoEl }: Props): JSX.Element {
+export function AkashicLayer({ bus, info, program, videoEl, onPointerActivity }: Props): JSX.Element {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const readyRef = useRef(false);
   const queueRef = useRef<LiveAkashicBatch[]>([]);
   const [active, setActive] = useState(false);
+  // メッセージ購読はマウント時の 1 回だけなので、最新のコールバックは ref 経由で呼ぶ
+  const onPointerRef = useRef(onPointerActivity);
+  onPointerRef.current = onPointerActivity;
 
   const post = (msg: unknown): void => {
     frameRef.current?.contentWindow?.postMessage(msg, '*');
@@ -128,6 +133,9 @@ export function AkashicLayer({ bus, info, program, videoEl }: Props): JSX.Elemen
         }
         case 'active':
           setActive(Boolean(m.active));
+          break;
+        case 'pointer':
+          onPointerRef.current();
           break;
         case 'log':
           console[m.level === 'error' ? 'error' : m.level === 'warn' ? 'warn' : 'log'](

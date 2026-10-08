@@ -666,6 +666,7 @@ export default function LivePlayerApp(): JSX.Element {
               info={akashicInfo}
               program={program}
               videoEl={videoEl}
+              onPointerActivity={onPointerActivity}
             />
           )}
           {/*
