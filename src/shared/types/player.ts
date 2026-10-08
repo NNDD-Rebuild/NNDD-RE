@@ -29,6 +29,8 @@ export interface OpenPlayerParams {
   /** LANライブラリのHTTPストリーミングURL (例: http://192.168.x.x:12345/NNDDServer/sm123) */
   streamUrl?: string;
   localFiles?: PlayerLocalFiles;
+  /** フォルダ内連続再生を有効にして開く (ライブラリの連続再生ボタン用。設定の保存はしない) */
+  enableFolderAutoNext?: boolean;
   /** 自動再生による遷移か (true なら最小化中のウィンドウを前面に出さない) */
   autoNext?: boolean;
   /** 音声のみ再生モード */

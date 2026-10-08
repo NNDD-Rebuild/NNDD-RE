@@ -70,7 +70,8 @@ export function usePlaylist({
   useEffect(() => {
     window.nndd.invoke<boolean>(window.nndd.channels.CONFIG_GET, 'player.autoNextFolder')
       .then((v) => {
-        if (v != null) {
+        // 連続再生ボタンから開かれて既に有効化済みなら、保存値で上書きしない
+        if (v != null && !autoNextFolderRef.current) {
           autoNextFolderRef.current = v;
           setAutoNextFolder(v);
         }
@@ -340,6 +341,12 @@ export function usePlaylist({
   }, [searchPlaylist, folderVideos, seriesItems, currentVideoId, isLocal]);
 
   // ── UI (チェックボックス / VideoInfoView) からの変更 ──────────
+  /** 設定は保存せず、このプレイヤーでだけフォルダ内連続再生を有効にする */
+  const enableAutoNextFolder = (): void => {
+    autoNextFolderRef.current = true;
+    setAutoNextFolder(true);
+  };
+
   const onAutoNextFolderChange = (checked: boolean): void => {
     autoNextFolderRef.current = checked;
     setAutoNextFolder(checked);
@@ -385,6 +392,7 @@ export function usePlaylist({
     skipToNext,
     skipToPrev,
     onAutoNextFolderChange,
+    enableAutoNextFolder,
     onAutoNextSeriesChange,
     onSeriesPageLoaded,
     onAutoNextRelatedChange,

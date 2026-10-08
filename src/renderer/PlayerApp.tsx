@@ -127,6 +127,7 @@ export default function PlayerApp(): JSX.Element {
     skipToNext,
     skipToPrev,
     onAutoNextFolderChange,
+    enableAutoNextFolder,
     onAutoNextSeriesChange,
     onSeriesPageLoaded,
     onAutoNextRelatedChange,
@@ -194,6 +195,7 @@ export default function PlayerApp(): JSX.Element {
           const isAudioOnly = !!params.audioOnly;
           audioOnlyRef.current = isAudioOnly;
           setAudioOnly(isAudioOnly);
+          if (params.enableFolderAutoNext) enableAutoNextFolder();
           if (params.searchPlaylist && params.searchPlaylist.length > 0) {
             updateSearchPlaylist(params.searchPlaylist);
           } else {

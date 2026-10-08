@@ -272,6 +272,7 @@ export function LibraryView(): JSX.Element {
       localPath: startVideo.uri,
       videoId: extractVideoId(startVideo.videoName) ?? undefined,
       folderPlaylist: paths,
+      enableFolderAutoNext: true,
       audioOnly: audioOnly || undefined,
     });
   };
