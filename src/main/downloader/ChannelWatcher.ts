@@ -1,4 +1,5 @@
 import { RssType } from '@shared/types';
+import { extractMylistLikeId } from '@shared/utils/parseMylistUrl';
 import { LibraryManager } from '../db/LibraryManager';
 import { ChannelClient } from '../nicovideo/channel/ChannelClient';
 import { TrayManager } from '../tray/TrayManager';
@@ -29,8 +30,9 @@ export class ChannelWatcher {
     this.stop();
     const cfg = getConfigStore().get('channelWatch');
     if (!cfg?.enabled) return;
-    const intervalMs = Math.max(5, cfg.intervalMin || 30) * 60_000;
-    log.info(`channel watcher started (interval=${cfg.intervalMin}min)`);
+    const intervalMin = Math.max(5, cfg.intervalMin || 30);
+    const intervalMs = intervalMin * 60_000;
+    log.info(`channel watcher started (interval=${intervalMin}min)`);
     this.intervalId = setInterval(() => this.tick(), intervalMs);
     // 起動直後にベースライン確立のため1回実行 (この回は通知しない)
     this.tick();
@@ -53,8 +55,10 @@ export class ChannelWatcher {
 
     for (const ch of channels) {
       try {
+        const channelId = extractMylistLikeId(ch.myListUrl, RssType.CHANNEL);
+        if (!channelId) continue;
         const id = ch.myListUrl;
-        const { items } = await ChannelClient.fetchChannelVideos(id, 1);
+        const { items } = await ChannelClient.fetchChannelVideos(channelId, 1);
         const top = items[0];
         if (!top) continue;
 
