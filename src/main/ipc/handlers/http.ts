@@ -6,6 +6,7 @@ import { NnddHttpServer } from '../../server/NnddHttpServer';
 import { LanLibraryClient } from '../../server/LanLibraryClient';
 import { createLogger } from '../../util/Logger';
 import { isHeadless } from '../../util/headless';
+import { startHeadlessDashboard } from '../../server/headlessDashboard';
 import type { IpcHandlerContext } from './context';
 
 const log = createLogger('IPC');
@@ -23,8 +24,10 @@ export function registerHttpHandlers(ctx: IpcHandlerContext): void {
   // 自動起動 (ヘッドレス時は設定を書き換えず enabled を強制 true 扱い)
   if (isHeadless || getConfigStore().get('httpServer').enabled) {
     runtimeHttpServer = new NnddHttpServer(library);
-    runtimeHttpServer.start().then(({ port }) => {
+    const server = runtimeHttpServer;
+    server.start().then(({ port }) => {
       log.info('HTTP server auto-started on port', port);
+      if (isHeadless) startHeadlessDashboard(server);
     }).catch((e) => {
       log.warn('HTTP server auto-start failed:', e);
       runtimeHttpServer = null;

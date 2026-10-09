@@ -12,6 +12,8 @@ import { isPathAllowed } from '../player/LocalVideoProtocol';
 import { getConfigStore } from '../config/ConfigStore';
 import { createLogger } from '../util/Logger';
 import { forceAllowExternal, forcePort } from '../util/headless';
+import QRCode from 'qrcode';
+import { ServerStats, getAccessUrls, type ServerStatsSnapshot } from './ServerStats';
 import { CommentXmlReader } from '../nicovideo/comment/CommentXmlReader';
 import { ThumbInfoXmlReader } from '../nicovideo/video/ThumbInfoXmlReader';
 import { generateLibraryPage } from './libraryPage';
@@ -47,6 +49,7 @@ export class NnddHttpServer {
   private allowVideo: boolean;
   private allowExternal: boolean;
   private allowMyList: boolean;
+  private readonly stats = new ServerStats();
 
   constructor(private readonly library: LibraryManager) {
     this.app = express();
@@ -108,7 +111,25 @@ export class NnddHttpServer {
     return this.allowExternal;
   }
 
+  /** 接続台数・視聴数のスナップショット */
+  getStats(): ServerStatsSnapshot {
+    return this.stats.snapshot();
+  }
+
+  /** アクセス用URL一覧 (LAN公開時は各NICのIPv4) */
+  getAccessUrls(): string[] {
+    return getAccessUrls(this.port, this.allowExternal);
+  }
+
   private setupRoutes(): void {
+    // 接続台数の集計 (ステータス表示・ヘルスチェック自身のアクセスは除く)
+    this.app.use((req, _res, next) => {
+      if (req.path !== '/status' && req.path !== '/api/status' && req.path !== '/health') {
+        this.stats.recordRequest(req.ip ?? req.socket.remoteAddress ?? '');
+      }
+      next();
+    });
+
     // 全リクエストをログ
     this.app.use((req, _res, next) => {
       log.verbose(`→ ${req.method} ${req.url} from ${req.ip} [CT:${req.headers['content-type'] ?? 'none'} CL:${req.headers['content-length'] ?? 'none'}]`);
@@ -118,6 +139,14 @@ export class NnddHttpServer {
     // ヘルスチェック
     this.app.get('/health', (_req, res) => {
       res.json({ ok: true, app: 'nndd-electron' });
+    });
+
+    // ステータス (接続台数・視聴数・URL・QR)。ヘッドレス運用の確認用
+    this.app.get('/api/status', async (_req, res) => {
+      res.json(await this.buildStatus());
+    });
+    this.app.get('/status', (_req, res) => {
+      res.type('text/html; charset=utf-8').send(STATUS_PAGE_HTML);
     });
 
     // --- 旧仕様 NNDDServer ---
@@ -335,6 +364,12 @@ export class NnddHttpServer {
       res.status(403).send('forbidden');
       return;
     }
+    // 視聴数の集計: 配信が終わる (完了・中断とも close) まで「配信中」とする
+    const endStream = this.stats.beginStream(
+      req.ip ?? req.socket.remoteAddress ?? '',
+      extractBracketedVideoId(filePath) ?? path.basename(filePath)
+    );
+    res.on('close', endStream);
     const stat = fs.statSync(filePath);
     const size = stat.size;
     const range = req.headers.range;
@@ -370,6 +405,19 @@ export class NnddHttpServer {
     res.setHeader('Content-Length', String(size));
     res.setHeader('Content-Type', contentType);
     fs.createReadStream(filePath).pipe(res);
+  }
+
+  private async buildStatus(): Promise<
+    ServerStatsSnapshot & { urls: { url: string; qrSvg: string }[]; allowExternal: boolean }
+  > {
+    // QR は先頭 (本命) のURLだけ。複数NICでもQRが並ばないようにする
+    const urls = await Promise.all(
+      this.getAccessUrls().map(async (url, i) => ({
+        url,
+        qrSvg: i === 0 ? await QRCode.toString(url, { type: 'svg', margin: 1 }) : ''
+      }))
+    );
+    return { ...this.stats.snapshot(), urls, allowExternal: this.allowExternal };
   }
 
   private handleThumb(req: Request, res: Response): void {
@@ -624,3 +672,43 @@ export class NnddHttpServer {
     }
   }
 }
+
+const STATUS_PAGE_HTML = `<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NNDD-RE サーバー状態</title>
+<style>
+body{font-family:sans-serif;background:#1e1e1e;color:#eee;margin:0;padding:24px}
+h1{font-size:18px;margin:0 0 16px}
+.nums{display:flex;gap:16px;margin-bottom:24px}
+.num{background:#2b2b2b;border-radius:8px;padding:12px 20px;text-align:center}
+.num b{display:block;font-size:32px}
+.url{background:#2b2b2b;border-radius:8px;padding:12px;margin-bottom:12px;display:flex;gap:16px;align-items:center}
+.url svg{width:140px;height:140px;background:#fff;border-radius:4px;flex:none}
+.url a{color:#7cb7ff;word-break:break-all}
+ul{padding-left:20px;color:#bbb}
+</style></head><body>
+<h1>NNDD-RE サーバー状態</h1>
+<div class="nums">
+<div class="num"><b id="clients">-</b>接続台数</div>
+<div class="num"><b id="viewers">-</b>視聴数</div>
+</div>
+<div id="urls"></div>
+<ul id="viewerList"></ul>
+<script>
+const esc=(s)=>String(s).replace(/[&<>"]/g,(c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let urlsKey='';
+async function tick(){
+  try{
+    const r=await (await fetch('/api/status')).json();
+    document.getElementById('clients').textContent=r.clients;
+    document.getElementById('viewers').textContent=r.viewers;
+    document.getElementById('viewerList').innerHTML=r.viewerList.map((v)=>'<li>'+esc(v.ip)+' : '+esc(v.videoId)+'</li>').join('');
+    const key=r.urls.map((u)=>u.url).join('|');
+    if(key!==urlsKey){
+      urlsKey=key;
+      document.getElementById('urls').innerHTML=r.urls.map((u)=>'<div class="url">'+(u.qrSvg||'')+'<a href="'+esc(u.url)+'">'+esc(u.url)+'</a></div>').join('');
+    }
+  }catch(e){}
+}
+tick();setInterval(tick,2000);
+</script></body></html>`;
