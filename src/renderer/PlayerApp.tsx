@@ -12,7 +12,7 @@ import { ensureCommandResolved } from './util/commentCommands';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useConfig } from './hooks/useConfig';
 import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
-import { extractBracketedVideoId } from '@shared/utils/videoId';
+import { extractBracketedVideoId, isVideoId } from '@shared/utils/videoId';
 import { isLiveProgramId } from '@shared/utils/liveId';
 import {
   pickDefaultQualityId,
@@ -256,27 +256,35 @@ export default function PlayerApp(): JSX.Element {
 
   const handleVideoError = async (code: number): Promise<void> => {
     // code 4 = MEDIA_ERR_SRC_NOT_SUPPORTED: キャッシュファイルが破損 or 非対応コーデック
-    if (code === 4 && isLocalMediaUrl(srcRef.current)) {
-      const vid = playInfoRef.current?.videoId;
-      if (!vid) return;
-      setSrc('');
-      setIsHls(false);
-      await window.nndd.invoke(window.nndd.channels.VIDEO_DELETE_CACHE, vid);
-      try {
-        await initStreaming(vid, audioOnlyRef.current);
-      } catch (e) {
-        const isAutoPlay = isAutoPlayActive();
-        const msg = toUserFriendlyErrorMessage(e);
-        if (isAutoPlay && consecutiveSkipRef.current < MAX_CONSECUTIVE_SKIPS) {
-          consecutiveSkipRef.current++;
-          console.warn(`[AutoPlay] スキップ (${consecutiveSkipRef.current}/${MAX_CONSECUTIVE_SKIPS}):`, vid, msg);
-          if (!advanceToNextVideo()) {
-            setError(msg);
-          }
-        } else {
-          setError(msg);
-        }
+    if (code !== 4 || !isLocalMediaUrl(srcRef.current)) return;
+    const vid = playInfoRef.current?.videoId;
+    if (!vid) return;
+
+    // 再生できないとき: 連続再生中なら次へスキップ、そうでなければエラー表示
+    const giveUp = (vid: string, msg: string): void => {
+      if (isAutoPlayActive() && consecutiveSkipRef.current < MAX_CONSECUTIVE_SKIPS) {
+        consecutiveSkipRef.current++;
+        console.warn(`[AutoPlay] スキップ (${consecutiveSkipRef.current}/${MAX_CONSECUTIVE_SKIPS}):`, vid, msg);
+        if (!advanceToNextVideo()) setError(msg);
+      } else {
+        setError(msg);
       }
+    };
+
+    // ファイル名に動画ID ([sm12345]) が無いローカルファイルは、ストリーミングで代替できない
+    // (playInfo の videoId にファイルパスが入っており、動画APIに問い合わせても必ず失敗する)
+    if (!isVideoId(vid)) {
+      giveUp(vid, 'このファイルを再生できません。ファイルが壊れているか、非対応の形式です。');
+      return;
+    }
+
+    setSrc('');
+    setIsHls(false);
+    await window.nndd.invoke(window.nndd.channels.VIDEO_DELETE_CACHE, vid);
+    try {
+      await initStreaming(vid, audioOnlyRef.current);
+    } catch (e) {
+      giveUp(vid, toUserFriendlyErrorMessage(e));
     }
   };
 
