@@ -110,6 +110,7 @@ export function registerVideoHandlers(ctx: IpcHandlerContext): {
             localPath: await ensurePlayableLocalPath(video.uri),
             videoId: params.videoId,
             searchPlaylist: params.searchPlaylist,
+            disableFolderAutoNext: true,
             autoNext: params.autoNext,
             audioOnly: params.audioOnly,
             resumeSec,

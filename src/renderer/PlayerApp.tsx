@@ -132,6 +132,8 @@ export default function PlayerApp(): JSX.Element {
     skipToPrev,
     onAutoNextFolderChange,
     enableAutoNextFolder,
+    disableAutoNextFolder,
+    restoreAutoNextFolder,
     onAutoNextSeriesChange,
     onSeriesPageLoaded,
     onAutoNextRelatedChange,
@@ -200,14 +202,17 @@ export default function PlayerApp(): JSX.Element {
           audioOnlyRef.current = isAudioOnly;
           inheritAudioOnlyRef.current = isAudioOnly && !params.audioOnlyDetected;
           setAudioOnly(isAudioOnly);
+          // 連続再生の自動遷移 (autoNext) は直前の状態を引き継ぎ、手動で開いたときだけ設定に合わせ直す
           if (params.enableFolderAutoNext) enableAutoNextFolder();
+          else if (params.disableFolderAutoNext) disableAutoNextFolder();
+          else if (!params.autoNext) restoreAutoNextFolder();
           if (params.searchPlaylist && params.searchPlaylist.length > 0) {
             updateSearchPlaylist(params.searchPlaylist);
           } else {
             updateSearchPlaylist([]);
           }
           if (params.localPath) {
-            await initLocal(params.localPath, params.localFiles, params.folderPlaylist, params.resumeSec);
+            await initLocal(params.localPath, params.localFiles, params.folderPlaylist, params.resumeSec, !!params.disableFolderAutoNext);
           } else if (params.videoId) {
             await initStreaming(params.videoId, isAudioOnly, params.resumeSec);
           } else if (params.streamUrl) {
@@ -421,7 +426,8 @@ export default function PlayerApp(): JSX.Element {
     localPath: string,
     files?: InitParams['localFiles'],
     folderPlaylist?: string[],
-    resumeSec?: number
+    resumeSec?: number,
+    noFolderPlaylist = false
   ): Promise<void> => {
     setIsLocal(true);
     setWatch(null);
@@ -432,7 +438,10 @@ export default function PlayerApp(): JSX.Element {
     setNicowariFiles(files?.nicowari ?? []);
     currentLocalPathRef.current = localPath;
     // ライブラリからソート済みリストが渡された場合はそれを優先、なければファイルシステムから取得
-    if (folderPlaylist && folderPlaylist.length > 0) {
+    if (noFolderPlaylist) {
+      // ライブラリ以外から開いた場合はフォルダ内の前後移動も出さない
+      updateFolderVideos([]);
+    } else if (folderPlaylist && folderPlaylist.length > 0) {
       updateFolderVideos(folderPlaylist);
     } else {
       const dir = localPath.replace(/[/\\][^/\\]+$/, '');

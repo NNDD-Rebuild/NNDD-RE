@@ -47,6 +47,8 @@ export function usePlaylist({
   const relatedItemsRef = useRef<MyListItem[]>([]);
   const [autoNextFolder, setAutoNextFolder] = useState(false);
   const autoNextFolderRef = useRef(false);
+  /** ライブラリ以外から開かれて無効にしている間は、保存済みの設定で上書きしない */
+  const autoNextFolderLockedRef = useRef(false);
   const [folderVideos, setFolderVideos] = useState<string[]>([]);
   const folderVideosRef = useRef<string[]>([]);
   const currentLocalPathRef = useRef<string>('');
@@ -71,7 +73,7 @@ export function usePlaylist({
     window.nndd.invoke<boolean>(window.nndd.channels.CONFIG_GET, 'player.autoNextFolder')
       .then((v) => {
         // 連続再生ボタンから開かれて既に有効化済みなら、保存値で上書きしない
-        if (v != null && !autoNextFolderRef.current) {
+        if (v != null && !autoNextFolderRef.current && !autoNextFolderLockedRef.current) {
           autoNextFolderRef.current = v;
           setAutoNextFolder(v);
         }
@@ -343,11 +345,32 @@ export function usePlaylist({
   // ── UI (チェックボックス / VideoInfoView) からの変更 ──────────
   /** 設定は保存せず、このプレイヤーでだけフォルダ内連続再生を有効にする */
   const enableAutoNextFolder = (): void => {
+    autoNextFolderLockedRef.current = false;
     autoNextFolderRef.current = true;
     setAutoNextFolder(true);
   };
 
+  /** 設定は保存せず、このプレイヤーでだけフォルダ内連続再生を無効にする (検索・ランキング等から開かれたとき) */
+  const disableAutoNextFolder = (): void => {
+    autoNextFolderLockedRef.current = true;
+    autoNextFolderRef.current = false;
+    setAutoNextFolder(false);
+  };
+
+  /** フォルダ内連続再生を保存済みの設定に戻す (ライブラリ等から手動で開かれたとき) */
+  const restoreAutoNextFolder = (): void => {
+    autoNextFolderLockedRef.current = false;
+    window.nndd.invoke<boolean>(window.nndd.channels.CONFIG_GET, 'player.autoNextFolder')
+      .then((v) => {
+        if (autoNextFolderLockedRef.current) return;
+        autoNextFolderRef.current = !!v;
+        setAutoNextFolder(!!v);
+      })
+      .catch(() => {});
+  };
+
   const onAutoNextFolderChange = (checked: boolean): void => {
+    autoNextFolderLockedRef.current = false;
     autoNextFolderRef.current = checked;
     setAutoNextFolder(checked);
     window.nndd.invoke(window.nndd.channels.CONFIG_SET, 'player.autoNextFolder', checked).catch(() => {});
@@ -393,6 +416,8 @@ export function usePlaylist({
     skipToPrev,
     onAutoNextFolderChange,
     enableAutoNextFolder,
+    disableAutoNextFolder,
+    restoreAutoNextFolder,
     onAutoNextSeriesChange,
     onSeriesPageLoaded,
     onAutoNextRelatedChange,
