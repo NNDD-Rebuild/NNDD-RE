@@ -183,6 +183,24 @@ export function registerBrowseHandlers(ctx: IpcHandlerContext): void {
     return true;
   });
 
+  // --- 入力欄の履歴 (保存のON/OFFは設定。OFF中は追加せず、候補も返さない) ---
+  const dao = library.inputHistoryDao;
+  const cfg = getConfigStore();
+  ipcMain.handle(IpcChannel.INPUT_HISTORY_SEARCH_LIST, () =>
+    cfg.get('saveSearchHistory') ? dao.listSearch() : []
+  );
+  ipcMain.handle(IpcChannel.INPUT_HISTORY_SEARCH_ADD, (_e, word: string) => {
+    if (cfg.get('saveSearchHistory') && typeof word === 'string' && word.trim()) dao.addSearch(word.trim());
+  });
+  ipcMain.handle(IpcChannel.INPUT_HISTORY_SEARCH_CLEAR, () => dao.clearSearch());
+  ipcMain.handle(IpcChannel.INPUT_HISTORY_MYLIST_LIST, () =>
+    cfg.get('saveMyListHistory') ? dao.listMyList() : []
+  );
+  ipcMain.handle(IpcChannel.INPUT_HISTORY_MYLIST_ADD, (_e, entry: { name: string; url: string }) => {
+    if (cfg.get('saveMyListHistory') && entry?.url) dao.addMyList({ name: entry.name || entry.url, url: entry.url });
+  });
+  ipcMain.handle(IpcChannel.INPUT_HISTORY_MYLIST_CLEAR, () => dao.clearMyList());
+
   // --- ランキング ---
   ipcMain.handle(
     IpcChannel.RANKING_FETCH,

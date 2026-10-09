@@ -113,13 +113,9 @@ export interface NnddConfig {
    */
   searchApi: 'snapshot' | 'nvapi';
 
-  /** 検索タブの検索ワード履歴 (新しい順、最大10件) */
-  searchHistory: string[];
-  /** 検索ワードを履歴に保存する */
+  /** 検索ワードを履歴 (DB) に保存する */
   saveSearchHistory: boolean;
-  /** マイリストタブのURL入力欄の履歴 (新しい順、最大10件) */
-  myListHistory: { name: string; url: string }[];
-  /** マイリストのURLを履歴に保存する */
+  /** マイリストのURLを履歴 (DB) に保存する */
   saveMyListHistory: boolean;
 
   /** プレイヤー設定 */
@@ -419,9 +415,7 @@ const DEFAULTS: NnddConfig = {
   cacheRoot: '',
   hideSensitiveContents: true,
   searchApi: 'snapshot',
-  searchHistory: [],
   saveSearchHistory: true,
-  myListHistory: [],
   saveMyListHistory: true,
   player: {
     volume: 1.0,

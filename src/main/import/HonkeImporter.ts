@@ -26,7 +26,7 @@ import {
 import { buildLocalUrl } from '@shared/constants';
 import { extractBracketedVideoId } from '@shared/utils/videoId';
 import { parseMylistSource } from '@shared/utils/parseMylistUrl';
-import { INPUT_HISTORY_MAX, type MyListHistoryEntry } from '@shared/utils/inputHistory';
+import type { MyListHistoryEntry } from '@shared/utils/inputHistory';
 import type { LibraryManager } from '../db/LibraryManager';
 import { getConfigStore } from '../config/ConfigStore';
 import { createLogger } from '../util/Logger';
@@ -632,10 +632,9 @@ export class HonkeImporter {
     } catch (e) {
       return { total: 0, items: [], duplicate: 0, skipped: [], error: `config.xml の解析に失敗: ${String(e)}` };
     }
-    const existingSearch = new Set(this.configStore.get('searchHistory') as string[] | undefined ?? []);
-    const existingUrls = new Set(
-      (this.configStore.get('myListHistory') as MyListHistoryEntry[] | undefined ?? []).map((x) => x.url)
-    );
+    const dao = this.deps.library.inputHistoryDao;
+    const existingSearch = new Set(dao.listSearch());
+    const existingUrls = new Set(dao.listMyList().map((x) => x.url));
     const items: InputHistoryCandidate[] = [
       ...h.search.map((search) => ({ search })),
       ...h.myList.map((myList) => ({ myList }))
@@ -652,15 +651,21 @@ export class HonkeImporter {
     if (c.error) throw new Error(c.error);
     const incomingSearch = c.items.flatMap((x) => ('search' in x ? [x.search] : []));
     const incomingMyList = c.items.flatMap((x) => ('myList' in x ? [x.myList] : []));
-    const replace = policy === 'replace';
-    const curSearch = replace ? [] : (this.configStore.get('searchHistory') as string[] | undefined) ?? [];
-    const curMyList = replace ? [] : (this.configStore.get('myListHistory') as MyListHistoryEntry[] | undefined) ?? [];
-    const search = [...curSearch, ...incomingSearch.filter((w) => !curSearch.includes(w))].slice(0, INPUT_HISTORY_MAX);
-    const myList = [...curMyList, ...incomingMyList.filter((m) => !curMyList.some((x) => x.url === m.url))]
-      .slice(0, INPUT_HISTORY_MAX);
-    this.configStore.set('searchHistory', search);
-    this.configStore.set('myListHistory', myList);
-    const added = search.length - curSearch.length + (myList.length - curMyList.length);
+    const dao = this.deps.library.inputHistoryDao;
+    let before = 0;
+    let after = 0;
+    this.deps.library.db.transaction(() => {
+      if (policy === 'replace') {
+        dao.clearSearch();
+        dao.clearMyList();
+      }
+      before = dao.listSearch().length + dao.listMyList().length;
+      // 現在の履歴の後ろ (より古い扱い) に追加し、最大10件に収める
+      dao.appendOlderSearch(incomingSearch);
+      dao.appendOlderMyList(incomingMyList);
+      after = dao.listSearch().length + dao.listMyList().length;
+    });
+    const added = after - before;
     return {
       category: HonkeImportCategory.INPUT_HISTORY,
       added,

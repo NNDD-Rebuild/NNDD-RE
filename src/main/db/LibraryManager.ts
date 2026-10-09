@@ -8,6 +8,7 @@ import {
   HistoryDao,
   ScheduleDao,
   SearchDao,
+  InputHistoryDao,
   NgListDao,
   PlaylistDao,
   ResumeDao,
@@ -29,6 +30,7 @@ export class LibraryManager {
   readonly historyDao: HistoryDao;
   readonly scheduleDao: ScheduleDao;
   readonly searchDao: SearchDao;
+  readonly inputHistoryDao: InputHistoryDao;
   readonly ngListDao: NgListDao;
   readonly playlistDao: PlaylistDao;
   readonly resumeDao: ResumeDao;
@@ -64,6 +66,7 @@ export class LibraryManager {
     this.historyDao = new HistoryDao(this.db);
     this.scheduleDao = new ScheduleDao(this.db);
     this.searchDao = new SearchDao(this.db);
+    this.inputHistoryDao = new InputHistoryDao(this.db);
     this.ngListDao = new NgListDao(this.db);
     this.playlistDao = new PlaylistDao(this.db);
     this.resumeDao = new ResumeDao(this.db);

@@ -1,4 +1,4 @@
-import { IpcChannel } from '@shared/types';
+import { IpcChannel, type IpcChannelValue } from '@shared/types';
 import { useConfig } from '@renderer/hooks/useConfig';
 import { useAppStore } from '@renderer/store/useAppStore';
 import { Section } from './common';
@@ -31,9 +31,9 @@ export function NicoSettings(): JSX.Element {
   const [saveMyListHistory, setSaveMyListHistory] = useConfig<boolean>('saveMyListHistory', true);
   const showToast = useAppStore((s) => s.showToast);
 
-  const clearHistory = (key: 'searchHistory' | 'myListHistory', label: string): void => {
+  const clearHistory = (channel: IpcChannelValue, label: string): void => {
     window.nndd
-      .invoke(IpcChannel.CONFIG_SET, key, [])
+      .invoke(channel)
       .then(() => showToast(`${label}を消去しました`))
       .catch(() => showToast(`${label}の消去に失敗しました`));
   };
@@ -129,7 +129,7 @@ export function NicoSettings(): JSX.Element {
             onChange={(e) => setSaveSearchHistory(e.target.checked)}
           />
           <button
-            onClick={() => clearHistory('searchHistory', '検索履歴')}
+            onClick={() => clearHistory(IpcChannel.INPUT_HISTORY_SEARCH_CLEAR, '検索履歴')}
             className="ml-3 text-xs px-2 py-0.5 bg-nndd-border text-nndd-text rounded hover:bg-nndd-accent hover:text-white"
           >
             履歴を消去
@@ -142,7 +142,7 @@ export function NicoSettings(): JSX.Element {
             onChange={(e) => setSaveMyListHistory(e.target.checked)}
           />
           <button
-            onClick={() => clearHistory('myListHistory', 'マイリストの閲覧履歴')}
+            onClick={() => clearHistory(IpcChannel.INPUT_HISTORY_MYLIST_CLEAR, 'マイリストの閲覧履歴')}
             className="ml-3 text-xs px-2 py-0.5 bg-nndd-border text-nndd-text rounded hover:bg-nndd-accent hover:text-white"
           >
             履歴を消去

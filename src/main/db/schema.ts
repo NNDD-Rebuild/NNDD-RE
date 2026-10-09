@@ -110,6 +110,21 @@ export const CREATE_TABLES = [
     UNIQUE(type, value)
   );`,
 
+  /* 検索ワードの入力履歴 (usedAt の新しい順に表示、最大10件) */
+  `CREATE TABLE IF NOT EXISTS search_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    word TEXT UNIQUE NOT NULL,
+    usedAt INTEGER NOT NULL
+  );`,
+
+  /* マイリストURLの入力履歴 (usedAt の新しい順に表示、最大10件) */
+  `CREATE TABLE IF NOT EXISTS mylist_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    url TEXT UNIQUE NOT NULL,
+    name TEXT NOT NULL,
+    usedAt INTEGER NOT NULL
+  );`,
+
   /* NGタグ */
   `CREATE TABLE IF NOT EXISTS ng_tag (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -279,6 +294,24 @@ export const Q = {
   INSERT_NG_LIST: `INSERT OR IGNORE INTO ng_list (type, value) VALUES (?, ?);`,
   DELETE_NG_LIST: `DELETE FROM ng_list WHERE type = ? AND value = ?;`,
   DELETE_ALL_NG_LIST: `DELETE FROM ng_list;`,
+
+  SELECT_SEARCH_HISTORY: `SELECT word FROM search_history ORDER BY usedAt DESC, id DESC LIMIT ?;`,
+  UPSERT_SEARCH_HISTORY: `INSERT INTO search_history (word, usedAt) VALUES (?, ?)
+    ON CONFLICT(word) DO UPDATE SET usedAt = excluded.usedAt;`,
+  INSERT_SEARCH_HISTORY_IGNORE: `INSERT OR IGNORE INTO search_history (word, usedAt) VALUES (?, ?);`,
+  TRIM_SEARCH_HISTORY: `DELETE FROM search_history WHERE id NOT IN
+    (SELECT id FROM search_history ORDER BY usedAt DESC, id DESC LIMIT ?);`,
+  SELECT_SEARCH_HISTORY_USED_RANGE: `SELECT MIN(usedAt) AS minUsedAt, MAX(usedAt) AS maxUsedAt FROM search_history;`,
+  DELETE_ALL_SEARCH_HISTORY: `DELETE FROM search_history;`,
+
+  SELECT_MYLIST_HISTORY: `SELECT name, url FROM mylist_history ORDER BY usedAt DESC, id DESC LIMIT ?;`,
+  UPSERT_MYLIST_HISTORY: `INSERT INTO mylist_history (url, name, usedAt) VALUES (?, ?, ?)
+    ON CONFLICT(url) DO UPDATE SET name = excluded.name, usedAt = excluded.usedAt;`,
+  INSERT_MYLIST_HISTORY_IGNORE: `INSERT OR IGNORE INTO mylist_history (url, name, usedAt) VALUES (?, ?, ?);`,
+  TRIM_MYLIST_HISTORY: `DELETE FROM mylist_history WHERE id NOT IN
+    (SELECT id FROM mylist_history ORDER BY usedAt DESC, id DESC LIMIT ?);`,
+  SELECT_MYLIST_HISTORY_USED_RANGE: `SELECT MIN(usedAt) AS minUsedAt, MAX(usedAt) AS maxUsedAt FROM mylist_history;`,
+  DELETE_ALL_MYLIST_HISTORY: `DELETE FROM mylist_history;`,
 
   SELECT_NG_TAGS: `SELECT tag FROM ng_tag;`,
   INSERT_NG_TAG: `INSERT OR IGNORE INTO ng_tag (tag) VALUES (?);`,

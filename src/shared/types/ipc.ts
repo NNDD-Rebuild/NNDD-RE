@@ -65,6 +65,14 @@ export const IpcChannel = {
   SEARCH_SAVED_ADD: 'nndd:search:savedAdd',
   SEARCH_SAVED_REMOVE: 'nndd:search:savedRemove',
 
+  // 入力欄の履歴 (検索ワード / マイリストURL)
+  INPUT_HISTORY_SEARCH_LIST: 'nndd:inputHistory:searchList',
+  INPUT_HISTORY_SEARCH_ADD: 'nndd:inputHistory:searchAdd',
+  INPUT_HISTORY_SEARCH_CLEAR: 'nndd:inputHistory:searchClear',
+  INPUT_HISTORY_MYLIST_LIST: 'nndd:inputHistory:myListList',
+  INPUT_HISTORY_MYLIST_ADD: 'nndd:inputHistory:myListAdd',
+  INPUT_HISTORY_MYLIST_CLEAR: 'nndd:inputHistory:myListClear',
+
   // ランキング
   RANKING_FETCH: 'nndd:ranking:fetch',
   RANKING_GENRES: 'nndd:ranking:genres',
