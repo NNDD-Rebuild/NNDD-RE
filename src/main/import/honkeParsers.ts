@@ -58,6 +58,31 @@ export function parseConfigXml(xml: string): Record<string, string> {
   return out;
 }
 
+export interface HonkeInputHistory {
+  search: string[];
+  myList: { name: string; url: string }[];
+}
+
+/**
+ * config.xml の検索履歴 (searchHistory0-10: encodeURIComponent 済み) と
+ * マイリスト履歴 (myListHistoryName0-9 / myListHistoryUrl0-9) を新しい順に取り出す。
+ */
+export function extractInputHistory(cfg: Record<string, string>): HonkeInputHistory {
+  const search: string[] = [];
+  for (let i = 0; i <= 10; i++) {
+    const raw = cfg[`searchHistory${i}`];
+    const word = raw ? safeDecode(raw).trim() : '';
+    if (word) search.push(word);
+  }
+  const myList: { name: string; url: string }[] = [];
+  for (let i = 0; i < 10; i++) {
+    const url = (cfg[`myListHistoryUrl${i}`] ?? '').trim();
+    if (!url) break;
+    myList.push({ name: (cfg[`myListHistoryName${i}`] ?? '').trim() || url, url });
+  }
+  return { search, myList };
+}
+
 export interface HonkeNgItem {
   kind: string;
   value: string;

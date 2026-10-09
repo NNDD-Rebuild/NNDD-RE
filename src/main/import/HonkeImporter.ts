@@ -26,10 +26,12 @@ import {
 import { buildLocalUrl } from '@shared/constants';
 import { extractBracketedVideoId } from '@shared/utils/videoId';
 import { parseMylistSource } from '@shared/utils/parseMylistUrl';
+import { INPUT_HISTORY_MAX, type MyListHistoryEntry } from '@shared/utils/inputHistory';
 import type { LibraryManager } from '../db/LibraryManager';
 import { getConfigStore } from '../config/ConfigStore';
 import { createLogger } from '../util/Logger';
 import {
+  extractInputHistory,
   parseConfigXml,
   parseDownloadListXml,
   parseHistoryXml,
@@ -64,6 +66,7 @@ interface ConfigItem { reKey: string; value: unknown; honkeKey: string }
 /** isDir のとき url は空 (適用時に採番)。parent は items 内のインデックスで、ルートは -1 */
 interface MyListCandidate { name: string; url: string; type: RssTypeValue; isDir: boolean; parent: number }
 interface SearchCandidate { name: string; word: string; type: NNDDRESearchTypeValue; sortType: NNDDRESearchSortTypeValue }
+type InputHistoryCandidate = { search: string } | { myList: MyListHistoryEntry };
 interface PlaylistCandidate { name: string; entries: { videoId: string; title: string; lengthSec: number }[] }
 interface LibraryCandidate {
   key: string;
@@ -231,6 +234,7 @@ export class HonkeImporter {
     categories.push(toPreview(HonkeImportCategory.NG, this.collectNg(source)));
     categories.push(toPreview(HonkeImportCategory.MYLIST, this.collectMyLists(source)));
     categories.push(toPreview(HonkeImportCategory.SEARCH, this.collectSearch(source)));
+    categories.push(toPreview(HonkeImportCategory.INPUT_HISTORY, this.collectInputHistory(source)));
     categories.push(toPreview(HonkeImportCategory.HISTORY, this.collectHistory(source)));
     categories.push(toPreview(HonkeImportCategory.PLAYLIST, this.collectPlaylists(source)));
     categories.push(toPreview(HonkeImportCategory.LIBRARY, this.collectLibrary(source)));
@@ -285,6 +289,8 @@ export class HonkeImporter {
         return this.applyMyLists(this.collectMyLists(source), policy);
       case HonkeImportCategory.SEARCH:
         return this.applySearch(this.collectSearch(source), policy);
+      case HonkeImportCategory.INPUT_HISTORY:
+        return this.applyInputHistory(this.collectInputHistory(source), policy);
       case HonkeImportCategory.HISTORY:
         return this.applyHistory(source, policy);
       case HonkeImportCategory.PLAYLIST:
@@ -613,6 +619,55 @@ export class HonkeImporter {
       }
     });
     return { category: HonkeImportCategory.SEARCH, added, updated: 0, skipped, notes: c.skipped };
+  }
+
+  // ---- 検索・マイリストの入力履歴 ----
+
+  private collectInputHistory(source: HonkeImportSource): Collected<InputHistoryCandidate> {
+    const text = readTextIfExists(source.configPath);
+    if (text === null) return this.missing('config.xml');
+    let h;
+    try {
+      h = extractInputHistory(parseConfigXml(text));
+    } catch (e) {
+      return { total: 0, items: [], duplicate: 0, skipped: [], error: `config.xml の解析に失敗: ${String(e)}` };
+    }
+    const existingSearch = new Set(this.configStore.get('searchHistory') as string[] | undefined ?? []);
+    const existingUrls = new Set(
+      (this.configStore.get('myListHistory') as MyListHistoryEntry[] | undefined ?? []).map((x) => x.url)
+    );
+    const items: InputHistoryCandidate[] = [
+      ...h.search.map((search) => ({ search })),
+      ...h.myList.map((myList) => ({ myList }))
+    ];
+    const duplicate =
+      h.search.filter((w) => existingSearch.has(w)).length + h.myList.filter((m) => existingUrls.has(m.url)).length;
+    return { total: items.length, items, duplicate, skipped: [] };
+  }
+
+  private applyInputHistory(
+    c: Collected<InputHistoryCandidate>,
+    policy: HonkeImportPolicy
+  ): HonkeImportCategoryResult {
+    if (c.error) throw new Error(c.error);
+    const incomingSearch = c.items.flatMap((x) => ('search' in x ? [x.search] : []));
+    const incomingMyList = c.items.flatMap((x) => ('myList' in x ? [x.myList] : []));
+    const replace = policy === 'replace';
+    const curSearch = replace ? [] : (this.configStore.get('searchHistory') as string[] | undefined) ?? [];
+    const curMyList = replace ? [] : (this.configStore.get('myListHistory') as MyListHistoryEntry[] | undefined) ?? [];
+    const search = [...curSearch, ...incomingSearch.filter((w) => !curSearch.includes(w))].slice(0, INPUT_HISTORY_MAX);
+    const myList = [...curMyList, ...incomingMyList.filter((m) => !curMyList.some((x) => x.url === m.url))]
+      .slice(0, INPUT_HISTORY_MAX);
+    this.configStore.set('searchHistory', search);
+    this.configStore.set('myListHistory', myList);
+    const added = search.length - curSearch.length + (myList.length - curMyList.length);
+    return {
+      category: HonkeImportCategory.INPUT_HISTORY,
+      added,
+      updated: 0,
+      skipped: c.items.length - added,
+      notes: ['現在の履歴の後ろに、本家の履歴を最大10件まで追加しました']
+    };
   }
 
   // ---- 履歴 ----

@@ -24,6 +24,10 @@ const CATEGORY_LABELS: Record<
     label: "NGリスト",
     hint: "NGワード/ID/コマンド/NGタグ (ライブラリのタグ一覧から隠すタグ。許可IDは非対応)",
   },
+  [HonkeImportCategory.INPUT_HISTORY]: {
+    label: "検索・マイリスト履歴",
+    hint: "検索ワードとマイリストURLの入力履歴 (各直近10件)",
+  },
   [HonkeImportCategory.MYLIST]: {
     label: "マイリスト",
     hint: "フォルダ階層は平坦化して取り込み",

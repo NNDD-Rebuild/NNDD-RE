@@ -5,6 +5,7 @@ export const HonkeImportCategory = {
   NG: 'ng',
   MYLIST: 'mylist',
   SEARCH: 'search',
+  INPUT_HISTORY: 'inputHistory',
   HISTORY: 'history',
   PLAYLIST: 'playlist',
   LIBRARY: 'library',

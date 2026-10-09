@@ -57,6 +57,8 @@ export const HONKE_CONFIG_MAP: Record<string, ConfigMapEntry> = {
       return n === null || n < 0 ? null : Math.floor(n);
     }
   },
+  isSaveSearchHistory: { reKey: 'saveSearchHistory', convert: toBool },
+  isSaveMyListHistory: { reKey: 'saveMyListHistory', convert: toBool },
   isRepeat: { reKey: 'player.repeat', convert: toBool },
   isShowComment: { reKey: 'player.showComments', convert: toBool },
   isCommentFontBold: { reKey: 'player.commentBold', convert: toBool },
