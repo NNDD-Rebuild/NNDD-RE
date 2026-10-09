@@ -1,3 +1,4 @@
+import type { LibraryScanProgress } from '@shared/types';
 import { ContinuousPlayButton } from '../common/ContinuousPlayButton';
 import type { LibraryDisplayMode } from './libraryUtils';
 
@@ -16,7 +17,9 @@ export function LibraryToolbar({
   continuousPlayDisabled,
   onContinuousPlay,
   scanning,
-  onScan
+  scanProgress,
+  onScan,
+  onScanCancel
 }: {
   searchText: string;
   onSearchTextChange: (v: string) => void;
@@ -31,7 +34,10 @@ export function LibraryToolbar({
   continuousPlayDisabled: boolean;
   onContinuousPlay: (audioOnly: boolean) => void;
   scanning: boolean;
-  onScan: () => void;
+  scanProgress: LibraryScanProgress | null;
+  /** full=true: 変更の有無に関わらず全件読み直す (Shift+クリック) */
+  onScan: (full: boolean) => void;
+  onScanCancel: () => void;
 }): JSX.Element {
   return (
     <div className="flex items-center gap-2 p-2 border-b border-nndd-border bg-nndd-panel">
@@ -76,13 +82,32 @@ export function LibraryToolbar({
         disabled={continuousPlayDisabled}
         onPlay={onContinuousPlay}
       />
+      {scanning && (
+        <span className="text-xs text-nndd-subtext whitespace-nowrap">{scanLabel(scanProgress)}</span>
+      )}
+      {scanning && (
+        <button
+          onClick={onScanCancel}
+          className="text-xs px-2 py-1 bg-nndd-border rounded hover:opacity-80"
+        >
+          中断
+        </button>
+      )}
       <button
-        onClick={onScan}
+        onClick={(e) => onScan(e.shiftKey)}
         disabled={scanning}
+        title="前回から変わっていない動画は読み込みを省略します。Shift+クリックで全件を読み直します"
         className="text-xs px-3 py-1 bg-nndd-accent text-white rounded hover:opacity-80 disabled:opacity-50"
       >
         {scanning ? 'スキャン中…' : 'ライブラリを更新'}
       </button>
     </div>
   );
+}
+
+function scanLabel(p: LibraryScanProgress | null): string {
+  if (!p) return 'フォルダを確認中…';
+  if (p.phase === 'walk') return `フォルダを走査中… 動画 ${p.current} 件`;
+  if (p.phase === 'register') return `登録中 ${p.current} / ${p.total}`;
+  return '削除された動画を確認中…';
 }

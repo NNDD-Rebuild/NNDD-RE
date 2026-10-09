@@ -1,6 +1,7 @@
 import path from 'node:path';
-import { ipcMain, shell } from 'electron';
+import { ipcMain, shell, webContents } from 'electron';
 import { IpcChannel } from '@shared/types';
+import type { LibraryScanOptions, LibraryScanProgress, LibraryScanResult } from '@shared/types';
 import { NicoHistoryClient } from '../../nicovideo';
 import { LibraryScanner } from '../../library/LibraryScanner';
 import { NICOWARI_MARK, readNicowariSwf } from '../../library/NicowariSwf';
@@ -60,8 +61,39 @@ export function registerLibraryHandlers(ctx: IpcHandlerContext): void {
     return true;
   });
 
-  ipcMain.handle(IpcChannel.LIBRARY_SCAN, async () => {
-    return LibraryScanner.scan(library);
+  // スキャンは同時に1本だけ。実行中に呼ばれたら実行中のものの結果を返す
+  let scanRun: { controller: AbortController; promise: Promise<LibraryScanResult> } | null = null;
+
+  ipcMain.handle(IpcChannel.LIBRARY_SCAN, (_e, opts?: LibraryScanOptions) => {
+    if (scanRun) return scanRun.promise;
+    const controller = new AbortController();
+    let lastSentAt = 0;
+    const broadcast = (progress: LibraryScanProgress): void => {
+      for (const wc of webContents.getAllWebContents()) {
+        wc.send(IpcChannel.LIBRARY_SCAN_PROGRESS, progress);
+      }
+    };
+    const promise = LibraryScanner.scan(library, {
+      full: opts?.full === true,
+      signal: controller.signal,
+      onProgress: (progress) => {
+        // 動画ごとに送ると IPC が溢れるので間引く
+        const now = Date.now();
+        if (now - lastSentAt < 100) return;
+        lastSentAt = now;
+        broadcast(progress);
+      }
+    }).finally(() => {
+      scanRun = null;
+    });
+    scanRun = { controller, promise };
+    return promise;
+  });
+
+  ipcMain.handle(IpcChannel.LIBRARY_SCAN_CANCEL, () => {
+    if (!scanRun) return false;
+    scanRun.controller.abort();
+    return true;
   });
 
   ipcMain.handle(

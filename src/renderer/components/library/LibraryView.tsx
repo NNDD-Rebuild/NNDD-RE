@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { NNDDREVideo } from '@shared/types';
+import type { LibraryScanProgress, LibraryScanResult, NNDDREVideo } from '@shared/types';
 import { IpcChannel } from '@shared/types';
 import { watchUrl } from '@shared/utils/nicoUrl';
 import { ContextMenuPopup, MenuItem } from '../common/VideoCard';
@@ -26,6 +26,7 @@ import { LibraryTableView } from './LibraryTableView';
 
 export function LibraryView(): JSX.Element {
   const [scanning, setScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState<LibraryScanProgress | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const [mode, setMode] = useState<ViewMode>('folder');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
@@ -243,14 +244,36 @@ export function LibraryView(): JSX.Element {
     window.nndd.invoke(window.nndd.channels.SYS_OPEN_PATH, watchUrl(videoId));
   };
 
-  const handleScan = async (): Promise<void> => {
+  // スキャンはメインウィンドウを閉じても main 側で続くので、進捗は常時購読しておく
+  useEffect(() => {
+    return window.nndd.on(
+      window.nndd.channels.LIBRARY_SCAN_PROGRESS,
+      (progress: LibraryScanProgress) => setScanProgress(progress)
+    );
+  }, []);
+
+  /** @param full true なら変更の有無に関わらず全件の付帯情報(ThumbInfo等)を読み直す */
+  const handleScan = async (full = false): Promise<void> => {
     setScanning(true);
+    setScanProgress(null);
     try {
-      await window.nndd.invoke(window.nndd.channels.LIBRARY_SCAN);
+      const r = await window.nndd.invoke<LibraryScanResult>(window.nndd.channels.LIBRARY_SCAN, { full });
       reload();
+      const summary = `追加 ${r.added} / 更新 ${r.updated} / 削除 ${r.removed} / 変更なし ${r.unchanged}`;
+      if (r.cancelled) showToast(`スキャンを中断しました (${summary})`);
+      else if (r.removalSkipped === 'empty') {
+        showToast(`ライブラリが空に見えるため、DBからの削除は行いませんでした。フォルダ/ドライブの接続を確認してください (${summary})`, 6000);
+      } else if (r.removalSkipped === 'unreadable') {
+        showToast(`読み込めないフォルダがあるため、その配下の動画はDBから削除していません (${summary})`, 6000);
+      } else showToast(`スキャン完了: ${summary}`);
     } finally {
       setScanning(false);
+      setScanProgress(null);
     }
+  };
+
+  const handleScanCancel = (): void => {
+    window.nndd.invoke(window.nndd.channels.LIBRARY_SCAN_CANCEL);
   };
 
   const handleFolderDelete = async (folderPath: string): Promise<void> => {
@@ -382,7 +405,9 @@ export function LibraryView(): JSX.Element {
               continuousPlayDisabled={sorted.length === 0 || mode === 'commentOnly'}
               onContinuousPlay={handleContinuousPlay}
               scanning={scanning}
+              scanProgress={scanProgress}
               onScan={handleScan}
+              onScanCancel={handleScanCancel}
             />
             <div className="flex-1 overflow-auto">
               {loading ? (

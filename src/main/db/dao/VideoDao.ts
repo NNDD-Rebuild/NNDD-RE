@@ -21,6 +21,15 @@ interface VideoRow {
   description: string | null;
 }
 
+export interface ScanSnapshotRow {
+  id: number;
+  key: string | null;
+  uri: string;
+  modificationDate: number;
+  thumbUrl: string;
+  time: number;
+}
+
 /**
  * NNDDREVideo DAO
  * 元: src/org/mineap/nndd/library/sqlite/dao/NNDDREVideoDao.as
@@ -116,6 +125,19 @@ export class VideoDao {
       this.setTags(id, video.tagStrings);
       return id;
     });
+  }
+
+  /**
+   * ライブラリスキャンの差分判定用に、全動画 (「コメントのみ」含む) の軽量な行を返す。
+   * modificationDate は秒 (REAL)。
+   */
+  listScanSnapshot(): ScanSnapshotRow[] {
+    return this.db.prepare(Q.SELECT_VIDEO_SCAN_SNAPSHOT).all() as ScanSnapshotRow[];
+  }
+
+  /** 複数の書き込みを1トランザクションにまとめる (同期処理のみ。await をまたがないこと) */
+  runInTransaction<T>(fn: () => T): T {
+    return this.db.transaction(fn);
   }
 
   setFavorite(id: number, isFavorite: boolean): void {

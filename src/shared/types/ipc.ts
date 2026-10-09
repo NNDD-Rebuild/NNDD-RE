@@ -9,7 +9,12 @@ export const IpcChannel = {
   LIBRARY_LIST_COMMENT_ONLY: 'nndd:library:listCommentOnly',
   LIBRARY_GET: 'nndd:library:get',
   LIBRARY_DELETE: 'nndd:library:delete',
+  /** ライブラリをスキャン。{ full?: boolean } → LibraryScanResult。実行中に呼ぶと実行中のスキャンの結果を返す */
   LIBRARY_SCAN: 'nndd:library:scan',
+  /** 実行中のスキャンを中断 → 中断対象があったか (boolean) */
+  LIBRARY_SCAN_CANCEL: 'nndd:library:scanCancel',
+  /** スキャン進捗通知 (main→renderer) → LibraryScanProgress */
+  LIBRARY_SCAN_PROGRESS: 'nndd:library:scanProgress',
   LIBRARY_UPDATE_TAGS: 'nndd:library:updateTags',
   LIBRARY_SET_FAVORITE: 'nndd:library:setFavorite',
 

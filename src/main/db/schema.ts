@@ -192,6 +192,10 @@ export const Q = {
 
   SELECT_VIDEO_FAVORITE_BY_KEY: `SELECT id, isFavorite FROM NNDDREVideo WHERE key = ?;`,
 
+  /** ライブラリスキャンの差分判定用 (タグ・説明文を読まない軽量版) */
+  SELECT_VIDEO_SCAN_SNAPSHOT: `
+    SELECT id, key, uri, modificationDate, thumbUrl, time FROM NNDDREVideo;`,
+
   INSERT_VIDEO: `
     INSERT OR REPLACE INTO NNDDREVideo
       (key, uri, dirpath_id, videoName,

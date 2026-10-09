@@ -14,3 +14,4 @@ export * from './nicowari';
 export * from './player';
 export * from './ipc';
 export * from './honkeImport';
+export * from './libraryScan';
