@@ -2,6 +2,7 @@ import type { LiveAkashicInfo, LiveProgramInfo, LiveSupplier } from '@shared/typ
 import { NicoApi, NicoEndpoint, NicoHeaders } from '@shared/constants';
 import { NicoContext } from '../NicoContext';
 import { createLogger } from '../../util/Logger';
+import { NicoApiError } from '../NicoHttp';
 import type { NicoLiveSupplierNode } from '../apiTypes';
 
 const log = createLogger('LiveWatchPage');
@@ -78,9 +79,20 @@ const secToMs = (v: unknown): number => (typeof v === 'number' ? v * 1000 : 0);
  * co/ch ID を渡した場合は現在の放送にリダイレクトされる。
  */
 export async function fetchLiveWatchPage(id: string): Promise<LiveWatchPageInfo> {
-  const html = await NicoContext.get().http.getText(`${LIVE_ORIGIN}/watch/${id}`, {
-    headers: { Referer: `${LIVE_ORIGIN}/` }
-  });
+  let html: string;
+  try {
+    html = await NicoContext.get().http.getText(`${LIVE_ORIGIN}/watch/${id}`, {
+      headers: { Referer: `${LIVE_ORIGIN}/` }
+    });
+  } catch (e) {
+    // ch/co の URL は、放送中または直近の番組が無い (公式番組の ch 等も含む) と 404 になる
+    if (e instanceof NicoApiError && e.httpStatus === 404 && /^(?:ch|co)\d+$/i.test(id)) {
+      throw new LiveUnavailableError(
+        `${id} の放送中・視聴可能な番組が見つかりません (放送前、または番組ID/URLで開く必要があります)`
+      );
+    }
+    throw e;
+  }
   // embedded-data は外部データなので必要なフィールドだけ防御的に読む
   const props = parseEmbeddedData(html);
   if (!props) throw new Error('生放送ページの解析に失敗しました (embedded-data が見つかりません)');

@@ -10,7 +10,7 @@ import type {
 } from '@shared/types';
 import { NicoContext } from '../NicoContext';
 import { createLogger } from '../../util/Logger';
-import { LIVE_ORIGIN, fetchLiveWatchPage, parseEmbeddedData } from './LiveWatchPage';
+import { LIVE_ORIGIN, LiveUnavailableError, fetchLiveWatchPage, parseEmbeddedData } from './LiveWatchPage';
 import { extractLiveIdFromInput } from '@shared/utils/liveId';
 import type {
   NicoLiveEmbeddedData,
@@ -128,6 +128,8 @@ async function fetchProgramById(id: string): Promise<LiveProgramSummary | null> 
       isMemberOnly: false
     };
   } catch (e) {
+    // 理由をユーザーに見せられるエラーは、キーワード検索に落とさず呼び出し元へ返す
+    if (e instanceof LiveUnavailableError) throw e;
     log.warn('fetchProgramById failed:', id, e);
     return null;
   }
