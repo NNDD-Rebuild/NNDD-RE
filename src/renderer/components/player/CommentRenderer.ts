@@ -82,6 +82,8 @@ export class CommentRenderer {
    * 比例させ、アスペクト比の歪み (縦横不均一なスケール) だけを解消する。
    */
   private static readonly NORMAL_VIRTUAL_HEIGHT = 1080;
+  /** niconicomments 既定の commentDrawPadding (処理範囲外の片側の幅) */
+  private static readonly DRAW_PADDING = 195;
 
   private container: HTMLElement;
   private canvas: HTMLCanvasElement;
@@ -331,7 +333,13 @@ export class CommentRenderer {
         // 文字縁取り設定
         contextStrokeOpacity: strokeOpacity,
         canvasWidth: virtualWidth,
-        canvasHeight: virtualHeight
+        canvasHeight: virtualHeight,
+        // 流れコメントの出現位置は commentDrawPadding + commentDrawRange (既定 195 + 1530 = 1725)。
+        // 幅 1920 固定の前提なので、仮想幅が 1920 以上 (全画面等) だと右端より内側から出現してしまう。
+        // 出現位置が仮想幅の右端 (画面外) になるよう、範囲と当たり判定の右端を仮想幅に合わせる
+        commentDrawPadding: CommentRenderer.DRAW_PADDING,
+        commentDrawRange: virtualWidth - CommentRenderer.DRAW_PADDING,
+        collisionRange: { left: 235, right: virtualWidth - 235 }
       }
     });
 
