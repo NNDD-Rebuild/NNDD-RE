@@ -71,13 +71,15 @@ if (!gotTheLock) {
   app.quit();
 } else {
   app.on('second-instance', (_event, argv) => {
-    if (mainWindow) {
+    // Windows/Linux: nndd-re-cmd:// URL起動時、2つ目のインスタンスのargvに渡ってくる
+    const cmdUrl = extractCmdUrlFromArgv(argv);
+    // コマンド起動ではメインウィンドウを前面に出さない (動画再生中などに割り込まないため)。
+    // 前面に出す必要があるコマンド (mylist 等) は handleCmdUrl 側で行う
+    if (!cmdUrl && mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       if (!mainWindow.isVisible()) mainWindow.show();
       mainWindow.focus();
     }
-    // Windows/Linux: nndd-re-cmd:// URL起動時、2つ目のインスタンスのargvに渡ってくる
-    const cmdUrl = extractCmdUrlFromArgv(argv);
     if (cmdUrl && cmdApi) {
       handleCmdUrl(cmdUrl, cmdApi);
     }
