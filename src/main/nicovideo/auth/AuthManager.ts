@@ -110,11 +110,9 @@ export class AuthManager {
     const hiddenOk = await this.tryLoginWindow(credentials, { show: false, requestMfaCode });
     if (hiddenOk) return { ok: true };
 
-    const visibleOk = await this.tryLoginWindow(credentials, {
-      show: true,
-      parent,
-      requestMfaCode
-    });
+    // 表示ウィンドウでは 2段階認証コードをページ上で直接入力できる。アプリ内フォームも出すと
+    // 入力欄が二重になるため requestMfaCode は渡さない (アプリ内フォームは隠しウィンドウ用)
+    const visibleOk = await this.tryLoginWindow(credentials, { show: true, parent });
     if (visibleOk) return { ok: true };
     return { ok: false, error: 'ログインがキャンセルされたか、完了しませんでした' };
   }
