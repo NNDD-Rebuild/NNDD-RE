@@ -6,6 +6,7 @@ import { WatchSession } from './WatchSession';
 import { M3U8Parser } from './M3U8Parser';
 import type { MasterPlaylist } from './M3U8Parser';
 import { SegmentDownloader } from './SegmentDownloader';
+import { type HlsFetcher, nicoHlsFetcher } from './HlsFetcher';
 import { FFmpegManager } from './FFmpegManager';
 import { MediabunnyMuxer } from './MediabunnyMuxer';
 import { StreamJsonWriter } from './StreamJsonWriter';
@@ -30,6 +31,10 @@ export interface VideoDownloadOptions {
   signal?: AbortSignal;
   /** 音声のみダウンロード (映像トラックを取得しない) */
   audioOnly?: boolean;
+  /** プレイリスト・鍵・セグメントの取得手段 (未指定ならニコニコのCookie付きHTTP。生放送は署名Cookie付きに差し替える) */
+  fetcher?: HlsFetcher;
+  /** 結合 (mux) の進捗 (処理した位置 ms / 全体の長さ ms。分からなければ null) */
+  onMergeProgress?: (currentMs: number, totalMs: number | null) => void;
 }
 
 export type VideoDownloadPhase =
@@ -158,7 +163,7 @@ export class VideoDownloader {
 
     opts.onPhaseChange?.('merge');
     fs.mkdirSync(path.dirname(opts.outputPath), { recursive: true });
-    concatBinary(
+    await concatBinary(
       [
         audioInitPath,
         ...audioVariant.segments.map((s) => path.join(audioDir, s.filename))
@@ -167,11 +172,16 @@ export class VideoDownloader {
     );
   }
 
+  /** master playlist が手元にある場合の映像+音声DL・結合 (生放送のタイムシフト用) */
+  static downloadFromMaster(master: MasterPlaylist, opts: VideoDownloadOptions): Promise<void> {
+    return this.downloadWithVideo(master, opts);
+  }
+
   private static async downloadWithVideo(
     master: MasterPlaylist,
     opts: VideoDownloadOptions
   ): Promise<void> {
-    const ctx = NicoContext.get();
+    const fetcher = opts.fetcher ?? nicoHlsFetcher;
     if (master.streams.length === 0) {
       throw new Error('master playlistから映像ストリームが見つかりません');
     }
@@ -194,12 +204,12 @@ export class VideoDownloader {
       });
 
       opts.onPhaseChange?.('variant_playlist');
-      const videoVariantText = await ctx.http.getText(chosenVideo.url);
+      const videoVariantText = await fetcher.getText(chosenVideo.url, opts.signal);
       const videoVariant = M3U8Parser.parseVariant(
         videoVariantText,
         chosenVideo.url
       );
-      const audioVariantText = await ctx.http.getText(chosenAudio.url);
+      const audioVariantText = await fetcher.getText(chosenAudio.url, opts.signal);
       const audioVariant = M3U8Parser.parseVariant(
         audioVariantText,
         chosenAudio.url
@@ -207,6 +217,12 @@ export class VideoDownloader {
 
       if (!videoVariant.mapUrl || !audioVariant.mapUrl) {
         throw new Error('init segment が見つかりません');
+      }
+      if (!videoVariant.endList || !audioVariant.endList) {
+        log.warn(
+          `variant playlist に ENDLIST がありません (映像=${videoVariant.endList} 音声=${audioVariant.endList}) ` +
+            `映像${videoVariant.segments.length}個 音声${audioVariant.segments.length}個`
+        );
       }
 
       // 鍵取得
@@ -216,13 +232,13 @@ export class VideoDownloader {
       let audioKey: Buffer | undefined;
       let audioIv: Buffer | undefined;
       if (videoVariant.key) {
-        videoKey = await ctx.http.getBinary(videoVariant.key.url);
+        videoKey = await fetcher.getBinary(videoVariant.key.url, opts.signal);
         videoIv = videoVariant.key.iv
           ? this.parseIv(videoVariant.key.iv)
           : Buffer.alloc(16);
       }
       if (audioVariant.key) {
-        audioKey = await ctx.http.getBinary(audioVariant.key.url);
+        audioKey = await fetcher.getBinary(audioVariant.key.url, opts.signal);
         audioIv = audioVariant.key.iv
           ? this.parseIv(audioVariant.key.iv)
           : Buffer.alloc(16);
@@ -237,11 +253,11 @@ export class VideoDownloader {
       const videoInitPath = path.join(videoDir, videoVariant.mapFilename!);
       const audioInitPath = path.join(audioDir, audioVariant.mapFilename!);
       if (!fs.existsSync(videoInitPath)) {
-        const buf = await ctx.http.getBinary(videoVariant.mapUrl);
+        const buf = await fetcher.getBinary(videoVariant.mapUrl, opts.signal);
         fs.writeFileSync(videoInitPath, buf);
       }
       if (!fs.existsSync(audioInitPath)) {
-        const buf = await ctx.http.getBinary(audioVariant.mapUrl);
+        const buf = await fetcher.getBinary(audioVariant.mapUrl, opts.signal);
         fs.writeFileSync(audioInitPath, buf);
       }
 
@@ -254,7 +270,8 @@ export class VideoDownloader {
         concurrency: opts.concurrency,
         maxRetries: opts.maxRetries,
         onProgress: opts.onProgress,
-        signal: opts.signal
+        signal: opts.signal,
+        fetcher
       });
 
       // セグメント並列DL (音声)
@@ -266,7 +283,8 @@ export class VideoDownloader {
         concurrency: opts.concurrency,
         maxRetries: opts.maxRetries,
         onProgress: opts.onProgress,
-        signal: opts.signal
+        signal: opts.signal,
+        fetcher
       });
 
       // stream.json 書き出し
@@ -305,7 +323,8 @@ export class VideoDownloader {
         ),
         outputPath: opts.outputPath,
         tempDir: opts.tempDir,
-        signal: opts.signal
+        signal: opts.signal,
+        onProgress: opts.onMergeProgress
       };
       log.info('mux implementation:', muxImpl);
       if (muxImpl === 'mediabunny') {

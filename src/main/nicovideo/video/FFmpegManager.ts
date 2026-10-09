@@ -18,6 +18,11 @@ export interface MergeSegmentsOptions {
   audioSegmentPaths: string[];
   /** 最終MP4出力先 */
   outputPath: string;
+  /**
+   * 映像・音声の先頭のタイムスタンプを 0 に揃える (mediabunny のみ)。
+   * 生放送の録画は番組開始からの経過時間が入っており、そのまま書くと再生が長い空白から始まるため
+   */
+  normalizeStart?: boolean;
   /** 中間ファイル一時ディレクトリ */
   tempDir: string;
   /** 進捗コールバック (時間 ms / 動画長 ms 推定) */
@@ -46,14 +51,14 @@ export class FFmpegManager {
     const audioCombined = path.join(opts.tempDir, '_audio.mp4');
 
     // 1. 映像セグメント結合 (init + segments のバイナリ連結)
-    concatBinary(
+    await concatBinary(
       [opts.videoInitPath, ...opts.videoSegmentPaths],
       videoCombined
     );
     log.debug('video combined:', videoCombined);
 
     // 2. 音声セグメント結合
-    concatBinary(
+    await concatBinary(
       [opts.audioInitPath, ...opts.audioSegmentPaths],
       audioCombined
     );
@@ -85,8 +90,8 @@ export class FFmpegManager {
    * 複数バイナリファイルを単純連結。fMP4 セグメントの結合に使う
    * (HLS用のfMP4は init + cmfv/cmfa を直接連結するだけで再生可能)。
    */
-  static concatBinary(files: string[], output: string): void {
-    concatBinary(files, output);
+  static async concatBinary(files: string[], output: string): Promise<void> {
+    await concatBinary(files, output);
   }
 
   /**

@@ -174,6 +174,10 @@ export interface HlsSegment {
   url: string;
   /** 再生長 (秒) */
   duration: number;
+  /** #EXT-X-PROGRAM-DATE-TIME が直前にあれば、その時刻 (unix ms)。生放送の録画で映像の時刻を知るために使う */
+  programDateTimeMs?: number;
+  /** このセグメントに掛かっている暗号鍵 (#EXT-X-KEY は途中で切り替わることがあり、生放送では窓の中に新旧の鍵が混在する) */
+  key?: HlsKeyInfo;
 }
 
 /**

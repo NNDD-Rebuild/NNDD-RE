@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import type { NNDDREComment, WatchPageInfo } from '@shared/types';
+import type { LiveProgramInfo, NNDDREComment, WatchPageInfo } from '@shared/types';
 import { VideoFileSuffix } from '@shared/constants';
 import { NicoContext } from '../NicoContext';
 import { createLogger } from '../../util/Logger';
@@ -180,6 +180,55 @@ export class LocalFileHandler {
     if (watch.channel) {
       lines.push(`    <ch_id>${e(watch.channel.id)}</ch_id>`);
       lines.push(`    <ch_name>${e(watch.channel.name)}</ch_name>`);
+    }
+    lines.push('  </thumb>');
+    lines.push('</nicovideo_thumb_response>');
+    fs.writeFileSync(filePath, lines.join('\n'), 'utf-8');
+  }
+
+  /**
+   * 生放送のタイムシフトの情報を [ThumbInfo].xml に書く (通常動画と同じ形式で、再生時の動画情報表示に使う)。
+   * 視聴数・マイリスト数は無いので 0。放送者がユーザーなら user_*、チャンネルなら ch_* に入れる
+   */
+  static writeLiveThumbInfoXml(
+    filePath: string,
+    program: LiveProgramInfo,
+    commentCount: number,
+    /** 動画の長さ (秒)。省略時は番組の放送時間 */
+    durationSec?: number
+  ): void {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    const e = (s: string): string => this.xmlBody(s);
+    const lengthSec =
+      durationSec ?? (program.endTimeMs > program.beginTimeMs ? (program.endTimeMs - program.beginTimeMs) / 1000 : 0);
+    const lines: string[] = [];
+    lines.push('<?xml version="1.0" encoding="UTF-8"?>');
+    lines.push('<nicovideo_thumb_response status="ok">');
+    lines.push('  <thumb>');
+    lines.push(`    <video_id>${e(program.programId)}</video_id>`);
+    lines.push(`    <title>${e(program.title)}</title>`);
+    lines.push(`    <description>${e(program.description)}</description>`);
+    lines.push(`    <thumbnail_url>${e(program.thumbnailUrl)}</thumbnail_url>`);
+    lines.push(
+      `    <first_retrieve>${program.beginTimeMs > 0 ? new Date(program.beginTimeMs).toISOString() : ''}</first_retrieve>`
+    );
+    lines.push(`    <length>${this.formatLength(lengthSec)}</length>`);
+    lines.push('    <view_counter>0</view_counter>');
+    lines.push(`    <comment_num>${commentCount}</comment_num>`);
+    lines.push('    <mylist_counter>0</mylist_counter>');
+    lines.push('    <tags domain="jp">');
+    for (const t of program.tags) {
+      lines.push(`      <tag>${e(t)}</tag>`);
+    }
+    lines.push('    </tags>');
+    const supplier = program.supplier;
+    if (supplier?.type === 'user') {
+      lines.push(`    <user_id>${e(supplier.id)}</user_id>`);
+      lines.push(`    <user_nickname>${e(supplier.name)}</user_nickname>`);
+      lines.push(`    <user_icon_url>${e(supplier.iconUrl)}</user_icon_url>`);
+    } else if (supplier) {
+      lines.push(`    <ch_id>${e(supplier.id)}</ch_id>`);
+      lines.push(`    <ch_name>${e(supplier.name)}</ch_name>`);
     }
     lines.push('  </thumb>');
     lines.push('</nicovideo_thumb_response>');

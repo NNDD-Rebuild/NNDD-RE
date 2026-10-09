@@ -36,6 +36,10 @@ export interface VariantPlaylist {
   segments: HlsSegment[];
   /** target duration */
   targetDuration: number;
+  /** #EXT-X-ENDLIST があるか (無ければ更新され続けるプレイリスト) */
+  endList: boolean;
+  /** #EXT-X-MEDIA-SEQUENCE (先頭セグメントの通し番号)。無ければ 0 */
+  mediaSequence: number;
 }
 
 export class M3U8Parser {
@@ -87,6 +91,9 @@ export class M3U8Parser {
     let mapFilename: string | null = null;
     let key: HlsKeyInfo | null = null;
     let targetDuration = 0;
+    let endList = false;
+    let mediaSequence = 0;
+    let pendingProgramDateTime: number | undefined;
     const segments: HlsSegment[] = [];
     let pendingDuration = 0;
     let index = 0;
@@ -95,7 +102,14 @@ export class M3U8Parser {
       const line = lines[i].trim();
       if (!line) continue;
 
-      if (line.startsWith('#EXT-X-TARGETDURATION:')) {
+      if (line.startsWith('#EXT-X-ENDLIST')) {
+        endList = true;
+      } else if (line.startsWith('#EXT-X-MEDIA-SEQUENCE:')) {
+        mediaSequence = Number(line.substring('#EXT-X-MEDIA-SEQUENCE:'.length).trim()) || 0;
+      } else if (line.startsWith('#EXT-X-PROGRAM-DATE-TIME:')) {
+        const t = Date.parse(line.substring('#EXT-X-PROGRAM-DATE-TIME:'.length).trim());
+        pendingProgramDateTime = Number.isNaN(t) ? undefined : t;
+      } else if (line.startsWith('#EXT-X-TARGETDURATION:')) {
         targetDuration = Number(
           line.substring('#EXT-X-TARGETDURATION:'.length).trim()
         );
@@ -122,12 +136,15 @@ export class M3U8Parser {
           index: index++,
           filename: this.extractFilename(line),
           url: this.resolveUrl(baseUrl, line),
-          duration: pendingDuration
+          duration: pendingDuration,
+          ...(pendingProgramDateTime !== undefined ? { programDateTimeMs: pendingProgramDateTime } : {}),
+          ...(key ? { key } : {})
         });
         pendingDuration = 0;
+        pendingProgramDateTime = undefined;
       }
     }
-    return { mapUrl, mapFilename, key, segments, targetDuration };
+    return { mapUrl, mapFilename, key, segments, targetDuration, endList, mediaSequence };
   }
 
   /**

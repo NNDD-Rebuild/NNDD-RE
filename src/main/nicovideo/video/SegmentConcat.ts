@@ -1,19 +1,27 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { pipeline } from 'node:stream/promises';
 
 /**
  * 複数バイナリファイルを単純連結。fMP4 セグメントの結合に使う
  * (HLS用のfMP4は init + cmfv/cmfa を直接連結するだけで再生可能)。
+ *
+ * 長時間の生放送録画では数GBになるので、同期読み書きで main プロセスを止めないよう、ストリームで非同期に連結する。
  */
-export function concatBinary(files: string[], output: string): void {
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  const writer = fs.openSync(output, 'w');
+export async function concatBinary(files: string[], output: string): Promise<void> {
+  await fs.promises.mkdir(path.dirname(output), { recursive: true });
+  const out = fs.createWriteStream(output);
   try {
     for (const f of files) {
-      const data = fs.readFileSync(f);
-      fs.writeSync(writer, data, 0, data.length);
+      // end: false で出力を開いたまま、ファイルを順に流し込む
+      await pipeline(fs.createReadStream(f), out, { end: false });
     }
-  } finally {
-    fs.closeSync(writer);
+  } catch (e) {
+    out.destroy();
+    throw e;
   }
+  await new Promise<void>((resolve, reject) => {
+    out.once('error', reject);
+    out.end(resolve);
+  });
 }

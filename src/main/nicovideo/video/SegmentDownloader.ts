@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { HlsSegment } from '@shared/types';
-import { NicoContext } from '../NicoContext';
+import { type HlsFetcher, nicoHlsFetcher } from './HlsFetcher';
 import { Aes128Decryptor } from './Aes128Decryptor';
 import { createLogger } from '../../util/Logger';
 import { RateLimiter } from '../../util/RateLimiter';
@@ -28,6 +28,8 @@ export interface SegmentDownloadOptions {
   signal?: AbortSignal;
   /** 帯域制限 (downloadAll 内で全ワーカー共有、未指定なら設定値から自動生成) */
   rateLimiter?: RateLimiter;
+  /** 取得手段 (未指定ならニコニコのCookie付きHTTP) */
+  fetcher?: HlsFetcher;
 }
 
 /**
@@ -60,15 +62,13 @@ export class SegmentDownloader {
         throw new Error('aborted');
       }
       try {
-        const ciphertext = await NicoContext.get().http.getBinary(seg.url, {
-          signal: opts.signal
-        });
+        const ciphertext = await (opts.fetcher ?? nicoHlsFetcher).getBinary(seg.url, opts.signal);
         await opts.rateLimiter?.consume(ciphertext.length);
         const plaintext =
           opts.key && opts.iv
             ? Aes128Decryptor.decrypt(ciphertext, opts.key, opts.iv)
             : ciphertext;
-        fs.writeFileSync(dest, plaintext);
+        await fs.promises.writeFile(dest, plaintext);
         return;
       } catch (e) {
         lastErr = e;

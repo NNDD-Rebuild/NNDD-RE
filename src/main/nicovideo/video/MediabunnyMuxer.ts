@@ -37,9 +37,9 @@ export class MediabunnyMuxer {
     const videoCombined = path.join(opts.tempDir, '_video.mp4');
     const audioCombined = path.join(opts.tempDir, '_audio.mp4');
 
-    concatBinary([opts.videoInitPath, ...opts.videoSegmentPaths], videoCombined);
+    await concatBinary([opts.videoInitPath, ...opts.videoSegmentPaths], videoCombined);
     log.debug('video combined:', videoCombined);
-    concatBinary([opts.audioInitPath, ...opts.audioSegmentPaths], audioCombined);
+    await concatBinary([opts.audioInitPath, ...opts.audioSegmentPaths], audioCombined);
     log.debug('audio combined:', audioCombined);
 
     if (opts.signal?.aborted) {
@@ -121,6 +121,14 @@ export class MediabunnyMuxer {
       // シフトすることで相対的な音声同期を維持する。
       const REORDER_MARGIN_SEC = 0.2;
 
+      // 先頭のタイムスタンプを 0 に揃える場合は、映像・音声のうち早い方を基準に同じだけ引く
+      // (両トラックの相対的な位置は保つ)
+      let startBase = 0;
+      if (opts.normalizeStart) {
+        startBase = Math.min(await videoTrack.getFirstTimestamp(), await audioTrack.getFirstTimestamp());
+        log.info('normalize start timestamp, base (sec):', startBase);
+      }
+
       // AACのエンコーダ遅延(priming samples)等で先頭パケットのtimestampが
       // マージンを超えて負になる場合に備え、追加のシフトも行う。
       let videoPacketCount = 0;
@@ -131,7 +139,7 @@ export class MediabunnyMuxer {
           await output.cancel();
           throw new Error('mediabunny mux aborted');
         }
-        const shifted = packet.timestamp + REORDER_MARGIN_SEC;
+        const shifted = packet.timestamp - startBase + REORDER_MARGIN_SEC;
         if (videoIsFirst && shifted < 0) {
           videoTimestampOffset = shifted;
           log.warn('video first packet still negative after margin, shifting by', -videoTimestampOffset);
@@ -158,7 +166,7 @@ export class MediabunnyMuxer {
           await output.cancel();
           throw new Error('mediabunny mux aborted');
         }
-        const shifted = packet.timestamp + REORDER_MARGIN_SEC;
+        const shifted = packet.timestamp - startBase + REORDER_MARGIN_SEC;
         if (audioIsFirst && shifted < 0) {
           audioTimestampOffset = shifted;
           log.warn('audio first packet still negative after margin, shifting by', -audioTimestampOffset);
