@@ -20,7 +20,6 @@ import {
 } from './player/StreamServer';
 import { PlayerManager } from './player/PlayerManager';
 import { setupHlsSessionInterceptor } from './player/HlsSessionInterceptor';
-import { NnddHttpServer } from './server/NnddHttpServer';
 import { TrayManager } from './tray/TrayManager';
 import { BackupManager } from './githubSync/BackupManager';
 import { getUpdateManager } from './update/UpdateManager';
@@ -32,7 +31,6 @@ const log = createLogger('Main');
 
 let mainWindow: BrowserWindow | null = null;
 let library: LibraryManager | null = null;
-let httpServer: NnddHttpServer | null = null;
 let trayManager: TrayManager | null = null;
 let backupManager: BackupManager | null = null;
 let cmdApi: CmdApi | null = null;
@@ -270,17 +268,6 @@ app.whenReady().then(async () => {
     handleCmdUrl(initialCmdUrl, cmdApi);
   }
 
-  // 内蔵HTTPサーバー起動 (設定が有効な場合)
-  const httpCfg = config.get('httpServer');
-  if (httpCfg.enabled) {
-    httpServer = new NnddHttpServer(library);
-    try {
-      await httpServer.start();
-    } catch (e) {
-      log.warn('HTTP server start failed:', e);
-    }
-  }
-
   // 起動時自動アップロード: バックグラウンド実行、起動処理(ウィンドウ表示等)をブロックしない
   void backupManager.autoUploadActiveProfile();
 
@@ -323,10 +310,6 @@ app.on('before-quit', (event) => {
     stopStreamServer();
     PlayerManager.get().closeAll();
     // ストリーミングキャッシュ (userData/cache/movie) は次回シーク再生のため保持する
-    if (httpServer) {
-      await httpServer.stop().catch(() => undefined);
-      httpServer = null;
-    }
     if (trayManager) {
       trayManager.destroy();
       trayManager = null;
