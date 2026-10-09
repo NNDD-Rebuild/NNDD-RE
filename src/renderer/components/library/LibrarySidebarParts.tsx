@@ -26,15 +26,21 @@ export function TabBtn({
   );
 }
 
-/** 左ペイン (タグモード): タグ一覧 (件数の多い順) */
+/** 左ペイン (タグモード): タグ一覧 (件数の多い順) + 隠したタグ (NGタグ) */
 export function LibraryTagList({
   tagStats,
   selectedTag,
-  onSelectTag
+  onSelectTag,
+  onContextMenuTag,
+  hiddenTags,
+  onShowTag
 }: {
   tagStats: [string, number][];
   selectedTag: string | null;
   onSelectTag: (tag: string) => void;
+  onContextMenuTag: (e: React.MouseEvent, tag: string) => void;
+  hiddenTags: string[];
+  onShowTag: (tag: string) => void;
 }): JSX.Element {
   return (
     <>
@@ -45,6 +51,7 @@ export function LibraryTagList({
         <button
           key={t}
           onClick={() => onSelectTag(t)}
+          onContextMenu={(e) => onContextMenuTag(e, t)}
           className={[
             'block w-full text-left px-2 py-0.5 rounded text-xs',
             selectedTag === t
@@ -56,6 +63,24 @@ export function LibraryTagList({
           <span className="text-nndd-subtext text-[10px]">({n})</span>
         </button>
       ))}
+      {hiddenTags.length > 0 && (
+        <details className="mt-3 border-t border-nndd-border pt-2">
+          <summary className="cursor-pointer text-xs text-nndd-subtext">
+            隠したタグ ({hiddenTags.length})
+          </summary>
+          {hiddenTags.map((t) => (
+            <div key={t} className="flex items-center gap-1 px-2 py-0.5 text-xs">
+              <span className="flex-1 truncate" title={t}>{t}</span>
+              <button
+                onClick={() => onShowTag(t)}
+                className="shrink-0 text-nndd-accent hover:underline"
+              >
+                タグを表示
+              </button>
+            </div>
+          ))}
+        </details>
+      )}
     </>
   );
 }

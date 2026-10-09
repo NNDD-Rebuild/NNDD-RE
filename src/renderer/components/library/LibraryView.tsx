@@ -9,6 +9,7 @@ import { useLibraryVideos } from '@renderer/hooks/library/useLibraryVideos';
 import { useLibraryFolderTree } from '@renderer/hooks/library/useLibraryFolderTree';
 import { useLanLibrary } from '@renderer/hooks/library/useLanLibrary';
 import { useLibraryFolderCreate } from '@renderer/hooks/library/useLibraryFolderCreate';
+import { useNgTags } from '@renderer/hooks/library/useNgTags';
 import {
   LAN_FOLDER,
   extractVideoId,
@@ -38,6 +39,8 @@ export function LibraryView(): JSX.Element {
   const [sortCol, setSortCol] = useState<SortCol>('pubDate');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; video: NNDDREVideo } | null>(null);
+  const [tagCtxMenu, setTagCtxMenu] = useState<{ x: number; y: number; tag: string } | null>(null);
+  const { ngTags, hideTag, showTag } = useNgTags();
   const showToast = useAppStore((s) => s.showToast);
   const ctxVideoId = ctxMenu ? extractVideoId(ctxMenu.video.videoName) : null;
 
@@ -73,14 +76,21 @@ export function LibraryView(): JSX.Element {
   const folderCreate = useLibraryFolderCreate(reload);
 
   const tagStats = useMemo(() => {
+    const ng = new Set(ngTags);
     const map = new Map<string, number>();
     for (const v of videos) {
       for (const t of v.tagStrings) {
+        if (ng.has(t)) continue;
         map.set(t, (map.get(t) ?? 0) + 1);
       }
     }
     return [...map.entries()].sort((a, b) => b[1] - a[1]);
-  }, [videos]);
+  }, [videos, ngTags]);
+
+  const handleHideTag = async (tag: string): Promise<void> => {
+    await hideTag(tag);
+    if (selectedTag === tag) setSelectedTag(null);
+  };
 
   const { folderTree, folderVideoCounts, expandedFolders, toggleFolderExpand } =
     useLibraryFolderTree(videos, fsFolders);
@@ -332,7 +342,18 @@ export function LibraryView(): JSX.Element {
 
         <div className="flex-1 overflow-auto p-2 text-sm">
           {mode === 'tag' && (
-            <LibraryTagList tagStats={tagStats} selectedTag={selectedTag} onSelectTag={setSelectedTag} />
+            <LibraryTagList
+              tagStats={tagStats}
+              selectedTag={selectedTag}
+              onSelectTag={setSelectedTag}
+              onContextMenuTag={(e, tag) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setTagCtxMenu({ x: e.clientX, y: e.clientY, tag });
+              }}
+              hiddenTags={ngTags}
+              onShowTag={(tag) => void showTag(tag)}
+            />
           )}
 
           {mode === 'folder' && (
@@ -441,6 +462,17 @@ export function LibraryView(): JSX.Element {
           </>
         )}
       </main>
+      {tagCtxMenu && (
+        <ContextMenuPopup
+          x={tagCtxMenu.x}
+          y={tagCtxMenu.y}
+          onClose={() => setTagCtxMenu(null)}
+        >
+          <MenuItem onClick={() => { void handleHideTag(tagCtxMenu.tag); setTagCtxMenu(null); }}>
+            タグを隠す
+          </MenuItem>
+        </ContextMenuPopup>
+      )}
       {ctxMenu && (
         <ContextMenuPopup
           x={ctxMenu.x}

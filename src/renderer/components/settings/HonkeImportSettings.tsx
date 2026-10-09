@@ -22,7 +22,7 @@ const CATEGORY_LABELS: Record<
   },
   [HonkeImportCategory.NG]: {
     label: "NGリスト",
-    hint: "NGワード/ID/コマンド/NGタグ (許可IDは非対応)",
+    hint: "NGワード/ID/コマンド/NGタグ (ライブラリのタグ一覧から隠すタグ。許可IDは非対応)",
   },
   [HonkeImportCategory.MYLIST]: {
     label: "マイリスト",

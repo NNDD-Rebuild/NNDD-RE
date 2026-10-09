@@ -25,11 +25,12 @@ export function registerCommentHandlers(ctx: IpcHandlerContext): void {
   ipcMain.handle(IpcChannel.NG_LIST_COMMENT, () =>
     library.ngListDao.listComment()
   );
-  const broadcastNgChanged = (): void => {
+  const broadcast = (channel: string): void => {
     for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed()) win.webContents.send(IpcChannel.NG_COMMENT_CHANGED);
+      if (!win.isDestroyed()) win.webContents.send(channel);
     }
   };
+  const broadcastNgChanged = (): void => broadcast(IpcChannel.NG_COMMENT_CHANGED);
   ipcMain.handle(IpcChannel.NG_ADD_COMMENT, (_e, item: NgListItem) => {
     library.ngListDao.addComment(item);
     broadcastNgChanged();
@@ -43,10 +44,12 @@ export function registerCommentHandlers(ctx: IpcHandlerContext): void {
   ipcMain.handle(IpcChannel.NG_LIST_TAG, () => library.ngListDao.listTags());
   ipcMain.handle(IpcChannel.NG_ADD_TAG, (_e, tag: string) => {
     library.ngListDao.addTag(tag);
+    broadcast(IpcChannel.NG_TAG_CHANGED);
     return true;
   });
   ipcMain.handle(IpcChannel.NG_REMOVE_TAG, (_e, tag: string) => {
     library.ngListDao.removeTag(tag);
+    broadcast(IpcChannel.NG_TAG_CHANGED);
     return true;
   });
   ipcMain.handle(IpcChannel.NG_LIST_UP, () => library.ngListDao.listUps());
