@@ -5,6 +5,7 @@ import { getConfigStore } from '../../config/ConfigStore';
 import { NnddHttpServer } from '../../server/NnddHttpServer';
 import { LanLibraryClient } from '../../server/LanLibraryClient';
 import { createLogger } from '../../util/Logger';
+import { isHeadless } from '../../util/headless';
 import type { IpcHandlerContext } from './context';
 
 const log = createLogger('IPC');
@@ -19,8 +20,8 @@ export function registerHttpHandlers(ctx: IpcHandlerContext): void {
   // --- HTTPサーバー制御 ---
   let runtimeHttpServer: NnddHttpServer | null = null;
 
-  // 自動起動
-  if (getConfigStore().get('httpServer').enabled) {
+  // 自動起動 (ヘッドレス時は設定を書き換えず enabled を強制 true 扱い)
+  if (isHeadless || getConfigStore().get('httpServer').enabled) {
     runtimeHttpServer = new NnddHttpServer(library);
     runtimeHttpServer.start().then(({ port }) => {
       log.info('HTTP server auto-started on port', port);

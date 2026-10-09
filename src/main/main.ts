@@ -7,6 +7,7 @@ import { LibraryManager } from './db/LibraryManager';
 import { getConfigStore } from './config/ConfigStore';
 import { registerIpcHandlers } from './ipc/registerIpc';
 import { createLogger, setLogLevel } from './util/Logger';
+import { isHeadless } from './util/headless';
 import { NicoContext } from './nicovideo/NicoContext';
 import { NicoHistoryClient } from './nicovideo';
 import {
@@ -252,12 +253,15 @@ app.whenReady().then(async () => {
   // ネイティブタイトルバーの明暗をテーマに合わせる
   nativeTheme.themeSource = config.get('ui').theme === 'light' ? 'light' : 'dark';
 
-  // メインウィンドウ生成
-  mainWindow = createMainWindow();
-
-  // システムトレイ初期化 (IPC登録より先に行い、参照を渡す)
-  trayManager = new TrayManager(() => mainWindow);
-  trayManager.initialize();
+  // メインウィンドウ生成・システムトレイ初期化 (IPC登録より先に行い、参照を渡す)。
+  // ヘッドレス時はどちらも作らない
+  if (!isHeadless) {
+    mainWindow = createMainWindow();
+    trayManager = new TrayManager(() => mainWindow);
+    trayManager.initialize();
+  } else {
+    log.info('Headless mode: main window and tray skipped');
+  }
 
   // IPC 登録 (トレイ参照・メインウィンドウ参照・バックアップマネージャーを渡して連携)
   cmdApi = registerIpcHandlers(library, trayManager, () => mainWindow, backupManager);
@@ -276,18 +280,20 @@ app.whenReady().then(async () => {
 
   // 起動時アップデート確認: バックグラウンド実行、起動処理をブロックしない
   const updateMode = config.get('update').mode;
-  if (updateMode !== 'off') {
+  if (updateMode !== 'off' && !isHeadless) {
     void getUpdateManager().checkOnStartup(() => mainWindow, updateMode);
   }
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
+    if (!isHeadless && BrowserWindow.getAllWindows().length === 0) {
       mainWindow = createMainWindow();
     }
   });
 });
 
 app.on('window-all-closed', () => {
+  // ヘッドレスはプレイヤーウィンドウを閉じても常駐し続ける (終了は SIGTERM 等)
+  if (isHeadless) return;
   // システムトレイが有効ならアプリは終了しない (最小化トレイ動作)
   const config = getConfigStore();
   if (config.get('tray').minimizeToTray && trayManager) {

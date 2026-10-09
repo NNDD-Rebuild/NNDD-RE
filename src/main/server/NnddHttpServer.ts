@@ -11,6 +11,7 @@ import { LibraryManager } from '../db/LibraryManager';
 import { isPathAllowed } from '../player/LocalVideoProtocol';
 import { getConfigStore } from '../config/ConfigStore';
 import { createLogger } from '../util/Logger';
+import { forceAllowExternal, forcePort } from '../util/headless';
 import { CommentXmlReader } from '../nicovideo/comment/CommentXmlReader';
 import { ThumbInfoXmlReader } from '../nicovideo/video/ThumbInfoXmlReader';
 import { generateLibraryPage } from './libraryPage';
@@ -57,9 +58,9 @@ export class NnddHttpServer {
 
     const cfg = getConfigStore();
     const httpCfg = cfg.get('httpServer');
-    this.port = httpCfg.port ?? 12345;
+    this.port = forcePort ?? httpCfg.port ?? 12345;
     this.allowVideo = httpCfg.allowVideo ?? true;
-    this.allowExternal = httpCfg.allowExternal ?? false;
+    this.allowExternal = forceAllowExternal || (httpCfg.allowExternal ?? false);
     this.allowMyList = httpCfg.allowMyList ?? true;
   }
 
