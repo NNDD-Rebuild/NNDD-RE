@@ -328,7 +328,7 @@ export default function PlayerApp(): JSX.Element {
     setIsLocal(false);
     setWatch(null);
     watchRef.current = null;
-    playInfoRef.current = { videoId, title: videoId, thumbnailUrl: '', isLocal: false };
+    playInfoRef.current = { videoId, title: videoId, thumbnailUrl: '', isLocal: false, isNiconicoVideo: true };
     setLocalCommentXmlPath(undefined);
     setPastComments([]);
     setShowPastComments(false);
@@ -348,7 +348,8 @@ export default function PlayerApp(): JSX.Element {
       title: w?.title ?? videoId,
       thumbnailUrl: w?.thumbnail?.url ?? '',
       discordThumbnailUrl: w?.thumbnail?.remoteUrl ?? '',
-      isLocal: false
+      isLocal: false,
+      isNiconicoVideo: true
     };
 
     // 画質リストをセット (DMS のみ)
@@ -479,7 +480,8 @@ export default function PlayerApp(): JSX.Element {
       videoId: guessId,
       title: titleGuess,
       thumbnailUrl: files?.thumbImage ?? '',
-      isLocal: true
+      isLocal: true,
+      isNiconicoVideo: extractedId !== null
     };
 
     // コメントXML と ThumbInfo XML を並列ロード (setSrc 後なので再生を塞がない)

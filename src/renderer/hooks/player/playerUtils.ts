@@ -27,6 +27,11 @@ export interface PlayInfo {
   /** Discord Rich Presence送信用。nndd-re-local://はDiscordから解決できないため、ImageCache適用前の生URLを別途保持 */
   discordThumbnailUrl?: string;
   isLocal: boolean;
+  /**
+   * ニコニコ動画の再生か (Discord Rich Presence の送信対象)。ストリーミングと、ライブラリのDL済みファイル
+   * (ファイル名に動画ID・保存した生放送の番組IDがあるもの) が true。動画IDの無いローカルファイルとLANライブラリは false。
+   */
+  isNiconicoVideo?: boolean;
 }
 
 /** 次動画のプリロード結果。videoId のみの場合は取得中 */

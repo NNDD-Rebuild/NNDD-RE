@@ -2,7 +2,11 @@ import { useEffect, type MutableRefObject } from 'react';
 import { IpcChannel } from '@shared/types';
 import type { PlayInfo } from './playerUtils';
 
-/** Discord Rich Presence: 再生開始時に送信し、ウィンドウを閉じたらクリアする */
+/**
+ * Discord Rich Presence: ニコニコ動画 (ストリーミング・ライブラリのDL済み・保存した生放送) の再生開始時に送信し、
+ * ウィンドウを閉じたらクリアする。動画IDの無いローカルファイル・LANライブラリの再生では送信せず、
+ * 直前の表示が残らないようクリアする。
+ */
 export function useDiscordPresence({
   video,
   src,
@@ -17,7 +21,11 @@ export function useDiscordPresence({
     if (!video) return;
     const sendActivity = (): void => {
       const info = playInfoRef.current;
-      if (!info?.videoId) return;
+      if (!info?.isNiconicoVideo) {
+        window.nndd.send(IpcChannel.DISCORD_RPC_CLEAR_ACTIVITY);
+        return;
+      }
+      if (!info.videoId) return;
       window.nndd.send(IpcChannel.DISCORD_RPC_SET_ACTIVITY, {
         videoId: info.videoId,
         title: info.title,
