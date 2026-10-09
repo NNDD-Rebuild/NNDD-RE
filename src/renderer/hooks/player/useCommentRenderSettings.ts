@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import type { NNDDREComment, NgListItem } from '@shared/types';
 import { COMMENT_FONT_FAMILY } from '@shared/constants';
-import { isNicoScriptText } from '@shared/utils/nicoScript';
+import { applyDefaultColors, isNicoScriptText } from '@shared/utils/nicoScript';
 import type { CommentRenderConfig } from '../../components/player/CommentRenderer';
 import { useConfig } from '../useConfig';
 import { limitSimultaneousComments } from './playerUtils';
@@ -60,7 +60,8 @@ export function useCommentRenderSettings({
       ? limitSimultaneousComments(pastComments, pastCommentMaxCount)
       : comments;
     // owner コマンドコメント (@ジャンプ / ＠デフォルト / ＠CM / ニワン語 等) は画面に流さない
-    return base.filter((c) => !isNicoScriptText(c.text ?? ''));
+    // ＠デフォルト の既定色は本編の投稿者コメントから集めて適用する
+    return applyDefaultColors(base.filter((c) => !isNicoScriptText(c.text ?? '')), comments);
   }, [showComments, showPastComments, pastComments, pastCommentMaxCount, comments]);
 
   const commentConfig = useMemo<Partial<CommentRenderConfig>>(

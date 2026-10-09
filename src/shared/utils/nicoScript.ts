@@ -133,3 +133,42 @@ export function resolveMarker(markers: NicoScriptMarkers, name: string, nowMs: n
   const past = list.filter((v) => v <= nowMs);
   return past.length > 0 ? past[past.length - 1] : list[0];
 }
+
+interface DefaultColorTarget {
+  fork?: string;
+  text: string;
+  mail: string;
+  vposMs: number;
+  isPremium: boolean;
+}
+
+/**
+ * 投稿者コメントの `＠デフォルト` / `/commentColor=0x......` で指定された色を、色指定のないコメントに足して返す。
+ * 指定した位置 (vpos) 以降のコメントが対象で、色なしの `＠デフォルト` は既定色を元に戻す。
+ * 投稿者コメントの命令は source から集める (過去ログ表示では投稿者コメントが無いので、本編のコメントを渡す)。
+ */
+export function applyDefaultColors<T extends DefaultColorTarget>(comments: readonly T[], source: readonly T[]): T[] {
+  const defaults = source
+    .filter((c) => c.fork === 'owner' || c.fork === '1')
+    .flatMap((c) => {
+      const cmd = parseNicoScript(c.text ?? '', c.mail ?? '');
+      return cmd?.kind === 'setDefaultColor' ? [{ vposMs: c.vposMs, token: cmd.colorToken }] : [];
+    })
+    .sort((a, b) => a.vposMs - b.vposMs);
+  if (defaults.length === 0) return comments as T[];
+
+  return comments.map((c) => {
+    let token: string | null = null;
+    for (const d of defaults) {
+      if (d.vposMs > c.vposMs) break;
+      token = d.token;
+    }
+    if (!token || findColorToken(c.mail ?? '') !== null) return c;
+    // 色コード (#rrggbb) はプレミアム会員のコメントでないと描画側が無視するため、既定色として足すときはプレミアム扱いにする
+    return {
+      ...c,
+      mail: `${c.mail ?? ''} ${token}`.trim(),
+      isPremium: c.isPremium || token.startsWith('#')
+    };
+  });
+}
