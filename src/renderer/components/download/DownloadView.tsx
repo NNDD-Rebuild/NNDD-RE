@@ -43,9 +43,13 @@ export function DownloadView(): JSX.Element {
     return off;
   }, []);
 
-  const handleAdd = async (): Promise<void> => {
-    const id = videoId.trim();
+  /** @param override 入力欄ではなくこの文字列を追加する (ドロップ用。入力欄の内容は消さない) */
+  const handleAdd = async (override?: string): Promise<void> => {
+    const id = (override ?? videoId).trim();
     if (!id) return;
+    const clearInput = (): void => {
+      if (override === undefined) setVideoId('');
+    };
 
     // マイリストURL検出: nicovideo.jp/.../mylist/数字 を含む場合
     const mylistMatch = id.match(/nicovideo\.jp(?:\/user\/\d+)?\/mylist\/(\d+)/);
@@ -66,7 +70,7 @@ export function DownloadView(): JSX.Element {
         for (const it of mlItems) {
           await window.nndd.invoke(window.nndd.channels.DOWNLOAD_ENQUEUE, { videoId: it.videoId, subDir });
         }
-        setVideoId('');
+        clearInput();
         reload();
       } catch (e) {
         setMylistError(e instanceof Error ? e.message : String(e));
@@ -90,7 +94,7 @@ export function DownloadView(): JSX.Element {
         for (const it of seriesData.items) {
           await window.nndd.invoke(window.nndd.channels.DOWNLOAD_ENQUEUE, { videoId: it.videoId, subDir });
         }
-        setVideoId('');
+        clearInput();
         reload();
       } catch (e) {
         setMylistError(e instanceof Error ? e.message : String(e));
@@ -120,7 +124,7 @@ export function DownloadView(): JSX.Element {
         for (const it of userItems) {
           await window.nndd.invoke(window.nndd.channels.DOWNLOAD_ENQUEUE, { videoId: it.videoId, subDir });
         }
-        setVideoId('');
+        clearInput();
         reload();
       } catch (e) {
         setMylistError(e instanceof Error ? e.message : String(e));
@@ -134,7 +138,7 @@ export function DownloadView(): JSX.Element {
     const liveId = extractLiveIdFromInput(id);
     if (liveId) {
       if (enqueueLiveDownload(liveId, liveId) === null) return;
-      setVideoId('');
+      clearInput();
       reload();
       return;
     }
@@ -142,8 +146,23 @@ export function DownloadView(): JSX.Element {
     await window.nndd.invoke(window.nndd.channels.DOWNLOAD_ENQUEUE, {
       videoId: id
     });
-    setVideoId('');
+    clearInput();
     reload();
+  };
+
+  const [dragOver, setDragOver] = useState(false);
+
+  const isTextDrag = (e: React.DragEvent): boolean =>
+    e.dataTransfer.types.includes('text/uri-list') || e.dataTransfer.types.includes('text/plain');
+
+  /** URL (動画URLなど) のドロップで追加。複数行なら1行ずつ順に追加する */
+  const handleDrop = async (e: React.DragEvent): Promise<void> => {
+    setDragOver(false);
+    if (!isTextDrag(e)) return;
+    e.preventDefault();
+    const raw = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text/plain');
+    const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
+    for (const line of lines) await handleAdd(line);
   };
 
   const handleCancel = (id: string): void => {
@@ -195,7 +214,19 @@ export function DownloadView(): JSX.Element {
   const hasPausedItems = items.some((it) => it.status === DownloadStatusType.PAUSED);
 
   return (
-    <div className="h-full flex flex-col">
+    <div
+      className={['h-full flex flex-col', dragOver ? 'outline outline-2 -outline-offset-2 outline-nndd-accent' : ''].join(' ')}
+      onDragOver={(e) => {
+        if (!isTextDrag(e)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'copy';
+        setDragOver(true);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragOver(false);
+      }}
+      onDrop={(e) => void handleDrop(e)}
+    >
       <div className="flex items-center gap-2 p-2 border-b border-nndd-border bg-nndd-panel">
         <input
           value={videoId}
@@ -203,7 +234,7 @@ export function DownloadView(): JSX.Element {
           placeholder="動画ID (例: sm12345)、URL、またはマイリストURL"
           className="flex-1 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
           onKeyDown={(e) => {
-            if (e.key === 'Enter') handleAdd();
+            if (e.key === 'Enter') void handleAdd();
           }}
         />
         {bulkAddKind && (
@@ -217,8 +248,9 @@ export function DownloadView(): JSX.Element {
           </label>
         )}
         <button
-          onClick={handleAdd}
+          onClick={() => void handleAdd()}
           disabled={mylistAdding}
+          title="入力した動画ID・URLを追加します。動画やマイリストのURLをこの画面にドロップしても追加できます"
           className="text-xs px-3 py-1 bg-nndd-accent text-white rounded hover:opacity-80 disabled:opacity-50"
         >
           {mylistAdding ? 'マイリスト取得中…' : 'DLリストに追加'}
