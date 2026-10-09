@@ -91,8 +91,10 @@ export class VideoDao {
       // INSERT OR REPLACE は既存行を丸ごと入れ替えるため、お気に入り状態を
       // 明示的に引き継がないとライブラリ再スキャンのたびにリセットされてしまう。
       const existing = this.db.prepare(Q.SELECT_VIDEO_FAVORITE_BY_KEY).get(key) as
-        | { isFavorite: number }
+        | { id: number; isFavorite: number }
         | undefined;
+      // 置換で id が変わるため、旧 id に紐づくタグ関連が孤児として残らないよう先に消す。
+      if (existing) this.db.prepare(Q.DELETE_VIDEO_TAGS).run(existing.id);
       const stmt = this.db.prepare(Q.INSERT_VIDEO);
       const info = stmt.run(
         key,

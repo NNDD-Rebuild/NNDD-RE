@@ -190,7 +190,7 @@ export const Q = {
            playCount, time, lastPlayDate, yetReading, pubDate, isFavorite, description
     FROM NNDDREVideo WHERE id = ?;`,
 
-  SELECT_VIDEO_FAVORITE_BY_KEY: `SELECT isFavorite FROM NNDDREVideo WHERE key = ?;`,
+  SELECT_VIDEO_FAVORITE_BY_KEY: `SELECT id, isFavorite FROM NNDDREVideo WHERE key = ?;`,
 
   INSERT_VIDEO: `
     INSERT OR REPLACE INTO NNDDREVideo
