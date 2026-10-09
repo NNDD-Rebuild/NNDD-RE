@@ -1,10 +1,21 @@
 import { useCallback, useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import type { NNDDREComment, NicowariContent } from '@shared/types';
 import { IpcChannel } from '@shared/types';
+import {
+  collectMarkers,
+  parseNicoScript,
+  resolveMarker,
+  type NicoScriptCommand
+} from '@shared/utils/nicoScript';
+
+/** 命令が再生位置に達してから、この時間内なら実行する (シークで飛び越えた命令や、途中から再生した場合の過去の命令は実行しない) */
+const TRIGGER_WINDOW_MS = 2000;
 
 /**
- * owner コメントの @ジャンプ / ＠ジャンプ: 指定 vpos に達したら別動画へジャンプ。
+ * 投稿者コメントのニコスクリプト: ＠ジャンプ (別動画 / #分:秒 / #ラベル) ・ ＠ジャンプマーカー ・ニワン語 (/jump /seek /addMarker)。
+ * 命令のあるコメントの位置に再生が達したら一度実行する。後ろへシークして位置より前に戻れば再び実行される。
  * 半角・全角 @ 両対応。fork は 'owner' (ストリーミング) / '1' (ローカルXML) の両方を見る。
+ * ＠デフォルトの色指定は描画側 (useCommentRenderSettings) で扱う。
  */
 export function useJumpCommand({
   video,
@@ -19,31 +30,55 @@ export function useJumpCommand({
 }): void {
   useEffect(() => {
     if (!video) return;
-    const jumpComments = comments.filter(
-      (c) =>
-        (c.fork === 'owner' || c.fork === '1') &&
-        /[＠@]ジャンプ/.test((c.mail ?? '') + ' ' + (c.text ?? ''))
+    const parsed = comments
+      .filter((c) => c.fork === 'owner' || c.fork === '1')
+      .map((c) => ({ c, cmd: parseNicoScript(c.text ?? '', c.mail ?? ''), vposMs: c.vposMs }));
+    const markers = collectMarkers(parsed);
+    const runnable = parsed.filter(
+      (p): p is typeof p & { cmd: NicoScriptCommand } =>
+        p.cmd !== null && (p.cmd.kind === 'jump' || p.cmd.kind === 'seek' || p.cmd.kind === 'seekMarker')
     );
-    if (jumpComments.length === 0) return;
+    if (runnable.length === 0) return;
+
     const triggered = new Set<number>();
+    const run = (cmd: NicoScriptCommand, nowMs: number): void => {
+      if (cmd.kind === 'jump') {
+        // フォルダ連続再生中は、次の動画へ進む流れを邪魔しない
+        if (isLocalRef.current && autoNextFolderRef.current) return;
+        window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, { videoId: cmd.videoId, autoNext: true });
+        return;
+      }
+      let sec: number | null = null;
+      if (cmd.kind === 'seek') sec = cmd.sec;
+      else if (cmd.kind === 'seekMarker') {
+        const ms = resolveMarker(markers, cmd.marker, nowMs);
+        sec = ms === null ? null : ms / 1000;
+      }
+      if (sec === null || !Number.isFinite(video.duration)) return;
+      video.currentTime = Math.min(sec, video.duration);
+    };
+
     const onTime = (): void => {
-      if (isLocalRef.current && autoNextFolderRef.current) return;
       const nowMs = video.currentTime * 1000;
-      for (const c of jumpComments) {
-        if (!triggered.has(c.no) && nowMs >= c.vposMs) {
-          triggered.add(c.no);
-          // text から @ジャンプ 部分を除去して動画ID抽出
-          const rawText = (c.text ?? '').replace(/[＠@]ジャンプ\s*/g, '').trim();
-          const m = rawText.match(/((?:sm|nm|so|ax|sd|ca|cd|cw|zb|ze|yo)\d+)/);
-          const targetId = m ? m[1] : rawText;
-          if (targetId) {
-            window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, { videoId: targetId, autoNext: true });
-          }
-        }
+      for (const { c, cmd } of runnable) {
+        if (triggered.has(c.no) || nowMs < c.vposMs || nowMs - c.vposMs > TRIGGER_WINDOW_MS) continue;
+        triggered.add(c.no);
+        run(cmd, nowMs);
+      }
+    };
+    // 命令の位置より前へ戻ったら、再び通過したときに実行できるようにする
+    const onSeeked = (): void => {
+      const nowMs = video.currentTime * 1000;
+      for (const { c } of runnable) {
+        if (c.vposMs > nowMs) triggered.delete(c.no);
       }
     };
     video.addEventListener('timeupdate', onTime);
-    return () => video.removeEventListener('timeupdate', onTime);
+    video.addEventListener('seeked', onSeeked);
+    return () => {
+      video.removeEventListener('timeupdate', onTime);
+      video.removeEventListener('seeked', onSeeked);
+    };
   }, [video, comments]);
 }
 

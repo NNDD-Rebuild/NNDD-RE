@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import type { NNDDREComment, NgListItem } from '@shared/types';
 import { COMMENT_FONT_FAMILY } from '@shared/constants';
+import { isNicoScriptText } from '@shared/utils/nicoScript';
 import type { CommentRenderConfig } from '../../components/player/CommentRenderer';
 import { useConfig } from '../useConfig';
 import { limitSimultaneousComments } from './playerUtils';
@@ -58,8 +59,8 @@ export function useCommentRenderSettings({
     const base = showPastComments
       ? limitSimultaneousComments(pastComments, pastCommentMaxCount)
       : comments;
-    // owner コマンドコメント (@ジャンプ / ＠CM 等) は画面に流さない
-    return base.filter((c) => !/^[＠@](ジャンプ|[CＣ][MＭ])/.test(c.text ?? ''));
+    // owner コマンドコメント (@ジャンプ / ＠デフォルト / ＠CM / ニワン語 等) は画面に流さない
+    return base.filter((c) => !isNicoScriptText(c.text ?? ''));
   }, [showComments, showPastComments, pastComments, pastCommentMaxCount, comments]);
 
   const commentConfig = useMemo<Partial<CommentRenderConfig>>(
