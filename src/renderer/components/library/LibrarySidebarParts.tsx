@@ -26,14 +26,18 @@ export function TabBtn({
   );
 }
 
-/** 左ペイン (タグモード): タグ一覧 (件数の多い順) + 隠したタグ (NGタグ) */
+/** 左ペイン (タグモード): 絞り込み + タグ一覧 (件数の多い順) + 隠したタグ (NGタグ) */
 export function LibraryTagList({
   tagStats,
   selectedTag,
   onSelectTag,
   onContextMenuTag,
   hiddenTags,
-  onShowTag
+  onShowTag,
+  tagFilter,
+  onTagFilterChange,
+  scopeLabel,
+  onClearScope
 }: {
   tagStats: [string, number][];
   selectedTag: string | null;
@@ -41,11 +45,32 @@ export function LibraryTagList({
   onContextMenuTag: (e: React.MouseEvent, tag: string) => void;
   hiddenTags: string[];
   onShowTag: (tag: string) => void;
+  tagFilter: string;
+  onTagFilterChange: (text: string) => void;
+  /** タグ一覧の対象をフォルダに絞っているときそのフォルダ名 (全体なら null) */
+  scopeLabel: string | null;
+  onClearScope: () => void;
 }): JSX.Element {
   return (
     <>
+      <input
+        value={tagFilter}
+        onChange={(e) => onTagFilterChange(e.target.value)}
+        placeholder="タグを絞り込み (スペースでAND)"
+        className="mb-1 w-full rounded border border-nndd-border bg-nndd-bg px-2 py-0.5 text-xs"
+      />
+      {scopeLabel !== null && (
+        <div className="mb-1 flex items-center gap-1 text-[10px] text-nndd-subtext">
+          <span className="flex-1 truncate" title={scopeLabel}>範囲: {scopeLabel}</span>
+          <button onClick={onClearScope} className="shrink-0 text-nndd-accent hover:underline">
+            全体
+          </button>
+        </div>
+      )}
       {tagStats.length === 0 && (
-        <div className="text-xs text-nndd-subtext">タグなし</div>
+        <div className="text-xs text-nndd-subtext">
+          {tagFilter.trim() ? '一致するタグなし' : 'タグなし'}
+        </div>
       )}
       {tagStats.map(([t, n]) => (
         <button

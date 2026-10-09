@@ -41,6 +41,9 @@ export function LibraryView(): JSX.Element {
   const [ctxMenu, setCtxMenu] = useState<{ x: number; y: number; video: NNDDREVideo } | null>(null);
   const [tagCtxMenu, setTagCtxMenu] = useState<{ x: number; y: number; tag: string } | null>(null);
   const { ngTags, hideTag, showTag } = useNgTags();
+  const [tagFilter, setTagFilter] = useState('');
+  const setActiveTab = useAppStore((s) => s.setActiveTab);
+  const setPendingSearchTag = useAppStore((s) => s.setPendingSearchTag);
   const showToast = useAppStore((s) => s.showToast);
   const ctxVideoId = ctxMenu ? extractVideoId(ctxMenu.video.videoName) : null;
 
@@ -75,17 +78,27 @@ export function LibraryView(): JSX.Element {
 
   const folderCreate = useLibraryFolderCreate(reload);
 
+  // フォルダ選択中は、フォルダ・タグ両モードでそのフォルダ内の動画だけを対象にする
+  const folderScope = selectedFolder !== null && selectedFolder !== LAN_FOLDER ? selectedFolder : null;
+
   const tagStats = useMemo(() => {
     const ng = new Set(ngTags);
+    const words = tagFilter.toLowerCase().split(/\s+/).filter(Boolean);
     const map = new Map<string, number>();
     for (const v of videos) {
+      if (folderScope !== null && v.uri.replace(/[/\\][^/\\]+$/, '') !== folderScope) continue;
       for (const t of v.tagStrings) {
         if (ng.has(t)) continue;
         map.set(t, (map.get(t) ?? 0) + 1);
       }
     }
-    return [...map.entries()].sort((a, b) => b[1] - a[1]);
-  }, [videos, ngTags]);
+    return [...map.entries()]
+      .filter(([t]) => {
+        const lower = t.toLowerCase();
+        return words.every((w) => lower.includes(w));
+      })
+      .sort((a, b) => b[1] - a[1]);
+  }, [videos, ngTags, tagFilter, folderScope]);
 
   const handleHideTag = async (tag: string): Promise<void> => {
     await hideTag(tag);
@@ -104,14 +117,14 @@ export function LibraryView(): JSX.Element {
   };
 
   const filtered = useMemo(() => {
-    if (selectedFolder === LAN_FOLDER && mode !== 'commentOnly') return [];
+    if (selectedFolder === LAN_FOLDER && mode === 'folder') return [];
     return (mode === 'commentOnly' ? commentOnlyVideos : videos).filter((v) => {
       if (mode === 'tag' && selectedTag) {
         if (!v.tagStrings.includes(selectedTag)) return false;
       }
-      if (mode === 'folder' && selectedFolder !== null) {
+      if ((mode === 'folder' || mode === 'tag') && folderScope !== null) {
         const d = v.uri.replace(/[/\\][^/\\]+$/, '');
-        if (d !== selectedFolder) return false;
+        if (d !== folderScope) return false;
       }
       if (favoriteOnly && !v.isFavorite) return false;
       if (searchText.trim()) {
@@ -124,7 +137,7 @@ export function LibraryView(): JSX.Element {
       }
       return true;
     });
-  }, [videos, commentOnlyVideos, mode, selectedTag, selectedFolder, favoriteOnly, searchText]);
+  }, [videos, commentOnlyVideos, mode, selectedTag, selectedFolder, folderScope, favoriteOnly, searchText]);
 
   const sorted = useMemo(() => {
     return [...filtered].sort((a, b) => {
@@ -328,7 +341,7 @@ export function LibraryView(): JSX.Element {
     onDelete: handleDelete
   };
 
-  const isLanTab = selectedFolder === LAN_FOLDER && mode !== 'commentOnly';
+  const isLanTab = selectedFolder === LAN_FOLDER && mode === 'folder';
 
   return (
     <div className="h-full flex">
@@ -353,6 +366,10 @@ export function LibraryView(): JSX.Element {
               }}
               hiddenTags={ngTags}
               onShowTag={(tag) => void showTag(tag)}
+              tagFilter={tagFilter}
+              onTagFilterChange={setTagFilter}
+              scopeLabel={folderScope !== null ? (folderScope.split(/[/\\]/).pop() || folderScope) : null}
+              onClearScope={() => setSelectedFolder(null)}
             />
           )}
 
@@ -468,6 +485,9 @@ export function LibraryView(): JSX.Element {
           y={tagCtxMenu.y}
           onClose={() => setTagCtxMenu(null)}
         >
+          <MenuItem onClick={() => { setPendingSearchTag(tagCtxMenu.tag); setActiveTab('search'); setTagCtxMenu(null); }}>
+            検索
+          </MenuItem>
           <MenuItem onClick={() => { void handleHideTag(tagCtxMenu.tag); setTagCtxMenu(null); }}>
             タグを隠す
           </MenuItem>
