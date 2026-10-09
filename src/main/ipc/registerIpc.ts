@@ -1,5 +1,6 @@
 import type { BrowserWindow } from 'electron';
 import type { LibraryManager } from '../db/LibraryManager';
+import type { NgListItem } from '@shared/types';
 import { createLogger } from '../util/Logger';
 import { installIpcRegistry } from './ipcRegistry';
 import {
@@ -45,10 +46,19 @@ const log = createLogger('IPC');
  * チャンネルの登録漏れ・二重登録は `npm run check:ipc` で確認できる。
  */
 /** `nndd-re-cmd://` プロトコルハンドラ等、IPC以外の経路から呼び出すための最小API */
+const NG_TYPE_LABEL: Record<NgListItem['type'], string> = {
+  word: 'NGワード',
+  wordExact: 'NGワード (完全一致)',
+  userId: 'NGユーザーID',
+  command: 'NGコマンド'
+};
+
 export interface CmdApi {
   openPlayer: (params: OpenPlayerParams) => Promise<void>;
   enqueueDownload: (opts: EnqueueOptions) => ReturnType<DownloadManager['enqueue']>;
   navigateMylist: (mylistId: string) => void;
+  /** NG コメントを追加する (nndd-re-cmd://ngAdd)。追加できたら true、登録済みなら false。通知も出す */
+  addNgComment: (item: NgListItem) => boolean;
 }
 
 export function registerIpcHandlers(
@@ -90,7 +100,7 @@ export function registerIpcHandlers(
   registerAuthHandlers();
   registerBackupHandlers(ctx);
   const { openPlayer } = registerVideoHandlers(ctx);
-  registerCommentHandlers(ctx);
+  const { addNgComment } = registerCommentHandlers(ctx);
   registerConfigHandlers(ctx);
   registerSystemHandlers(ctx);
   registerPlayerHandlers();
@@ -109,6 +119,15 @@ export function registerIpcHandlers(
   return {
     openPlayer,
     enqueueDownload: (opts) => dlManager.enqueue(opts),
-    navigateMylist
+    navigateMylist,
+    addNgComment: (item) => {
+      const added = addNgComment(item);
+      const label = NG_TYPE_LABEL[item.type];
+      trayManager?.notify(
+        added ? 'NGリストに追加しました' : 'NGリストに登録済みです',
+        `${label}: ${item.value}`
+      );
+      return added;
+    }
   };
 }

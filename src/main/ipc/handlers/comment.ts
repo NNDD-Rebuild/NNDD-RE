@@ -13,7 +13,9 @@ const log = createLogger('IPC');
  * コメント取得 (VIDEO_GET_COMMENTS / PAST_COMMENT_*)・NG リスト (NG_*)・
  * ローカルコメント読み込み (COMMENT_*)・コメントウィンドウ (COMMENT_WINDOW_*)。
  */
-export function registerCommentHandlers(ctx: IpcHandlerContext): void {
+export function registerCommentHandlers(ctx: IpcHandlerContext): {
+  addNgComment: (item: NgListItem) => boolean;
+} {
   const { library } = ctx;
 
   ipcMain.handle(IpcChannel.VIDEO_GET_COMMENTS, async (_e, videoId: string, watchInfo?: WatchPageInfo) => {
@@ -31,9 +33,14 @@ export function registerCommentHandlers(ctx: IpcHandlerContext): void {
     }
   };
   const broadcastNgChanged = (): void => broadcast(IpcChannel.NG_COMMENT_CHANGED);
-  ipcMain.handle(IpcChannel.NG_ADD_COMMENT, (_e, item: NgListItem) => {
-    library.ngListDao.addComment(item);
+  /** NG コメントを追加して全ウィンドウへ通知する。追加できたら true、登録済みなら false */
+  const addNgComment = (item: NgListItem): boolean => {
+    const added = library.ngListDao.addComment(item);
     broadcastNgChanged();
+    return added;
+  };
+  ipcMain.handle(IpcChannel.NG_ADD_COMMENT, (_e, item: NgListItem) => {
+    addNgComment(item);
     return true;
   });
   ipcMain.handle(IpcChannel.NG_REMOVE_COMMENT, (_e, item: NgListItem) => {
@@ -163,4 +170,6 @@ export function registerCommentHandlers(ctx: IpcHandlerContext): void {
       commentWinMgr.relayPastComments(comments);
     }
   );
+
+  return { addNgComment };
 }

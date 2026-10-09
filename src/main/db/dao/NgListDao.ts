@@ -24,8 +24,9 @@ export class NgListDao {
     }));
   }
 
-  addComment(item: NgListItem): void {
-    this.db.prepare(Q.INSERT_NG_LIST).run(item.type, item.value);
+  /** 追加できたら true。既に登録済み (INSERT OR IGNORE で無視された) なら false */
+  addComment(item: NgListItem): boolean {
+    return this.db.prepare(Q.INSERT_NG_LIST).run(item.type, item.value).changes > 0;
   }
 
   removeComment(item: NgListItem): void {

@@ -2,6 +2,7 @@ import { createLogger } from '../util/Logger';
 import { NNDD_RE_CMD_SCHEME } from '../../shared/constants/paths';
 import { isVideoId } from '../../shared/utils/videoId';
 import { isLiveProgramId } from '../../shared/utils/liveId';
+import { NgListItemType, type NgListItemTypeValue } from '../../shared/types/comment';
 import type { CmdApi } from '../ipc/registerIpc';
 import { LivePlayerManager } from '../player/LivePlayerManager';
 import { askLiveRecordMode } from '../ipc/handlers/live';
@@ -9,12 +10,16 @@ import { normalizeLiveId } from '../nicovideo/live/LiveWatchPage';
 
 const log = createLogger('CmdProtocol');
 
+/** ngAdd の値の最大長 (OS 経由で任意の値が来るため) */
+const NG_VALUE_MAX_LENGTH = 500;
+
 export type CmdAction =
   | { action: 'play'; videoId: string }
   | { action: 'download'; videoId: string }
   | { action: 'mylist'; mylistId: string }
   | { action: 'live'; programId: string; fromNcv?: boolean }
-  | { action: 'liveRecord'; programId: string };
+  | { action: 'liveRecord'; programId: string }
+  | { action: 'ngAdd'; type: NgListItemTypeValue; value: string };
 
 /**
  * `nndd-re-cmd://play/sm12345` 等をパースする。形式不正・未知アクションは null。
@@ -27,8 +32,21 @@ export function parseCmdUrl(url: string): CmdAction | null {
 
   const rest = url.slice(prefix.length);
   const pathPart = rest.split(/[?#]/)[0];
-  const [action, id] = pathPart.split('/').filter(Boolean);
+  const [action, id, extra] = pathPart.split('/').filter(Boolean);
   if (!action || !id) return null;
+
+  if (action === 'ngAdd') {
+    // ngAdd/<type>/<URLエンコードした値>。値の '/' は %2F になるので、3 区切り目が値
+    if (!extra || !(Object.values(NgListItemType) as string[]).includes(id)) return null;
+    let value: string;
+    try {
+      value = decodeURIComponent(extra);
+    } catch {
+      return null;
+    }
+    if (!value.trim() || value.length > NG_VALUE_MAX_LENGTH) return null;
+    return { action: 'ngAdd', type: id as NgListItemTypeValue, value };
+  }
 
   switch (action) {
     case 'play':
@@ -97,5 +115,8 @@ export function handleCmdUrl(url: string, api: CmdApi): void {
         .catch((e) => log.error('live record failed:', e));
       break;
     }
+    case 'ngAdd':
+      api.addNgComment({ type: parsed.type, value: parsed.value });
+      break;
   }
 }
