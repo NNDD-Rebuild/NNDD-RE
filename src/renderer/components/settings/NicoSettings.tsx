@@ -1,3 +1,4 @@
+import { IpcChannel } from '@shared/types';
 import { useConfig } from '@renderer/hooks/useConfig';
 import { useAppStore } from '@renderer/store/useAppStore';
 import { Section } from './common';
@@ -25,6 +26,17 @@ export function NicoSettings(): JSX.Element {
     true
   );
   const [searchApi, setSearchApi] = useConfig<'snapshot' | 'nvapi'>('searchApi', 'snapshot');
+
+  const [saveSearchHistory, setSaveSearchHistory] = useConfig<boolean>('saveSearchHistory', true);
+  const [saveMyListHistory, setSaveMyListHistory] = useConfig<boolean>('saveMyListHistory', true);
+  const showToast = useAppStore((s) => s.showToast);
+
+  const clearHistory = (key: 'searchHistory' | 'myListHistory', label: string): void => {
+    window.nndd
+      .invoke(IpcChannel.CONFIG_SET, key, [])
+      .then(() => showToast(`${label}を消去しました`))
+      .catch(() => showToast(`${label}の消去に失敗しました`));
+  };
 
   const setContentViewMode = (mode: 'grid' | 'list'): void => {
     setContentViewModeConfig(mode);
@@ -107,6 +119,38 @@ export function NicoSettings(): JSX.Element {
             ))}
           </div>
         </Row>
+      </Section>
+
+      <Section title="入力履歴">
+        <Row label="検索履歴を保存する">
+          <input
+            type="checkbox"
+            checked={saveSearchHistory}
+            onChange={(e) => setSaveSearchHistory(e.target.checked)}
+          />
+          <button
+            onClick={() => clearHistory('searchHistory', '検索履歴')}
+            className="ml-3 text-xs px-2 py-0.5 bg-nndd-border text-nndd-text rounded hover:bg-nndd-accent hover:text-white"
+          >
+            履歴を消去
+          </button>
+        </Row>
+        <Row label="マイリストの閲覧履歴を保存する">
+          <input
+            type="checkbox"
+            checked={saveMyListHistory}
+            onChange={(e) => setSaveMyListHistory(e.target.checked)}
+          />
+          <button
+            onClick={() => clearHistory('myListHistory', 'マイリストの閲覧履歴')}
+            className="ml-3 text-xs px-2 py-0.5 bg-nndd-border text-nndd-text rounded hover:bg-nndd-accent hover:text-white"
+          >
+            履歴を消去
+          </button>
+        </Row>
+        <p className="text-xs text-nndd-subtext">
+          検索タブの検索ワード欄とマイリストタブのURL欄に、直近10件が候補として表示されます。
+        </p>
       </Section>
 
       <Section title="アプリ起動・UI">

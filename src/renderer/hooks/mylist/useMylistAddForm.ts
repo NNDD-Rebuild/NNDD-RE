@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { MyList, RssTypeValue } from '@shared/types';
 import { IpcChannel, RssType } from '@shared/types';
 import { parseMylistSource } from '@shared/utils/parseMylistUrl';
+import { useMyListHistory } from '../useInputHistory';
 
 /**
  * マイリスト追加フォーム (URL から種別を自動判定)。
@@ -19,6 +20,7 @@ export function useMylistAddForm({
   const [newType, setNewType] = useState<RssTypeValue>(RssType.MY_LIST);
   const [urlError, setUrlError] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const { history: urlHistory, addHistory: addUrlHistory } = useMyListHistory();
 
   /** URL入力欄からフォーカスが外れた/Enterされた時: 種別自動判定してプレビュー表示 */
   const handleUrlPreview = async (): Promise<void> => {
@@ -53,6 +55,7 @@ export function useMylistAddForm({
         myListVideoIds: {},
       };
       await fetchItems(tempMl);
+      void addUrlHistory({ name: tempMl.myListName, url: tempMl.myListUrl });
     } finally {
       setPreviewLoading(false);
     }
@@ -83,6 +86,7 @@ export function useMylistAddForm({
       myListVideoIds: {},
     };
     await window.nndd.invoke(IpcChannel.MYLIST_ADD, ml);
+    void addUrlHistory({ name: ml.myListName, url: ml.myListUrl });
     setNewUrl('');
     setNewName('');
     setUrlError(null);
@@ -97,6 +101,7 @@ export function useMylistAddForm({
     newType,
     urlError,
     previewLoading,
+    urlHistory,
     handleUrlPreview,
     handleAdd
   };

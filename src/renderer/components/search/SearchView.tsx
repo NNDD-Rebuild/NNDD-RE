@@ -17,6 +17,7 @@ import { extractLiveIdFromInput } from '@shared/utils/liveId';
 import { extractVideoIdFromInput } from '@shared/utils/videoId';
 import type { DownloadKind } from '@shared/types/download';
 import { enqueueDownload } from '../../util/enqueueDownload';
+import { useSearchHistory } from '@renderer/hooks/useInputHistory';
 
 /**
  * 検索タブ。
@@ -82,6 +83,7 @@ export function SearchView(): JSX.Element {
   const pendingSearchTag = useAppStore((s) => s.pendingSearchTag);
   const setPendingSearchTag = useAppStore((s) => s.setPendingSearchTag);
   const showToast = useAppStore((s) => s.showToast);
+  const { history: searchHistory, addHistory: addSearchHistory } = useSearchHistory();
 
   // グローバル設定変更を即時反映
   useEffect(() => { setDisplayMode(globalMode as DisplayMode); }, [globalMode]);
@@ -173,6 +175,7 @@ export function SearchView(): JSX.Element {
     if (!trimmed) return;
     // マイリスト/シリーズURLならナビゲーション
     if (targetPage === 1 && handleNavigate(trimmed)) return;
+    if (targetPage === 1) void addSearchHistory(trimmed);
     const seq = ++searchSeqRef.current;
     setLoading(true);
     setError(null);
@@ -336,6 +339,7 @@ export function SearchView(): JSX.Element {
         <div className="p-2 border-b border-nndd-border bg-nndd-panel flex flex-wrap items-center gap-2">
           <input
             value={word}
+            list="nndd-search-history"
             onChange={(e) => setWord(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') handleSearch(1);
@@ -344,6 +348,9 @@ export function SearchView(): JSX.Element {
             title="動画の URL/ID は該当動画を表示、生放送・マイリスト・シリーズの URL/ID は各タブへ移動して表示します"
             className="flex-1 min-w-[200px] bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
           />
+          <datalist id="nndd-search-history">
+            {searchHistory.map((w) => <option key={w} value={w} />)}
+          </datalist>
           <select
             value={type}
             onChange={(e) => setType(e.target.value as NNDDRESearchTypeValue)}

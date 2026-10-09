@@ -10,6 +10,7 @@ export function MyListAddForm({
   newType,
   urlError,
   previewLoading,
+  urlHistory,
   onUrlPreview,
   onAdd,
   renewingAll,
@@ -26,6 +27,7 @@ export function MyListAddForm({
   newType: RssTypeValue;
   urlError: string | null;
   previewLoading: boolean;
+  urlHistory: { name: string; url: string }[];
   onUrlPreview: () => void;
   onAdd: () => void;
   renewingAll: boolean;
@@ -40,12 +42,16 @@ export function MyListAddForm({
       <div className="text-xs font-bold text-nndd-subtext">マイリスト追加</div>
       <input
         value={newUrl}
+        list="nndd-mylist-history"
         onChange={(e) => onNewUrlChange(e.target.value)}
         onBlur={() => void onUrlPreview()}
         onKeyDown={(e) => { if (e.key === 'Enter') void onUrlPreview(); }}
         placeholder="URL or ID (マイリスト/チャンネル/ユーザー/シリーズ)"
         className="w-full bg-nndd-bg border border-nndd-border px-2 py-1 text-xs"
       />
+      <datalist id="nndd-mylist-history">
+        {urlHistory.map((h) => <option key={h.url} value={h.url} label={h.name} />)}
+      </datalist>
       <input
         value={newName}
         onChange={(e) => onNewNameChange(e.target.value)}

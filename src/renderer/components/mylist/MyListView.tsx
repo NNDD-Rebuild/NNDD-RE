@@ -570,6 +570,7 @@ export function MyListView(): JSX.Element {
           newType={addForm.newType}
           urlError={addForm.urlError}
           previewLoading={addForm.previewLoading}
+          urlHistory={addForm.urlHistory}
           onUrlPreview={addForm.handleUrlPreview}
           onAdd={addForm.handleAdd}
           renewingAll={renewingAll}
