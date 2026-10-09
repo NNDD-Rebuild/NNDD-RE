@@ -19,6 +19,8 @@ import { updateSessionHideHistory } from '../../player/HlsSessionInterceptor';
 import { buildHlsProxyBase, buildLocalMediaUrl } from '../../player/StreamServer';
 import { encodeProxyUrl } from '../../player/HlsProxy';
 import { isLiveProgramId } from '@shared/utils/liveId';
+import { watchUrl } from '@shared/utils/nicoUrl';
+import { isExternalPlayerEnabled, launchExternalPlayer } from '../../player/ExternalPlayer';
 import { createLogger } from '../../util/Logger';
 import type { IpcHandlerContext } from './context';
 
@@ -50,11 +52,39 @@ export function registerVideoHandlers(ctx: IpcHandlerContext): {
     return WatchInfoHandler.fetchWatchInfo(videoId, forceAllowHistory);
   });
 
+  /**
+   * 外部プレイヤーに渡す先を決めて起動する。
+   * ローカルのファイル (ライブラリ優先) → LANのストリームURL → ニコニコの視聴ページURL の順。
+   * 連続再生 (folderPlaylist) は選択した動画以降のファイルをまとめて渡す。
+   */
+  function openInExternalPlayer(params: OpenPlayerParams): void {
+    const MAX_QUEUE = 100;
+    let localPath = params.localPath;
+    if (!localPath && !params.streamUrl && params.videoId) {
+      const video = library.videoDao.getByKey(params.videoId);
+      if (video && !isCommentOnlyUri(video.uri) && fs.existsSync(video.uri)) localPath = video.uri;
+    }
+    if (localPath) {
+      const list = params.folderPlaylist ?? [];
+      const idx = list.indexOf(localPath);
+      launchExternalPlayer(idx >= 0 ? list.slice(idx, idx + MAX_QUEUE) : [localPath]);
+    } else if (params.streamUrl) {
+      if (/^https?:\/\//i.test(params.streamUrl)) launchExternalPlayer([params.streamUrl]);
+    } else if (params.videoId) {
+      launchExternalPlayer([watchUrl(params.videoId)]);
+    }
+  }
+
   async function openPlayer(rawParams: OpenPlayerParams): Promise<void> {
     // 「コメントのみ」登録の uri (コメントXML) は再生できないので、ストリーミング再生に回す
     const params = rawParams.localPath && isCommentOnlyUri(rawParams.localPath)
       ? { ...rawParams, localPath: undefined, localFiles: undefined, folderPlaylist: undefined }
       : rawParams;
+    // 外部プレイヤー設定 (保存していない生放送の番組は専用ウィンドウで扱うので対象外)
+    if (isExternalPlayerEnabled() && !(params.videoId && isLiveProgramId(params.videoId) && !params.localPath)) {
+      openInExternalPlayer(params);
+      return;
+    }
     // streamUrl 指定 → LANライブラリのHTTPストリームをそのまま再生 (videoId不明のためレジューム対象外)
     if (params.streamUrl) {
       PlayerManager.get().open(params);

@@ -113,6 +113,13 @@ export interface NnddConfig {
    */
   searchApi: 'snapshot' | 'nvapi';
 
+  /** 外部のプレイヤーで再生する (元: 本家の「外部のPlayerを使う」) */
+  externalPlayer: {
+    enabled: boolean;
+    /** プレイヤーの実行ファイル (macOS は .app も可) */
+    path: string;
+  };
+
   /** 検索ワードを履歴 (DB) に保存する */
   saveSearchHistory: boolean;
   /** マイリストのURLを履歴 (DB) に保存する */
@@ -415,6 +422,7 @@ const DEFAULTS: NnddConfig = {
   cacheRoot: '',
   hideSensitiveContents: true,
   searchApi: 'snapshot',
+  externalPlayer: { enabled: false, path: '' },
   saveSearchHistory: true,
   saveMyListHistory: true,
   player: {

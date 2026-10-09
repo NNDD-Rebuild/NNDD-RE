@@ -132,6 +132,10 @@ export function ExternalToolsSettings(): JSX.Element {
   const [ytDlpPath, setYtDlpPath] = useConfig<string>('ytDlpPath', '');
   const [ffmpegPath, setFfmpegPath] = useConfig<string>('ffmpegPath', '');
 
+  const [externalEnabled, setExternalEnabled] = useConfig<boolean>('externalPlayer.enabled', false);
+  const [externalPath, setExternalPath] = useConfig<string>('externalPlayer.path', '');
+  const [externalInput, setExternalInput] = useState('');
+
   const [ytDlpInput, setYtDlpInput] = useState('');
   const [ffmpegInput, setFfmpegInput] = useState('');
 
@@ -142,6 +146,7 @@ export function ExternalToolsSettings(): JSX.Element {
   useEffect(() => { refreshStatus(); }, []);
   useEffect(() => { setYtDlpInput(ytDlpPath ?? ''); }, [ytDlpPath]);
   useEffect(() => { setFfmpegInput(ffmpegPath ?? ''); }, [ffmpegPath]);
+  useEffect(() => { setExternalInput(externalPath ?? ''); }, [externalPath]);
 
   useEffect(() => {
     const off = window.nndd.on(IpcChannel.BINARY_INSTALL_PROGRESS, (...args: unknown[]) => {
@@ -164,6 +169,17 @@ export function ExternalToolsSettings(): JSX.Element {
       setInput(selected);
       await onSelect(selected);
       refreshStatus();
+    }
+  };
+
+  const browseExternal = async (): Promise<void> => {
+    const filters = status?.platform === 'win32'
+      ? [{ name: '実行ファイル', extensions: ['exe'] }]
+      : [{ name: 'すべてのファイル', extensions: ['*'] }];
+    const selected = await window.nndd.invoke<string | null>(IpcChannel.SYS_CHOOSE_FILE, filters);
+    if (selected) {
+      setExternalInput(selected);
+      await setExternalPath(selected);
     }
   };
 
@@ -241,6 +257,38 @@ export function ExternalToolsSettings(): JSX.Element {
         noInstallNote="ffmpeg をインストール後、再起動してください:"
         platform={platform}
       />
+
+      <div className="space-y-2">
+        <h3 className="text-sm font-semibold text-nndd-text">外部プレイヤー</h3>
+        <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={externalEnabled}
+            onChange={(e) => void setExternalEnabled(e.target.checked)}
+          />
+          動画を外部のプレイヤーで再生する
+        </label>
+        <div className="flex items-center gap-2">
+          <input
+            value={externalInput}
+            onChange={(e) => setExternalInput(e.target.value)}
+            onBlur={() => void setExternalPath(externalInput.trim())}
+            placeholder="VLC や mpv などの実行ファイル"
+            className="flex-1 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
+          />
+          <button
+            onClick={() => void browseExternal()}
+            className="text-xs px-3 py-1 bg-nndd-border text-nndd-text rounded hover:bg-nndd-accent hover:text-white"
+          >
+            参照...
+          </button>
+        </div>
+        <p className="text-xs text-nndd-subtext">
+          ライブラリにある動画はファイルのパスを渡します。ライブラリに無い動画はニコニコの視聴ページURLを渡すので、
+          プレイヤーによっては再生できません (mpv は yt-dlp があれば再生できます)。
+          連続再生では、選択した動画以降のファイルをまとめて渡します (最大100件)。macOS は .app も指定できます。
+        </p>
+      </div>
     </div>
   );
 }
