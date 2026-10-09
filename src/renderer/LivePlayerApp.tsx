@@ -57,6 +57,8 @@ const TIMESHIFT_ACTIVATION_REQUIRED = '[TIMESHIFT_ACTIVATION_REQUIRED]';
  */
 export default function LivePlayerApp(): JSX.Element {
   const programId = new URLSearchParams(location.search).get('programId') ?? '';
+  /** NCV 連携で開かれた (コメントリストはタブ表示に固定する) */
+  const ncvLinked = new URLSearchParams(location.search).get('ncv') === '1';
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -451,8 +453,8 @@ export default function LivePlayerApp(): JSX.Element {
     commentWindowOpenRef,
     sendSnapshotRef,
     seekToVposRef,
-    defaultCommentDisplay,
-    commentDisplayLoading
+    defaultCommentDisplay: ncvLinked ? 'side' : defaultCommentDisplay,
+    commentDisplayLoading: ncvLinked ? false : commentDisplayLoading
   });
 
   /**

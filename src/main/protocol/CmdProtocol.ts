@@ -13,7 +13,7 @@ export type CmdAction =
   | { action: 'play'; videoId: string }
   | { action: 'download'; videoId: string }
   | { action: 'mylist'; mylistId: string }
-  | { action: 'live'; programId: string }
+  | { action: 'live'; programId: string; fromNcv?: boolean }
   | { action: 'liveRecord'; programId: string };
 
 /**
@@ -38,7 +38,7 @@ export function parseCmdUrl(url: string): CmdAction | null {
     case 'mylist':
       return /^\d+$/.test(id) ? { action: 'mylist', mylistId: id } : null;
     case 'live':
-      return { action: 'live', programId: id };
+      return { action: 'live', programId: id, fromNcv: /[?&]from=ncv(?:&|#|$)/.test(rest) };
     case 'liveRecord':
       return { action: 'liveRecord', programId: id };
     default:
@@ -76,7 +76,7 @@ export function handleCmdUrl(url: string, api: CmdApi): void {
       break;
     case 'live': {
       const id = normalizeLiveId(parsed.programId);
-      if (id) LivePlayerManager.get().open(id);
+      if (id) LivePlayerManager.get().open(id, { fromNcv: parsed.fromNcv });
       else log.warn('invalid live id:', parsed.programId);
       break;
     }

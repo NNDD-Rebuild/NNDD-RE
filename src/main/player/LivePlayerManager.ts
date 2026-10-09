@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process';
 import { BrowserWindow, shell, type Session, type WebContents } from 'electron';
 import path from 'node:path';
 import { is } from '@electron-toolkit/utils';
@@ -42,8 +43,10 @@ export class LivePlayerManager {
    * 生放送プレイヤーを開く。
    * - 同じ番組を表示中のウィンドウがあれば、それを前面に出すだけ
    * - 設定 live.allowMultipleWindows が OFF なら、既存の生放送ウィンドウで番組を切り替える
+   * - 設定 live.ncvEnabled が ON なら NCV も起動する (同じ番組を開き済みの場合と fromNcv の場合を除く)
+   *   fromNcv は NCV 側から RE が呼ばれたことを示し、NCV を再び起動する相互起動ループを防ぐ
    */
-  open(programId: string): void {
+  open(programId: string, opts?: { fromNcv?: boolean }): void {
     const same = [...this.windows].find(
       ([, v]) => v.requestedId === programId || v.programId === programId
     )?.[0];
@@ -51,16 +54,37 @@ export class LivePlayerManager {
       this.focus(same);
       return;
     }
+    // NCV 連携で開く場合 (RE から NCV を起動した / NCV から呼ばれた) は、コメントは NCV で見るため
+    // コメントリストを浮動ウィンドウにせずタブ表示に固定する
+    const ncv = opts?.fromNcv ? true : this.launchNcv(programId);
     const allowMultiple = getConfigStore().get('live')?.allowMultipleWindows ?? false;
     const reuse = allowMultiple ? undefined : [...this.windows.keys()][0];
     if (reuse) {
       // 読み込み直すと renderer が LIVE_START し直し、同じ webContents の旧セッションは startSession で止まる
       this.windows.set(reuse, { requestedId: programId });
-      this.loadPage(reuse, programId);
+      this.loadPage(reuse, programId, ncv);
       this.focus(reuse);
       return;
     }
-    this.createWindow(programId);
+    this.createWindow(programId, ncv);
+  }
+
+  /** NCV を起動して番組に接続させる。一枠設定 (allowMultipleWindows OFF) のときは起動済みの NCV を使い回す */
+  private launchNcv(programId: string): boolean {
+    const live = getConfigStore().get('live');
+    const ncvPath = live?.ncvPath?.trim();
+    if (!live?.ncvEnabled || !ncvPath) return false;
+    const args = [`https://live.nicovideo.jp/watch/${programId}`];
+    if (!live.allowMultipleWindows) args.push('/singleinstance');
+    try {
+      const child = spawn(ncvPath, args, { detached: true, stdio: 'ignore' });
+      child.on('error', (e) => log.error('NCV launch failed:', e));
+      child.unref();
+      return true;
+    } catch (e) {
+      log.error('NCV launch failed:', e);
+      return false;
+    }
   }
 
   /**
@@ -78,8 +102,8 @@ export class LivePlayerManager {
     win.focus();
   }
 
-  private loadPage(win: BrowserWindow, programId: string): void {
-    const query = { programId };
+  private loadPage(win: BrowserWindow, programId: string, ncv = false): void {
+    const query: Record<string, string> = ncv ? { programId, ncv: '1' } : { programId };
     if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
       void win.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/live-player.html?${new URLSearchParams(query)}`);
     } else {
@@ -87,7 +111,7 @@ export class LivePlayerManager {
     }
   }
 
-  private createWindow(programId: string): void {
+  private createWindow(programId: string, ncv: boolean): void {
     const bgColor = getConfigStore().get('ui').theme === 'light' ? '#f0f0f0' : '#000000';
     const win = new BrowserWindow({
       width: 1280,
@@ -128,7 +152,7 @@ export class LivePlayerManager {
       void getDiscordRpcManager().clearActivity(webContentsId);
       this.windows.delete(win);
     });
-    this.loadPage(win, programId);
+    this.loadPage(win, programId, ncv);
   }
 
   /** 生放送プレイヤー (renderer) からの視聴開始要求 */

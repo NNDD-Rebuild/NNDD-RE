@@ -136,6 +136,10 @@ export function ExternalToolsSettings(): JSX.Element {
   const [externalPath, setExternalPath] = useConfig<string>('externalPlayer.path', '');
   const [externalInput, setExternalInput] = useState('');
 
+  const [ncvEnabled, setNcvEnabled] = useConfig<boolean>('live.ncvEnabled', false);
+  const [ncvPath, setNcvPath] = useConfig<string>('live.ncvPath', '');
+  const [ncvInput, setNcvInput] = useState('');
+
   const [ytDlpInput, setYtDlpInput] = useState('');
   const [ffmpegInput, setFfmpegInput] = useState('');
 
@@ -147,6 +151,7 @@ export function ExternalToolsSettings(): JSX.Element {
   useEffect(() => { setYtDlpInput(ytDlpPath ?? ''); }, [ytDlpPath]);
   useEffect(() => { setFfmpegInput(ffmpegPath ?? ''); }, [ffmpegPath]);
   useEffect(() => { setExternalInput(externalPath ?? ''); }, [externalPath]);
+  useEffect(() => { setNcvInput(ncvPath ?? ''); }, [ncvPath]);
 
   useEffect(() => {
     const off = window.nndd.on(IpcChannel.BINARY_INSTALL_PROGRESS, (...args: unknown[]) => {
@@ -180,6 +185,17 @@ export function ExternalToolsSettings(): JSX.Element {
     if (selected) {
       setExternalInput(selected);
       await setExternalPath(selected);
+    }
+  };
+
+  const browseNcv = async (): Promise<void> => {
+    const filters = status?.platform === 'win32'
+      ? [{ name: '実行ファイル', extensions: ['exe'] }]
+      : [{ name: 'すべてのファイル', extensions: ['*'] }];
+    const selected = await window.nndd.invoke<string | null>(IpcChannel.SYS_CHOOSE_FILE, filters);
+    if (selected) {
+      setNcvInput(selected);
+      await setNcvPath(selected);
     }
   };
 
@@ -287,6 +303,39 @@ export function ExternalToolsSettings(): JSX.Element {
           ライブラリにある動画はファイルのパスを渡します。ライブラリに無い動画はニコニコの視聴ページURLを渡すので、
           プレイヤーによっては再生できません (mpv は yt-dlp があれば再生できます)。
           連続再生では、選択した動画以降のファイルをまとめて渡します (最大100件)。macOS は .app も指定できます。
+        </p>
+      </div>
+
+      <div className="space-y-2">
+        <h3 className="text-sm font-semibold text-nndd-text">NCV (ニコ生コメントビューア)</h3>
+        <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={ncvEnabled}
+            onChange={(e) => void setNcvEnabled(e.target.checked)}
+          />
+          生放送を開くとき NCV も起動する
+        </label>
+        <div className="flex items-center gap-2">
+          <input
+            value={ncvInput}
+            onChange={(e) => setNcvInput(e.target.value)}
+            onBlur={() => void setNcvPath(ncvInput.trim())}
+            placeholder="NiconamaCommentViewer.exe のパス"
+            className="flex-1 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
+          />
+          <button
+            onClick={() => void browseNcv()}
+            className="text-xs px-3 py-1 bg-nndd-border text-nndd-text rounded hover:bg-nndd-accent hover:text-white"
+          >
+            参照...
+          </button>
+        </div>
+        <p className="text-xs text-nndd-subtext">
+          生放送プレイヤーのコメントリストはタブ表示になります。
+          設定 &gt; 生放送の「別の番組を新しいウィンドウで開く」が OFF の場合は /singleinstance を付けて起動し、
+          起動済みの NCV を使い回して新しい放送に接続します。
+          NCV から開いた番組では NCV を起動しません。
         </p>
       </div>
     </div>

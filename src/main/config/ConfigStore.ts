@@ -377,6 +377,10 @@ export interface NnddConfig {
     followNotify: boolean;
     /** 通知のための確認間隔 (分、最短 1) */
     followNotifyIntervalMin: number;
+    /** 生放送を開くとき NCV (ニコ生コメントビューア) も起動するか */
+    ncvEnabled: boolean;
+    /** NCV 実行ファイルのパス */
+    ncvPath: string;
     /** コメントウィンドウの位置・サイズ (前回閉じたとき) */
     commentWindowBounds?: { x: number; y: number; width: number; height: number };
   };
@@ -541,7 +545,9 @@ const DEFAULTS: NnddConfig = {
     commentWindowOnTop: true,
     autoFollowMoveOrder: false,
     followNotify: false,
-    followNotifyIntervalMin: 5
+    followNotifyIntervalMin: 5,
+    ncvEnabled: false,
+    ncvPath: ''
   },
   liveRecordReservations: [],
   channelWatch: {
