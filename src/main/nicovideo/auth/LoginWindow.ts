@@ -1,6 +1,7 @@
 import { BrowserWindow, session } from 'electron';
 import { NICO_COOKIE_DOMAIN, NicoApi, NicoAuthCookieName } from '@shared/constants';
 import { CookieStore } from './CookieStore';
+import { MfaTrustStore } from './MfaTrustStore';
 import { createLogger } from '../../util/Logger';
 
 const log = createLogger('LoginWindow');
@@ -64,8 +65,13 @@ export class LoginWindow {
     // 専用のpartitionでセッションを分離 (メインのwebContentsと干渉させない)
     const partition = 'persist:nndd-login';
     const ses = session.fromPartition(partition);
-    // 前回の user_session が残っていると、フォーム送信前に「ログイン成功」と誤判定するためクリアする
-    if (credentials) await ses.clearStorageData();
+    // 前回の user_session が残っていると、フォーム送信前に「ログイン成功」と誤判定するためクリアする。
+    // ただし 2段階認証の信頼済みデバイストークンは同じアカウントの分だけ書き戻す
+    // (消しっぱなしだとログインのたびに 2段階認証と端末登録が走る)。別アカウントには引き継がない。
+    if (credentials) {
+      await ses.clearStorageData();
+      await MfaTrustStore.restoreToSession(ses, credentials.email);
+    }
     return new Promise<boolean>((resolve) => {
 
       const win = new BrowserWindow({
@@ -97,13 +103,17 @@ export class LoginWindow {
         timer = setTimeout(() => finish(false), timeoutMs);
       }
 
+      let mfaSeen = false;
+      let capturing = false;
       const checkAndCapture = async (): Promise<void> => {
+        if (capturing) return;
         try {
           const cookies = await ses.cookies.get({ domain: NICO_COOKIE_DOMAIN });
           const userSession = cookies.find(
             (c) => c.name === NicoAuthCookieName.USER_SESSION
           );
           if (!userSession) return;
+          capturing = true;
           // 認証成功 → CookieStore に取り込む
           for (const c of cookies) {
             const domain = c.domain ?? NICO_COOKIE_DOMAIN;
@@ -118,9 +128,15 @@ export class LoginWindow {
             await cookieStore.setCookies(cookieStr, `https://${cookieDomain}/`);
           }
           await cookieStore.save();
+          // 信頼トークンは api.id.nicovideo.jp のホスト限定 Cookie のため上のループでは取れない。
+          // 2段階認証を通した直後は user_session より遅れて入ることがあるので少し待つ
+          if (credentials) {
+            await MfaTrustStore.captureFromSession(ses, credentials.email, mfaSeen ? 3000 : 0);
+          }
           log.info('Login cookies captured');
           finish(true);
         } catch (e) {
+          capturing = false;
           log.warn('Cookie capture error:', e);
         }
       };
@@ -129,6 +145,13 @@ export class LoginWindow {
       win.webContents.on('did-navigate', checkAndCapture);
       win.webContents.on('did-frame-navigate', checkAndCapture);
       win.webContents.on('did-finish-load', checkAndCapture);
+
+      // 2段階認証ページを通った場合、信頼トークンが user_session より遅れて入る可能性に備える
+      const noteMfaPage = (): void => {
+        if (win.webContents.getURL().includes('/mfa')) mfaSeen = true;
+      };
+      win.webContents.on('did-navigate', noteMfaPage);
+      win.webContents.on('did-navigate-in-page', noteMfaPage);
 
       if (requestMfaCode) {
         let mfaBusy = false;

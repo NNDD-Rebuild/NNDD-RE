@@ -33,6 +33,7 @@ export class AuthManager {
 
   private static mfaNotifier: ((payload: { error?: string }) => void) | null = null;
   private static pendingMfa: ((code: string | null) => void) | null = null;
+  private static autoReloginInFlight: Promise<AutoReloginResult> | null = null;
 
   /** renderer への2FAコード要求通知先を登録 (メインウィンドウ生成後に呼ぶ) */
   static setMfaNotifier(fn: (payload: { error?: string }) => void): void {
@@ -83,6 +84,8 @@ export class AuthManager {
    * フォーム入力なしに素通りしてしまう (=保存パスワードでの自動ログインに見える)。
    * ここで毎回クリアし、アプリ内の保存パスワード/通常セッションとは独立した
    * まっさらな状態からブラウザログインを開始させる。
+   * 2段階認証の信頼トークンも消えるが、どのアカウントでログインするか不明なため
+   * ここでは復元しない (ID/Pass ログインは LoginWindow 側でアカウント別に復元する)。
    */
   static async login(parent?: BrowserWindow, ssoProvider?: SsoProvider): Promise<boolean> {
     const ctx = NicoContext.get();
@@ -188,7 +191,18 @@ export class AuthManager {
    * 起動時セッション確認 + 期限切れなら自動再ログイン。
    * MFAが必要な場合は { mfaRequired: true, mfaSubmitUrl } を返す (renderer側でMFA入力要求)。
    */
-  static async autoRelogin(): Promise<AutoReloginResult> {
+  static autoRelogin(): Promise<AutoReloginResult> {
+    // 起動時などに複数経路から同時に呼ばれると、同じ partition を奪い合い (消去/復元が競合) 、
+    // 2段階認証や端末登録も重複するため、実行中の1本に相乗りさせる
+    if (!this.autoReloginInFlight) {
+      this.autoReloginInFlight = this.doAutoRelogin().finally(() => {
+        this.autoReloginInFlight = null;
+      });
+    }
+    return this.autoReloginInFlight;
+  }
+
+  private static async doAutoRelogin(): Promise<AutoReloginResult> {
     if (await this.checkLoggedIn()) return { ok: true };
 
     const auth = getConfigStore().get('auth');
@@ -241,7 +255,11 @@ export class AuthManager {
     return this.loginWithCredentials(email, password, parent);
   }
 
-  /** ログアウト (Cookieを全クリア) */
+  /**
+   * ログアウト (Cookieを全クリア)。
+   * 2段階認証の信頼トークン (MfaTrustStore) は消さない。再ログイン時に毎回 2段階認証を
+   * 求められないようにするため。信頼の取り消しはニコニコ側の「信頼済みデバイス」で行う。
+   */
   static async logout(): Promise<void> {
     const ctx = NicoContext.get();
     try {

@@ -19,6 +19,8 @@ export const NnddPaths = {
   CONFIG_FILE_NAME: 'config.json',
   /** Cookie保存ファイル */
   COOKIE_FILE_NAME: 'cookies.json',
+  /** 2段階認証の信頼済みデバイストークン保存ファイル (アカウント別) */
+  MFA_TRUST_FILE_NAME: 'mfa-trust.json',
   /** デフォルトのダウンロード保存先ディレクトリ名 */
   DOWNLOADS_DIR_NAME: 'Downloads'
 } as const;

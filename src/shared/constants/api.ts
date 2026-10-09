@@ -234,6 +234,16 @@ export const NicoAuthCookieName = {
 } as const;
 
 /**
+ * 2段階認証の信頼済みデバイス Cookie。
+ * `__Host-` 接頭辞のホスト限定 Cookie で、api.id.nicovideo.jp にのみ付く
+ * (`.nicovideo.jp` ドメインの取得対象には含まれない)。
+ */
+export const NicoMfaTrust = {
+  COOKIE_NAME: '__Host-mfa_trusted_device_token',
+  URL: 'https://api.id.nicovideo.jp/'
+} as const;
+
+/**
  * ニコニコの Cookie ドメイン
  */
 export const NICO_COOKIE_DOMAIN = '.nicovideo.jp';
