@@ -34,8 +34,13 @@ export function OpenVideoDialog({ onClose }: { onClose: () => void }): JSX.Eleme
     const input = source.trim().replace(/^"(.*)"$/, '$1');
     if (!input) return;
     if (ABSOLUTE_PATH.test(input)) {
-      await window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, { localPath: input });
-      onClose();
+      try {
+        await window.nndd.invoke(IpcChannel.VIDEO_OPEN_FILE, input);
+        onClose();
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        setError(msg.replace(/^Error invoking remote method '[^']+': (?:Error: )?/, ''));
+      }
       return;
     }
     const videoId = extractVideoIdFromInput(input);

@@ -104,6 +104,8 @@ export const IpcChannel = {
   VIDEO_GET_COMMENTS: 'nndd:video:getComments',
   VIDEO_GET_RELATED: 'nndd:video:getRelated',
   VIDEO_OPEN_PLAYER: 'nndd:video:openPlayer',
+  /** 「動画を開く」でユーザーが指定した任意の場所のファイルを再生する */
+  VIDEO_OPEN_FILE: 'nndd:video:openFile',
   VIDEO_BUILD_LOCAL_URL: 'nndd:video:buildLocalUrl',
   VIDEO_GET_STREAM_URL: 'nndd:video:getStreamUrl',
   /** サムネイルホバープレビュー用。常に視聴履歴を残さずにストリームURLを取得する */

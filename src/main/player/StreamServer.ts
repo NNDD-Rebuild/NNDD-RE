@@ -4,7 +4,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { handleProxyRequest, isHlsProxyType } from './HlsProxy';
-import { getMimeType, isPathAllowed } from './LocalVideoProtocol';
+import { getMimeType, isPlayablePath } from './LocalVideoProtocol';
 import { LOCAL_MEDIA_PATH } from '../../shared/constants/paths';
 import { createLogger } from '../util/Logger';
 
@@ -125,7 +125,7 @@ function handleLocalMedia(req: http.IncomingMessage, res: http.ServerResponse, u
   if (!rawPath) return deny(400, 'missing path');
 
   const resolved = path.resolve(rawPath);
-  if (!isPathAllowed(resolved)) {
+  if (!isPlayablePath(resolved)) {
     log.warn('local media access denied:', resolved);
     return deny(403, 'forbidden');
   }

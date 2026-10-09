@@ -52,9 +52,35 @@ export function getMimeType(filePath: string): string {
   return MIME[path.extname(filePath).toLowerCase()] ?? 'application/octet-stream';
 }
 
-/** 許可ルート配下かどうか (StreamServer のローカル配信でも共用) */
+/** 許可ルート配下かどうか (LAN公開サーバー用。ユーザーが個別に開いたファイルは含めない) */
 export function isPathAllowed(filePath: string): boolean {
   return isAllowed(filePath);
+}
+
+/** 「動画を開く」でユーザーが明示的に指定した、許可ルート外のファイル (正規化・小文字化したパス) */
+const userOpenedFiles = new Set<string>();
+
+const normalizeOpenedPath = (filePath: string): string => {
+  const resolved = path.resolve(filePath);
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+};
+
+/** 動画・音声ファイルの拡張子か */
+export function isPlayableMediaFile(filePath: string): boolean {
+  const mime = getMimeType(filePath);
+  return mime.startsWith('video/') || mime.startsWith('audio/');
+}
+
+/** ユーザーが指定した1ファイルだけを再生用に許可する (動画・音声の拡張子のみ。ディレクトリごとは許可しない) */
+export function allowUserOpenedFile(filePath: string): boolean {
+  if (!isPlayableMediaFile(filePath)) return false;
+  userOpenedFiles.add(normalizeOpenedPath(filePath));
+  return true;
+}
+
+/** 再生用の許可判定 (許可ルート配下、またはユーザーが個別に開いたファイル) */
+export function isPlayablePath(filePath: string): boolean {
+  return isAllowed(filePath) || userOpenedFiles.has(normalizeOpenedPath(filePath));
 }
 
 /**
@@ -109,7 +135,7 @@ async function handleRequest(req: Request): Promise<Response> {
       // 含まれる場合に不正なエスケープシーケンスとして URIError になる
       const resolved = path.resolve(filePath);
 
-      if (!isAllowed(resolved)) {
+      if (!isPlayablePath(resolved)) {
         log.warn('access denied:', resolved);
         return new Response('forbidden', { status: 403 });
       }

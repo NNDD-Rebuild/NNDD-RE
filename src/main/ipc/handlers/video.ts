@@ -1,5 +1,6 @@
 import { isCommentOnlyUri } from '@shared/utils/commentOnly';
 import fs from 'node:fs';
+import path from 'node:path';
 import { ipcMain } from 'electron';
 import type { Session } from 'electron';
 import { IpcChannel } from '@shared/types';
@@ -14,7 +15,7 @@ import {
   PlayerManager,
   type OpenPlayerParams
 } from '../../player/PlayerManager';
-import { buildLocalVideoUrl } from '../../player/LocalVideoProtocol';
+import { allowUserOpenedFile, buildLocalVideoUrl } from '../../player/LocalVideoProtocol';
 import { updateSessionHideHistory } from '../../player/HlsSessionInterceptor';
 import { buildHlsProxyBase, buildLocalMediaUrl } from '../../player/StreamServer';
 import { encodeProxyUrl } from '../../player/HlsProxy';
@@ -146,6 +147,18 @@ export function registerVideoHandlers(ctx: IpcHandlerContext): {
       resumeSec
     });
   }
+
+  // 許可ルート外のファイルでも、ユーザーが明示的に指定した動画・音声ファイル1つだけ再生できるようにする
+  ipcMain.handle(IpcChannel.VIDEO_OPEN_FILE, async (_e, filePath: string) => {
+    if (typeof filePath !== 'string' || !path.isAbsolute(filePath) || !fs.existsSync(filePath)) {
+      throw new Error('ファイルが見つかりません');
+    }
+    if (!allowUserOpenedFile(filePath)) {
+      throw new Error('動画・音声ファイルではありません');
+    }
+    await openPlayer({ localPath: path.resolve(filePath) });
+    return true;
+  });
 
   ipcMain.handle(
     IpcChannel.VIDEO_OPEN_PLAYER,
