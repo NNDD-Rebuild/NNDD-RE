@@ -13,6 +13,7 @@ import { StatsView } from './components/stats/StatsView';
 import { SettingsView } from './components/settings/SettingsView';
 import { LoginArea } from './components/common/LoginArea';
 import { StatusBar } from './components/common/StatusBar';
+import { OpenVideoDialog } from './components/common/OpenVideoDialog';
 
 export default function App(): JSX.Element {
   const activeTab = useAppStore((s) => s.activeTab);
@@ -37,6 +38,19 @@ export default function App(): JSX.Element {
       .then((v) => { if (v === 'light') document.documentElement.classList.add('light'); })
       .catch(() => {});
   }, [setContentViewMode, setLibraryViewMode]);
+
+  // 「動画を開く」ダイアログ (Ctrl/Cmd+O)
+  const [openVideoDialog, setOpenVideoDialog] = useState(false);
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'o') {
+        e.preventDefault();
+        setOpenVideoDialog(true);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   // 一度アクティブになったタブはアンマウントせず display:none で保持
   const [mountedTabs, setMountedTabs] = useState<Set<MainTab>>(new Set([activeTab]));
@@ -165,6 +179,7 @@ export default function App(): JSX.Element {
         ))}
       </div>
       <StatusBar />
+      {openVideoDialog && <OpenVideoDialog onClose={() => setOpenVideoDialog(false)} />}
       {toastMessage && (
         <div className="fixed bottom-10 right-4 z-50 px-4 py-2 bg-nndd-accent text-white text-sm rounded shadow-lg pointer-events-none">
           {toastMessage}
