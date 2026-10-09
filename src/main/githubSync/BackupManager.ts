@@ -22,6 +22,7 @@ const SYNCABLE_CONFIG_KEYS: (keyof NnddConfig)[] = [
   'downloadCooldownMs',
   'downloadEasyComments',
   'downloadAllComments',
+  'downloadLiveToSubfolder',
   'comment429RetryWaitSec',
   'hideWatchHistory',
   'player',

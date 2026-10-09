@@ -5,21 +5,11 @@ import { IpcChannel, type LiveCommentRange, type LiveEvent, type LiveStartResult
 import { getConfigStore } from '../config/ConfigStore';
 import { createLogger } from '../util/Logger';
 import { getDiscordRpcManager } from '../discord/DiscordRpcManager';
-import { LiveSession, type LiveStreamCookie } from '../nicovideo/live/LiveSession';
+import { LiveSession, cookieMatches, type LiveStreamCookie } from '../nicovideo/live/LiveSession';
 
 const log = createLogger('LivePlayerManager');
 
 const NICO_URL_PATTERNS = ['https://*.nicovideo.jp/*'];
-
-/** Cookie の domain/path が URL に合うか (RFC6265 の簡易版) */
-function cookieMatches(c: LiveStreamCookie, url: URL): boolean {
-  if (c.secure && url.protocol !== 'https:') return false;
-  if (c.domain) {
-    const d = c.domain.replace(/^\./, '');
-    if (url.hostname !== d && !url.hostname.endsWith(`.${d}`)) return false;
-  }
-  return !c.path || url.pathname.startsWith(c.path);
-}
 
 /**
  * 生放送プレイヤーウィンドウの管理。
@@ -71,6 +61,15 @@ export class LivePlayerManager {
       return;
     }
     this.createWindow(programId);
+  }
+
+  /**
+   * その番組を視聴ウィンドウで開いているか。
+   * 同じアカウントで同じ番組を別の場所から視聴すると、先の視聴が TAKEOVER で切断されるため、
+   * ダウンロード・録画の前に確認する
+   */
+  isWatching(programId: string): boolean {
+    return [...this.windows.values()].some((v) => v.requestedId === programId || v.programId === programId);
   }
 
   private focus(win: BrowserWindow): void {

@@ -69,6 +69,16 @@ export interface DownloadQueueItem {
   isCommentDiff: boolean;
   /** 音声のみダウンロードか */
   isAudioOnly: boolean;
+  /** 生放送 (タイムシフト) のダウンロードか。videoId が lv12345 のとき true */
+  isLive: boolean;
+  /** 生放送で、未予約・未視聴のタイムシフトの予約と視聴開始を自動で行ってよいか */
+  activateTimeshift?: boolean;
+  /** 放送中の生放送を録画するジョブか (番組の終了か停止まで続く。同時実行数の枠に数えない) */
+  isRecording?: boolean;
+  /** 録画を放送開始から (追っかけ再生で) 行うか */
+  recordFromStart?: boolean;
+  /** 生放送のサムネイルの URL (一覧で見えていたもの。番組情報から取れないときの代わり) */
+  liveThumbnailUrl?: string;
   /** 開始時刻 */
   startTime: Date | null;
   /** 終了時刻 */

@@ -1,5 +1,5 @@
 import Store from 'electron-store';
-import type { GitHubSyncConfig, DiscordRpcConfig, WebhookNotifyConfig } from '@shared/types';
+import type { GitHubSyncConfig, DiscordRpcConfig, WebhookNotifyConfig, LiveRecordReservation } from '@shared/types';
 import { COMMENT_FONT_FAMILY } from '@shared/constants';
 
 /**
@@ -46,6 +46,9 @@ export interface NnddConfig {
 
   /** ffmpeg 実行ファイルのパス (空なら自動探索) */
   ffmpegPath: string;
+
+  /** 生放送 (タイムシフト) のダウンロードを保存先の live フォルダにまとめるか */
+  downloadLiveToSubfolder: boolean;
 
   /**
    * fetchAllComments で easy スレッド (増量コメント) を取得するか。
@@ -359,6 +362,9 @@ export interface NnddConfig {
     commentWindowBounds?: { x: number; y: number; width: number; height: number };
   };
 
+  /** 生放送の録画予約 (開始時刻になったら自動で録画を始める。始めたものは削除される) */
+  liveRecordReservations: LiveRecordReservation[];
+
   /** 登録チャンネルの新着動画監視 (定期ポーリングしOS通知) */
   channelWatch: {
     enabled: boolean;
@@ -394,6 +400,7 @@ const DEFAULTS: NnddConfig = {
   useNativeVideoDownloader: true,
   downloadMuxImplementation: 'mediabunny',
   ffmpegPath: '',
+  downloadLiveToSubfolder: false,
   downloadEasyComments: false,
   downloadAllComments: false,
   skipCommentsOnAudioOnly: true,
@@ -513,6 +520,7 @@ const DEFAULTS: NnddConfig = {
     followNotify: false,
     followNotifyIntervalMin: 5
   },
+  liveRecordReservations: [],
   channelWatch: {
     enabled: false,
     intervalMin: 30

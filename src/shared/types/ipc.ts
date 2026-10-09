@@ -213,6 +213,14 @@ export const IpcChannel = {
   LIVE_CHANGE_QUALITY: 'nndd:live:changeQuality',
   /** 追っかけ再生 (巻き戻し可能・高遅延) / 通常のライブ視聴 (低遅延) の切り替え (enabled: boolean) */
   LIVE_SET_CHASE_PLAY: 'nndd:live:setChasePlay',
+  /** 録画の開始前の確認 (最初から録画できる番組なら選ばせる)。戻り値は 'fromStart' | 'now' | 'cancel' */
+  LIVE_RECORD_ASK: 'nndd:live:recordAsk',
+  /** 録画予約の追加 (放送予定の番組を開始時刻に自動録画) */
+  LIVE_RECORD_RESERVE: 'nndd:live:recordReserve',
+  /** 録画予約の解除 (番組ID) */
+  LIVE_RECORD_UNRESERVE: 'nndd:live:recordUnreserve',
+  /** 録画予約の一覧 (LiveProgramListResult) */
+  LIVE_RECORD_RESERVATIONS: 'nndd:live:recordReservations',
   /** ニコ生ゲーム (akashic) の external.api: HTTP 要求を Cookie 付きで代理送信 → LiveAkashicApiResponse */
   LIVE_AKASHIC_API: 'nndd:live:akashicApi',
   /** フォロー中の番組一覧 ({ status: 'onair' | 'reserved', offset }) → LiveProgramListResult */

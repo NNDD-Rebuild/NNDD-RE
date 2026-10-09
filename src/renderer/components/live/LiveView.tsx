@@ -13,9 +13,10 @@ import type {
 import { IpcChannel, LIVE_SEARCH_PAGE_SIZE } from '@shared/types';
 import { extractLiveIdFromInput } from '@shared/utils/liveId';
 import { useAppStore } from '@renderer/store/useAppStore';
+import { enqueueLiveDownload, enqueueLiveRecord } from '@renderer/util/enqueueDownload';
 import { VirtualizedItemList } from '../common/VirtualizedItemList';
 
-type SubTab = 'followOnair' | 'followReserved' | 'ranking' | 'recent' | 'anime' | 'search' | 'timeshift';
+type SubTab = 'followOnair' | 'followReserved' | 'ranking' | 'recent' | 'anime' | 'search' | 'timeshift' | 'recordReservations';
 type RankingKind = 'official' | 'user';
 
 /** ログインしていないと取得できないサブタブ */
@@ -28,7 +29,8 @@ const SUB_TABS: { id: SubTab; label: string }[] = [
   { id: 'recent', label: 'カテゴリ' },
   { id: 'anime', label: 'アニメ' },
   { id: 'search', label: '検索' },
-  { id: 'timeshift', label: 'タイムシフト予約' }
+  { id: 'timeshift', label: 'タイムシフト予約' },
+  { id: 'recordReservations', label: '録画予約' }
 ];
 
 const RANKING_TYPES: { value: LiveRankingParams['type']; label: string }[] = [
@@ -113,7 +115,11 @@ function ProgramCard({
   onOpen,
   tsAction,
   tsBusy,
-  onTsAction
+  onTsAction,
+  onDownload,
+  onRecord,
+  recordReserved,
+  onRecordReserve
 }: {
   p: LiveProgramSummary;
   /** ランキング順位 (ランキング表示時のみ) */
@@ -123,6 +129,14 @@ function ProgramCard({
   tsAction?: 'reserve' | 'cancel';
   tsBusy?: boolean;
   onTsAction?: (p: LiveProgramSummary, action: 'reserve' | 'cancel') => void;
+  /** タイムシフトをダウンロードする。終了済みでタイムシフトが視聴できる番組にだけボタンを出す */
+  onDownload?: (p: LiveProgramSummary) => void;
+  /** 放送中の番組を録画する。放送中の番組にだけボタンを出す */
+  onRecord?: (p: LiveProgramSummary) => void;
+  /** 録画予約済みか */
+  recordReserved?: boolean;
+  /** 録画予約の追加・解除 (放送予定の番組にだけボタンを出す) */
+  onRecordReserve?: (p: LiveProgramSummary) => void;
 }): JSX.Element {
   const badge = STATUS_BADGE[p.status];
   // 見た目は動画一覧のカード (VideoCard のグリッド表示) に揃える
@@ -206,6 +220,39 @@ function ProgramCard({
               {tsAction === 'reserve' ? 'TS予約' : '予約解除'}
             </button>
           )}
+          {onRecordReserve && p.status === 'RELEASED' && (
+            <button
+              onClick={() => onRecordReserve(p)}
+              className={`text-xs px-2 py-0.5 rounded ${
+                recordReserved ? 'bg-red-700 text-white hover:opacity-80' : 'bg-nndd-border hover:bg-red-700 hover:text-white'
+              }`}
+              title={
+                recordReserved
+                  ? '録画予約を解除する'
+                  : '開始時刻になったら自動で録画する (アプリを起動しておく必要があります)'
+              }
+            >
+              {recordReserved ? '● 予約済み (解除)' : '● 予約録画'}
+            </button>
+          )}
+          {onRecord && p.status === 'ON_AIR' && (
+            <button
+              onClick={() => onRecord(p)}
+              className="text-xs px-2 py-0.5 bg-nndd-border rounded hover:bg-red-700 hover:text-white"
+              title="放送中の番組を録画する (番組の終了かDLリストの録画停止まで)"
+            >
+              ● 録画
+            </button>
+          )}
+          {onDownload && p.status === 'ENDED' && p.timeshiftPlayable !== false && p.timeshiftEnabled !== false && (
+            <button
+              onClick={() => onDownload(p)}
+              className="text-xs px-2 py-0.5 bg-nndd-border rounded hover:bg-nndd-accent hover:text-white"
+              title="タイムシフトを動画とコメントとして保存する"
+            >
+              DL
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -271,6 +318,8 @@ export function LiveView(): JSX.Element {
           });
         case 'timeshift':
           return window.nndd.invoke<LiveProgramListResult>(IpcChannel.LIVE_LIST_TIMESHIFT_RESERVATIONS);
+        case 'recordReservations':
+          return window.nndd.invoke<LiveProgramListResult>(IpcChannel.LIVE_RECORD_RESERVATIONS);
         case 'ranking': {
           const f = filterRef.current;
           const params: LiveRankingParams = {
@@ -436,9 +485,64 @@ export function LiveView(): JSX.Element {
     }
   };
 
+  /** 録画予約済みの番組ID */
+  const [reservedIds, setReservedIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    window.nndd
+      .invoke<LiveProgramListResult>(IpcChannel.LIVE_RECORD_RESERVATIONS)
+      .then((r) => setReservedIds(new Set(r.programs.map((x) => x.programId))))
+      .catch(() => {});
+  }, []);
+
+  const onRecordReserve = (p: LiveProgramSummary): void => {
+    const reserved = reservedIds.has(p.programId);
+    const task = reserved
+      ? window.nndd.invoke(IpcChannel.LIVE_RECORD_UNRESERVE, p.programId)
+      : window.nndd.invoke(IpcChannel.LIVE_RECORD_RESERVE, {
+          programId: p.programId,
+          title: p.title,
+          thumbnailUrl: p.thumbnailUrl,
+          ownerName: p.ownerName,
+          beginAtMs: p.beginAtMs,
+          endAtMs: p.endAtMs
+        });
+    task
+      .then(() => {
+        setReservedIds((prev) => {
+          const next = new Set(prev);
+          if (reserved) next.delete(p.programId);
+          else next.add(p.programId);
+          return next;
+        });
+        if (reserved && subTab === 'recordReservations') {
+          setPrograms((prev) => prev.filter((x) => x.programId !== p.programId));
+          setTotal((n) => Math.max(0, n - 1));
+        }
+        setTsMessage({
+          text: reserved ? `録画予約を解除しました: ${p.title}` : `録画を予約しました: ${p.title}`,
+          isError: false
+        });
+      })
+      .catch((e) => setTsMessage({ text: errorText(e), isError: true }));
+  };
+
+  const onRecord = (p: LiveProgramSummary): void => {
+    enqueueLiveRecord(p.programId, p.thumbnailUrl)
+      .then((text) => {
+        if (text) setTsMessage({ text, isError: false });
+      })
+      .catch((e) => setTsMessage({ text: errorText(e), isError: true }));
+  };
+
+  const onDownload = (p: LiveProgramSummary): void => {
+    const text = enqueueLiveDownload(p.programId, p.title, p.thumbnailUrl);
+    if (text) setTsMessage({ text, isError: false });
+  };
+
   /** カードに出すタイムシフト操作。予約一覧では解除、それ以外は予約 (視聴不可の終了番組には出さない) */
   const tsActionFor = (p: LiveProgramSummary): 'reserve' | 'cancel' | undefined => {
     if (subTab === 'timeshift') return 'cancel';
+    if (subTab === 'recordReservations') return undefined;
     if (p.timeshiftEnabled === false) return undefined;
     if (p.status === 'ENDED' && p.timeshiftPlayable === false) return undefined;
     return 'reserve';
@@ -458,6 +562,7 @@ export function LiveView(): JSX.Element {
   const canLoadMore =
     !isRanking &&
     subTab !== 'timeshift' &&
+    subTab !== 'recordReservations' &&
     subTab !== 'search' &&
     // アニメ生放送はページから一度に全件読むので続きは無い
     subTab !== 'anime' &&
@@ -751,6 +856,10 @@ export function LiveView(): JSX.Element {
               tsAction={tsActionFor(c.p)}
               tsBusy={tsBusyId === c.p.programId}
               onTsAction={(p, a) => void onTsAction(p, a)}
+              onDownload={onDownload}
+              onRecord={onRecord}
+              recordReserved={reservedIds.has(c.p.programId)}
+              onRecordReserve={onRecordReserve}
             />
           )}
         />

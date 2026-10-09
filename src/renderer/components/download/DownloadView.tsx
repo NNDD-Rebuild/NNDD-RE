@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { DownloadQueueItem, MyListItem } from '@shared/types';
 import { DownloadStatusType, IpcChannel, RssType } from '@shared/types';
+import { extractLiveIdFromInput } from '@shared/utils/liveId';
+import { enqueueLiveDownload } from '@renderer/util/enqueueDownload';
 
 /**
  * DLリストタブ。
@@ -125,6 +127,15 @@ export function DownloadView(): JSX.Element {
       } finally {
         setMylistAdding(false);
       }
+      return;
+    }
+
+    // 生放送 (lv12345 / 生放送のURL) はタイムシフトのダウンロード
+    const liveId = extractLiveIdFromInput(id);
+    if (liveId) {
+      if (enqueueLiveDownload(liveId, liveId) === null) return;
+      setVideoId('');
+      reload();
       return;
     }
 
@@ -265,6 +276,11 @@ export function DownloadView(): JSX.Element {
                         ♪ 音声のみ
                       </span>
                     )}
+                    {it.isRecording && (
+                      <span className="ml-1.5 text-xs px-1 py-0.5 rounded bg-red-700 text-white" title="放送中の番組を録画 (番組の終了か停止まで)">
+                        ● 録画{it.recordFromStart ? ' (最初から)' : ''}
+                      </span>
+                    )}
                     {it.isCommentOnly && (
                       <span className="ml-1.5 text-xs px-1 py-0.5 rounded bg-nndd-border" title={it.isCommentDiff ? 'コメントを差分取得して今コメを更新' : 'コメントのみ再取得'}>
                         {it.isCommentDiff ? '💬 コメント差分' : '💬 コメントのみ'}
@@ -275,19 +291,24 @@ export function DownloadView(): JSX.Element {
                     </span>
                   </td>
                   <td>
-                    <div className="w-full bg-nndd-border h-2 rounded overflow-hidden">
-                      <div
-                        className="h-2 bg-nndd-accent"
-                        style={{ width: `${Math.floor(it.progress * 100)}%` }}
-                      />
-                    </div>
-                    <span className="text-xs text-nndd-subtext">
-                      {Math.floor(it.progress * 100)}%
-                    </span>
+                    {/* 録画は長さが決まっていないので進捗バーは出さず、経過はメッセージ列で見せる */}
+                    {!(it.isRecording && isRunning(it.status)) && (
+                      <>
+                        <div className="w-full bg-nndd-border h-2 rounded overflow-hidden">
+                          <div
+                            className="h-2 bg-nndd-accent"
+                            style={{ width: `${Math.floor(it.progress * 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-xs text-nndd-subtext">
+                          {Math.floor(it.progress * 100)}%
+                        </span>
+                      </>
+                    )}
                   </td>
                   <td className="text-xs text-nndd-subtext">{it.message}</td>
                   <td>
-                    {(isRunning(it.status) || it.status === DownloadStatusType.WAIT) && (
+                    {(isRunning(it.status) || it.status === DownloadStatusType.WAIT) && !(it.isRecording && isRunning(it.status)) && (
                       <button
                         onClick={() => handlePause(it.id)}
                         className="text-xs px-2 py-1 bg-nndd-border hover:bg-nndd-accent hover:text-white rounded mr-1"
@@ -307,8 +328,9 @@ export function DownloadView(): JSX.Element {
                       <button
                         onClick={() => handleCancel(it.id)}
                         className="text-xs px-2 py-1 bg-nndd-border hover:bg-red-700 hover:text-white rounded mr-1"
+                        title={it.isRecording ? 'ここまでの録画を保存して終了します' : undefined}
                       >
-                        キャンセル
+                        {it.isRecording ? '録画停止' : 'キャンセル'}
                       </button>
                     )}
                     {(it.status === DownloadStatusType.FAIL ||

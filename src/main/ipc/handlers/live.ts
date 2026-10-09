@@ -1,17 +1,26 @@
-import { ipcMain } from 'electron';
+import { BrowserWindow, dialog, ipcMain } from 'electron';
 import { IpcChannel } from '@shared/types';
 import type {
   LiveAkashicApiRequest,
   LiveAnimeParams,
   LiveCommentWindowMessage,
+  LiveProgramListResult,
+  LiveRecordReserveRequest,
   LiveRankingParams,
   LiveRecentParams,
   LiveSearchParams
 } from '@shared/types';
 import { LivePlayerManager } from '../../player/LivePlayerManager';
+import type { LiveRecordScheduler } from '../../nicovideo/live/LiveRecordScheduler';
 import { sendAkashicApi } from '../../nicovideo/live/AkashicApi';
 import { LiveCommentWindowManager } from '../../player/LiveCommentWindowManager';
-import { activateTimeshift, cancelTimeshiftReservations, normalizeLiveId, reserveTimeshift } from '../../nicovideo/live/LiveWatchPage';
+import {
+  activateTimeshift,
+  cancelTimeshiftReservations,
+  fetchLiveWatchPage,
+  normalizeLiveId,
+  reserveTimeshift
+} from '../../nicovideo/live/LiveWatchPage';
 import { fetchAnimeLivePrograms } from '../../nicovideo/live/LiveAnimeClient';
 import {
   fetchFollowingPrograms,
@@ -22,7 +31,7 @@ import {
 } from '../../nicovideo/live/LiveListClient';
 
 /** ニコニコ生放送 (LIVE_*) */
-export function registerLiveHandlers(): void {
+export function registerLiveHandlers(recordScheduler: LiveRecordScheduler): void {
   // --- 生放送 視聴フロー調査 PoC ---
   ipcMain.handle(IpcChannel.LIVE_POC_RUN, async (_e, programId: string) => {
     const { runLivePoc } = await import('../../nicovideo/live/LivePoc');
@@ -30,6 +39,48 @@ export function registerLiveHandlers(): void {
   });
 
   // --- 生放送 ---
+  // 録画の開始前の確認。プレミアム会員で追っかけ再生が使える放送中の番組は、放送開始からの録画も選べる
+  ipcMain.handle(IpcChannel.LIVE_RECORD_ASK, async (e, programId: string): Promise<'fromStart' | 'now' | 'cancel'> => {
+    const id = normalizeLiveId(String(programId ?? ''));
+    if (!id) throw new Error('番組IDが不正です');
+    let canChase = false;
+    try {
+      const page = await fetchLiveWatchPage(id);
+      canChase = page.program.status === 'ON_AIR' && page.program.chasePlayEnabled && page.accountType === 'premium';
+    } catch {
+      // 確認のための取得に失敗しても、今からの録画は試せる (失敗はダウンロード側で報告される)
+      return 'now';
+    }
+    if (!canChase) return 'now';
+    const win = BrowserWindow.fromWebContents(e.sender);
+    const options = {
+      type: 'question' as const,
+      title: '録画',
+      message: 'この番組は放送開始から録画できます',
+      detail:
+        '「最初から録画」は追っかけ再生で放送開始からの映像を取得します (プレミアム会員のみ)。' +
+        '放送が長いと時間と容量がかかります。\n「今から録画」は今の位置から番組の終了か停止まで録画します。',
+      buttons: ['最初から録画', '今から録画', 'キャンセル'],
+      defaultId: 0,
+      cancelId: 2,
+      noLink: true
+    };
+    const { response } = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options);
+    return response === 0 ? 'fromStart' : response === 1 ? 'now' : 'cancel';
+  });
+
+  // 録画予約 (放送予定の番組を開始時刻に自動録画)
+  ipcMain.handle(IpcChannel.LIVE_RECORD_RESERVE, (_e, req: LiveRecordReserveRequest) => {
+    recordScheduler.reserve(req);
+  });
+  ipcMain.handle(IpcChannel.LIVE_RECORD_UNRESERVE, (_e, programId: string) => {
+    recordScheduler.unreserve(String(programId ?? ''));
+  });
+  ipcMain.handle(IpcChannel.LIVE_RECORD_RESERVATIONS, (): LiveProgramListResult => {
+    const programs = recordScheduler.listAsPrograms();
+    return { programs, total: programs.length };
+  });
+
   ipcMain.handle(IpcChannel.LIVE_OPEN_PLAYER, (_e, input: string) => {
     const id = normalizeLiveId(String(input ?? ''));
     if (!id) throw new Error('番組ID (lv/co/ch) または生放送URLを指定してください');

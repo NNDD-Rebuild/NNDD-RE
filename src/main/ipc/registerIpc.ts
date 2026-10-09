@@ -11,6 +11,7 @@ import { SeriesAutoDownloader } from '../downloader/SeriesAutoDownloader';
 import { FollowUserAutoDownloader } from '../downloader/FollowUserAutoDownloader';
 import { ChannelWatcher } from '../downloader/ChannelWatcher';
 import { LiveFollowNotifier } from '../nicovideo/live/LiveFollowNotifier';
+import { LiveRecordScheduler } from '../nicovideo/live/LiveRecordScheduler';
 import { ScheduleManager } from '../downloader/ScheduleManager';
 import type { OpenPlayerParams } from '../player/PlayerManager';
 import type { TrayManager } from '../tray/TrayManager';
@@ -70,6 +71,8 @@ export function registerIpcHandlers(
   channelWatcher.start();
   const liveFollowNotifier = new LiveFollowNotifier();
   liveFollowNotifier.apply();
+  const liveRecordScheduler = new LiveRecordScheduler(dlManager, trayManager);
+  liveRecordScheduler.start();
 
   const ctx: IpcHandlerContext = {
     library,
@@ -91,7 +94,7 @@ export function registerIpcHandlers(
   registerConfigHandlers(ctx);
   registerSystemHandlers(ctx);
   registerPlayerHandlers();
-  registerLiveHandlers();
+  registerLiveHandlers(liveRecordScheduler);
   // 設定で有効なら内蔵 HTTP サーバーをここで自動起動する
   registerHttpHandlers(ctx);
   const { navigateMylist } = registerNavigationHandlers(ctx);

@@ -99,6 +99,7 @@ export async function fetchLiveWatchPage(id: string): Promise<LiveWatchPageInfo>
     thumbnailUrl: String(
       program.thumbnail?.huge?.s640x360 ??
         program.thumbnail?.small ??
+        program.listingThumbnail ??
         socialGroup.thumbnailImageUrl ??
         ''
     ),

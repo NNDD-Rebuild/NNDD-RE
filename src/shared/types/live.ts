@@ -353,3 +353,23 @@ export type LiveCommentWindowEvent =
   | { type: 'seek'; vposMs: number }
   /** コメントウィンドウが閉じられた */
   | { type: 'closed' };
+
+/**
+ * 録画予約。放送予定の番組を、開始時刻に自動で録画する。
+ * アプリ (トレイ常駐含む) が起動している間だけ動く。
+ */
+export interface LiveRecordReservation {
+  programId: string;
+  title: string;
+  /** 一覧で見えていたサムネイル (録画の保存に使う) */
+  thumbnailUrl: string;
+  ownerName: string;
+  /** 放送開始・終了の予定 (unix ms)。終了が分からなければ 0 */
+  beginAtMs: number;
+  endAtMs: number;
+  /** 予約した時刻 (unix ms) */
+  reservedAtMs: number;
+}
+
+/** 録画予約の追加に必要な項目 (予約時刻は main が付ける) */
+export type LiveRecordReserveRequest = Omit<LiveRecordReservation, 'reservedAtMs'>;

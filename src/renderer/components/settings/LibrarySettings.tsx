@@ -31,6 +31,10 @@ export function LibrarySettings(): JSX.Element {
     'downloadRateLimitMbps',
     0
   );
+  const [downloadLiveToSubfolder, setDownloadLiveToSubfolder] = useConfig<boolean>(
+    'downloadLiveToSubfolder',
+    false
+  );
   const [downloadEasyComments, setDownloadEasyComments] = useConfig<boolean>(
     'downloadEasyComments',
     false
@@ -153,6 +157,19 @@ export function LibrarySettings(): JSX.Element {
           </label>
           <span className="text-xs text-nndd-subtext ml-2">
             (オフにすると今コメのみ取得)
+          </span>
+        </Row>
+        <Row label="生放送の保存先">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={downloadLiveToSubfolder}
+              onChange={(e) => setDownloadLiveToSubfolder(e.target.checked)}
+            />
+            <span className="text-sm">生放送のタイムシフトを live フォルダにダウンロードする</span>
+          </label>
+          <span className="text-xs text-nndd-subtext ml-2">
+            (オフだと通常の動画と同じフォルダ。オンだと保存先の下に live フォルダを作って保存)
           </span>
         </Row>
         <Row label="easyコメント取得">

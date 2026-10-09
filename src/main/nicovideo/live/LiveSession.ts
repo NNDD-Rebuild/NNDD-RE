@@ -51,6 +51,16 @@ export interface LiveStreamCookie {
   secure?: boolean;
 }
 
+/** Cookie の domain/path が URL に合うか (RFC6265 の簡易版) */
+export function cookieMatches(c: LiveStreamCookie, url: URL): boolean {
+  if (c.secure && url.protocol !== 'https:') return false;
+  if (c.domain) {
+    const d = c.domain.replace(/^\./, '');
+    if (url.hostname !== d && !url.hostname.endsWith(`.${d}`)) return false;
+  }
+  return !c.path || url.pathname.startsWith(c.path);
+}
+
 interface WsMessage {
   type: string;
   data?: any;
@@ -149,7 +159,15 @@ export class LiveSession {
   constructor(
     private readonly programId: string,
     private readonly emit: (ev: LiveEvent) => void,
-    private readonly onStreamCookies: (cookies: LiveStreamCookie[]) => void
+    private readonly onStreamCookies: (cookies: LiveStreamCookie[]) => void,
+    private readonly options: {
+      /** コメント数が多い番組でも過去コメントを全件取得する (ダウンロード用。再生用の周辺取得にはしない) */
+      fetchAllComments?: boolean;
+      /** 過去コメントの取得を、この件数に達したら打ち切る (録画の開始前後を埋める程度でよいとき)。未指定は全件 */
+      archiveMaxMessages?: number;
+      /** 追っかけ再生 (放送開始から巻き戻せる HLS) で始める。使えない会員・番組では通常の視聴で始まる (stream の chasePlay で分かる) */
+      startWithChasePlay?: boolean;
+    } = {}
   ) {}
 
   /** watchページを解析して WebSocket 接続を始める */
@@ -165,12 +183,13 @@ export class LiveSession {
     this.chasePlayAvailable = !this.isTimeshift && page.program.chasePlayEnabled && page.accountType === 'premium';
     // 追っかけ再生の HLS は 6 秒セグメントの通常 HLS で、公式プレイヤーの低遅延 (LL-HLS: 0.5 秒 part) より 10 秒前後遅れる。
     // 公式プレイヤーと同じく通常は chasePlay: false で受け、巻き戻したいときだけ setChasePlay(true) で切り替える
-    this.chasePlay = false;
+    this.chasePlay = Boolean(this.options.startWithChasePlay) && this.chasePlayAvailable;
     log.info(
       `start ${this.programId}: status=${page.program.status} loggedIn=${page.isLoggedIn} account=${page.accountType} ` +
         `timeshift=${this.isTimeshift} chasePlayAvailable=${this.chasePlayAvailable}`
     );
-    this.commentFetchMode = page.program.commentCount > FULL_ARCHIVE_LIMIT ? 'seek' : 'all';
+    this.commentFetchMode =
+      !this.options.fetchAllComments && page.program.commentCount > FULL_ARCHIVE_LIMIT ? 'seek' : 'all';
     this.emit({ type: 'state', state: 'connecting' });
     void this.connect(page.webSocketUrl, false);
     return {
@@ -352,10 +371,10 @@ export class LiveSession {
       case 'messageServer':
         if (d.viewUri) this.viewUri = String(d.viewUri);
         if (d.viewUri && this.isTimeshift) {
-          if (!this.archiveNdgr && this.commentFetchMode === 'all') this.startArchive(String(d.viewUri));
+          if (!this.archiveNdgr && this.commentFetchMode === 'all') this.startArchive(String(d.viewUri), this.options.archiveMaxMessages);
         } else if (d.viewUri && !this.ndgr) {
           // 開いた時点より前のコメントも全件取得する (コメントリストの表示と、追っかけ再生で巻き戻した位置で流す分)
-          if (!this.archiveNdgr && this.commentFetchMode === 'all') this.startArchive(String(d.viewUri));
+          if (!this.archiveNdgr && this.commentFetchMode === 'all') this.startArchive(String(d.viewUri), this.options.archiveMaxMessages);
           this.ndgr = new NdgrClient(String(d.viewUri), {
             onMessage: (m) => this.onNdgrMessage(m),
             onError: () =>

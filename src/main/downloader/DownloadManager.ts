@@ -12,12 +12,15 @@ import type {
 import { DownloadStatusType } from '@shared/types';
 import { VideoFileSuffix } from '@shared/constants/paths';
 import { isCommentOnlyUri } from '@shared/utils/commentOnly';
+import { isLiveProgramId } from '@shared/utils/liveId';
 import { WatchInfoHandler } from '../nicovideo/watch/WatchInfoHandler';
 import { CommentClient } from '../nicovideo/comment/CommentClient';
 import { CommentDiffUpdater } from '../nicovideo/comment/CommentDiffUpdater';
 import { YtDlpDownloader } from '../nicovideo/video/YtDlpDownloader';
 import { VideoDownloader } from '../nicovideo/video/VideoDownloader';
 import type { VideoDownloadPhase } from '../nicovideo/video/VideoDownloader';
+import { LiveDownloader, type LiveDownloadPhase } from '../nicovideo/live/LiveDownloader';
+import { LivePlayerManager } from '../player/LivePlayerManager';
 import {
   LocalFileHandler,
   LocalFileNaming
@@ -71,7 +74,49 @@ export interface EnqueueOptions {
   commentDiff?: boolean;
   /** 音声のみ (.m4a、映像トラックなし) */
   audioOnly?: boolean;
+  /**
+   * 生放送 (videoId が lv12345) で、未予約・未視聴のタイムシフトの予約と視聴開始を自動で行う。
+   * 視聴開始で視聴期限のカウントが始まり取り消せないため、ユーザーの確認後に指定する
+   */
+  activateTimeshift?: boolean;
+  /**
+   * 放送中の生放送 (videoId が lv12345) を録画する。番組の終了か停止まで続き、同時実行数の枠に数えない。
+   * 録画のキャンセルは破棄ではなく停止で、ここまでの録画を保存する
+   */
+  record?: boolean;
+  /** 録画を放送開始から (追っかけ再生で) 行う。プレミアム会員のみ。使えないときはエラーで終わる */
+  fromStart?: boolean;
+  /** 生放送のサムネイルの URL (一覧で見えていたもの)。番組情報から取れないときの代わりに使う */
+  thumbnailUrl?: string;
 }
+
+/** 生放送 (タイムシフト) の保存先サブフォルダ名 (設定 downloadLiveToSubfolder が有効なとき) */
+const LIVE_SUBDIR = 'live';
+
+/** 秒 → H:MM:SS */
+function formatElapsed(sec: number): string {
+  const s = Math.floor(sec);
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${Math.floor(s / 3600)}:${pad(Math.floor((s % 3600) / 60))}:${pad(s % 60)}`;
+}
+
+const LIVE_PHASE_LABEL: Record<LiveDownloadPhase, string> = {
+  ...NATIVE_PHASE_LABEL,
+  connect: '視聴セッション接続中',
+  waiting: '放送開始待ち',
+  recording: '録画中',
+  comment: 'コメント取得中',
+  thumb: 'サムネイル保存中'
+};
+
+const LIVE_PHASE_STATUS: Partial<Record<LiveDownloadPhase, DownloadStatusTypeValue>> = {
+  ...NATIVE_PHASE_STATUS,
+  connect: DownloadStatusType.WATCH,
+  waiting: DownloadStatusType.WATCH,
+  recording: DownloadStatusType.SEGMENT,
+  comment: DownloadStatusType.COMMENT,
+  thumb: DownloadStatusType.THUMB
+};
 
 /**
  * ダウンロードキューマネージャ。
@@ -91,6 +136,8 @@ export class DownloadManager extends EventEmitter {
   private isProcessing = false;
   /** 実行中に一時停止要求されたアイテムID (abort後 CANCELED ではなく PAUSED にするため) */
   private pausingIds = new Set<string>();
+  /** 録画中のジョブID → 停止要求 (abort すると、ここまでの録画を保存して終わる) */
+  private recordStops = new Map<string, AbortController>();
   /** 全体一時停止中: true の間は新規アイテムの実行を開始しない */
   private globalPaused = false;
 
@@ -114,9 +161,13 @@ export class DownloadManager extends EventEmitter {
       }
     }
     const baseDir = opts.saveDir ?? (existingVideoPath ? path.dirname(existingVideoPath) : this.library.videoDir);
-    const saveDir = opts.subDir
+    const isLive = isLiveProgramId(opts.videoId);
+    let saveDir = opts.subDir
       ? path.join(baseDir, LocalFileNaming.sanitize(opts.subDir) || opts.subDir)
       : baseDir;
+    if (isLive && (getConfigStore().get('downloadLiveToSubfolder') ?? false)) {
+      saveDir = path.join(saveDir, LIVE_SUBDIR);
+    }
     const item: DownloadQueueItem = {
       id: uuidv4(),
       videoId: opts.videoId,
@@ -130,6 +181,11 @@ export class DownloadManager extends EventEmitter {
       isCommentDiff: opts.commentDiff ?? false,
       isVideoOnly: opts.videoOnly ?? false,
       isAudioOnly: opts.audioOnly ?? false,
+      isLive,
+      activateTimeshift: isLive ? (opts.activateTimeshift ?? false) : undefined,
+      isRecording: isLive && (opts.record ?? false),
+      recordFromStart: isLive && (opts.record ?? false) && (opts.fromStart ?? false),
+      liveThumbnailUrl: isLive ? opts.thumbnailUrl : undefined,
       startTime: null,
       endTime: null,
       errorMessage: null
@@ -143,7 +199,7 @@ export class DownloadManager extends EventEmitter {
   cancel(id: string): boolean {
     const ac = this.running.get(id);
     if (ac) {
-      ac.abort();
+      this.interrupt(id, ac);
       return true;
     }
     const idx = this.queue.findIndex((q) => q.id === id);
@@ -203,8 +259,8 @@ export class DownloadManager extends EventEmitter {
 
   /** キュー全体をキャンセルする (実行中は中断、待機中はCANCELED化) */
   cancelAll(): void {
-    for (const ac of this.running.values()) {
-      ac.abort();
+    for (const [id, ac] of this.running) {
+      this.interrupt(id, ac);
     }
     for (const item of this.queue) {
       if (item.status === DownloadStatusType.WAIT) {
@@ -222,6 +278,8 @@ export class DownloadManager extends EventEmitter {
     if (ac) {
       const item = this.queue.find((q) => q.id === id);
       if (!item) return false;
+      // 録画は一時停止できない (止めている間の放送は録れない)。止めるときはキャンセル (停止) を使う
+      if (item.isRecording) return false;
       this.pausingIds.add(id);
       ac.abort();
       return true;
@@ -248,6 +306,7 @@ export class DownloadManager extends EventEmitter {
   pauseAll(): void {
     this.globalPaused = true;
     for (const [id, ac] of this.running) {
+      if (this.recordStops.has(id)) continue; // 録画は一時停止しない
       this.pausingIds.add(id);
       ac.abort();
     }
@@ -270,6 +329,22 @@ export class DownloadManager extends EventEmitter {
     this.tick();
   }
 
+  /** 実行中のジョブを止める。録画は破棄せず、ここまでの録画を保存して終わらせる */
+  private interrupt(id: string, ac: AbortController): void {
+    const stop = this.recordStops.get(id);
+    if (stop) {
+      stop.abort();
+      // 停止してから結合に入るまで数秒かかるので、受け付けたことをすぐ見せる
+      const item = this.queue.find((q) => q.id === id);
+      if (item) {
+        item.message = '録画を停止しています…';
+        this.emit('change', item);
+      }
+    } else {
+      ac.abort();
+    }
+  }
+
   /**
    * キューを進める。
    */
@@ -278,9 +353,10 @@ export class DownloadManager extends EventEmitter {
     this.isProcessing = true;
     try {
       while (true) {
-        if (this.running.size >= this.maxConcurrent) break;
+        // 録画は放送を待たせると内容が欠けるため、同時実行数の枠に数えず、空きを待たずに始める
+        const active = [...this.running.keys()].filter((id) => !this.queue.find((q) => q.id === id)?.isRecording).length;
         const next = this.queue.find(
-          (q) => q.status === DownloadStatusType.WAIT
+          (q) => q.status === DownloadStatusType.WAIT && (q.isRecording || active < this.maxConcurrent)
         );
         if (!next) break;
         // WAIT → WATCH に先行して変更し、同一アイテムの重複起動を防ぐ
@@ -340,6 +416,13 @@ export class DownloadManager extends EventEmitter {
     this.running.set(item.id, ac);
     item.startTime = new Date();
     try {
+      if (item.isLive) {
+        await this.runLiveItem(item, ac);
+        item.progress = 1;
+        item.endTime = new Date();
+        this.updateStatus(item, DownloadStatusType.SUCCESS);
+        return;
+      }
       this.updateStatus(item, DownloadStatusType.WATCH);
       // DLはユーザー操作起点の明示的な取得のため、hideWatchHistory設定に関わらず
       // ログイン経由 (v3) で取得する。ゲスト経由 (v3_guest) の threadKey は
@@ -588,6 +671,113 @@ export class DownloadManager extends EventEmitter {
         await new Promise<void>((resolve) => setTimeout(resolve, cooldownMs));
       }
       this.tick();
+    }
+  }
+
+  /**
+   * 生放送 (タイムシフト) のダウンロード。動画・コメントXML・サムネ・動画情報を保存してライブラリに登録する。
+   * 通常動画と取得経路が異なる (視聴WebSocket経由) ため、runItem から分岐して処理する。
+   */
+  private async runLiveItem(item: DownloadQueueItem, ac: AbortController): Promise<void> {
+    const signal = ac.signal;
+    const tempDir = path.join(os.tmpdir(), 'nndd-live-dl', item.id);
+    const record = item.isRecording ?? false;
+    if (LivePlayerManager.get().isWatching(item.videoId.toLowerCase())) {
+      // 同じ番組を視聴ウィンドウで開いていると、ダウンロード側の視聴開始で視聴ウィンドウが切断される
+      // (録画側も切断されて途中で終わる) ので、始めない
+      throw new Error('この番組を視聴ウィンドウで開いています。ウィンドウを閉じてからやり直してください。');
+    }
+    // コールバック内で更新するため、型の絞り込みで 'connect' に固定されないよう断言しておく
+    let phase = 'connect' as LiveDownloadPhase;
+    // 録画は先頭のタイムスタンプを揃える必要があるため常に mediabunny。タイムシフトは設定に従う
+    const muxImpl = record ? 'mediabunny' : (getConfigStore().get('downloadMuxImplementation') ?? 'mediabunny');
+    this.updateStatus(item, DownloadStatusType.WATCH);
+    item.message = LIVE_PHASE_LABEL.connect;
+    this.emit('change', item);
+    const stop = new AbortController();
+    if (record) this.recordStops.set(item.id, stop);
+    let lastMergeEmit = 0;
+    try {
+      const result = await LiveDownloader.download(item.videoId.toLowerCase(), {
+        mode: record ? 'record' : 'timeshift',
+        saveDir: item.saveDir,
+        tempDir,
+        signal,
+        stopSignal: stop.signal,
+        fromStart: item.recordFromStart ?? false,
+        thumbnailUrl: item.liveThumbnailUrl,
+        activateTimeshift: item.activateTimeshift ?? false,
+        onProgram: (program) => {
+          item.videoName = program.title;
+          this.emit('change', item);
+        },
+        onPhaseChange: (p, detail) => {
+          phase = p;
+          item.message =
+            p === 'merge' && muxImpl === 'mediabunny'
+              ? 'mediabunnyで結合中'
+              : detail
+                ? `${LIVE_PHASE_LABEL[p]} (${detail})`
+                : LIVE_PHASE_LABEL[p];
+          const status = LIVE_PHASE_STATUS[p];
+          if (status) this.updateStatus(item, status);
+          else this.emit('change', item);
+          if (p === 'merge') item.progress = 0.95;
+        },
+        onProgress: (done, total) => {
+          if (total <= 0) return;
+          const pct = done / total;
+          // 映像→音声の順に 0〜0.45、0.45〜0.9 (結合・コメント・サムネは残り)
+          item.progress = phase === 'audio_segments' ? 0.45 + pct * 0.45 : pct * 0.45;
+          item.message = `${LIVE_PHASE_LABEL[phase]} ${(item.progress * 100).toFixed(1)}% (${done}/${total})`;
+          this.emit('change', item);
+        },
+        onMergeProgress: (currentMs, totalMs) => {
+          // 結合の進捗。呼ばれる回数が多いので、表示は一定間隔に間引く
+          const now = Date.now();
+          if (now - lastMergeEmit < 500) return;
+          lastMergeEmit = now;
+          const base = muxImpl === 'mediabunny' ? 'mediabunnyで結合中' : LIVE_PHASE_LABEL.merge;
+          item.message = totalMs && totalMs > 0 ? `${base} ${Math.min(100, Math.floor((currentMs / totalMs) * 100))}%` : base;
+          this.emit('change', item);
+        },
+        onRecordProgress: (p) => {
+          if (stop.signal.aborted) return; // 停止要求後は「停止しています」の表示を上書きしない
+          // 長さの分からない処理なので進捗バーは動かさず、メッセージで経過を見せる
+          item.message = `${LIVE_PHASE_LABEL.recording} ${formatElapsed(p.elapsedSec)} (${(p.bytes / 1024 / 1024).toFixed(0)} MB) コメント${p.comments}件`;
+          this.emit('change', item);
+        }
+      });
+
+      const durationSec = result.durationSec;
+      const existing = this.library.videoDao.getByKey(result.program.programId, true);
+      const now = new Date();
+      const video: NNDDREVideo = {
+        id: 0,
+        uri: result.videoPath,
+        videoName: path.basename(result.videoPath),
+        tagStrings: result.program.tags,
+        modificationDate: now,
+        creationDate: existing?.creationDate ?? now,
+        thumbUrl: result.thumbPath,
+        playCount: existing?.playCount ?? 0,
+        time: durationSec,
+        lastPlayDate: existing?.lastPlayDate ?? null,
+        yetReading: existing?.yetReading ?? true,
+        pubDate: result.program.beginTimeMs > 0 ? new Date(result.program.beginTimeMs) : null,
+        isFavorite: existing?.isFavorite ?? false,
+        description: result.program.description
+      };
+      this.library.videoDao.insertOrUpdate(video, this.library.videoDao.ensureFileDir(item.saveDir));
+    } catch (e) {
+      // 放送の開始前に停止した場合は、録画していないのでキャンセル扱いにする (失敗としてリトライさせない)
+      if (record && stop.signal.aborted && phase === 'waiting') ac.abort();
+      throw e;
+    } finally {
+      this.recordStops.delete(item.id);
+      fs.promises.rm(tempDir, { recursive: true, force: true }).catch((e) => {
+        log.warn('live download tempDir cleanup failed:', e);
+      });
     }
   }
 
