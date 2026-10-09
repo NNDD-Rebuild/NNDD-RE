@@ -1,8 +1,10 @@
 import { createLogger } from '../util/Logger';
 import { NNDD_RE_CMD_SCHEME } from '../../shared/constants/paths';
 import { isVideoId } from '../../shared/utils/videoId';
+import { isLiveProgramId } from '../../shared/utils/liveId';
 import type { CmdApi } from '../ipc/registerIpc';
 import { LivePlayerManager } from '../player/LivePlayerManager';
+import { askLiveRecordMode } from '../ipc/handlers/live';
 import { normalizeLiveId } from '../nicovideo/live/LiveWatchPage';
 
 const log = createLogger('CmdProtocol');
@@ -11,7 +13,8 @@ export type CmdAction =
   | { action: 'play'; videoId: string }
   | { action: 'download'; videoId: string }
   | { action: 'mylist'; mylistId: string }
-  | { action: 'live'; programId: string };
+  | { action: 'live'; programId: string }
+  | { action: 'liveRecord'; programId: string };
 
 /**
  * `nndd-re-cmd://play/sm12345` 等をパースする。形式不正・未知アクションは null。
@@ -36,6 +39,8 @@ export function parseCmdUrl(url: string): CmdAction | null {
       return /^\d+$/.test(id) ? { action: 'mylist', mylistId: id } : null;
     case 'live':
       return { action: 'live', programId: id };
+    case 'liveRecord':
+      return { action: 'liveRecord', programId: id };
     default:
       return null;
   }
@@ -73,6 +78,23 @@ export function handleCmdUrl(url: string, api: CmdApi): void {
       const id = normalizeLiveId(parsed.programId);
       if (id) LivePlayerManager.get().open(id);
       else log.warn('invalid live id:', parsed.programId);
+      break;
+    }
+    case 'liveRecord': {
+      // 放送中の番組を録画する。放送開始から録画できる番組は確認ダイアログで選ばせる。
+      // 終了済み・録画不可の番組はキュー側でエラー終了し、DLリストに理由が出る
+      // co/ch は番組IDではない (enqueue が生放送として扱わない) ので、lv のみ受け付ける
+      const id = normalizeLiveId(parsed.programId);
+      if (!id || !isLiveProgramId(id)) {
+        log.warn('invalid live id for record:', parsed.programId);
+        break;
+      }
+      void askLiveRecordMode(id)
+        .then((choice) => {
+          if (choice === 'cancel') return;
+          api.enqueueDownload({ videoId: id, record: true, fromStart: choice === 'fromStart' });
+        })
+        .catch((e) => log.error('live record failed:', e));
       break;
     }
   }
