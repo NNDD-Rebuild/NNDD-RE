@@ -12,6 +12,7 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useConfig } from './hooks/useConfig';
 import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
 import { extractBracketedVideoId } from '@shared/utils/videoId';
+import { isLiveProgramId } from '@shared/utils/liveId';
 import {
   pickDefaultQualityId,
   readLocalComments,
@@ -502,7 +503,8 @@ export default function PlayerApp(): JSX.Element {
     ]);
 
     // ローカルXMLにはシリーズ情報がないため、ニコニコIDが特定できる場合はAPIから非同期補完
-    if (extractedId) {
+    // (保存した生放送 lv12345 は動画APIに存在せず 400 になるので除く)
+    if (extractedId && !isLiveProgramId(extractedId)) {
       window.nndd
         .invoke<WatchPageInfo | null>(window.nndd.channels.VIDEO_GET_WATCH_INFO, guessId)
         .then((online) => {

@@ -18,6 +18,7 @@ import { buildLocalVideoUrl } from '../../player/LocalVideoProtocol';
 import { updateSessionHideHistory } from '../../player/HlsSessionInterceptor';
 import { buildHlsProxyBase, buildLocalMediaUrl } from '../../player/StreamServer';
 import { encodeProxyUrl } from '../../player/HlsProxy';
+import { isLiveProgramId } from '@shared/utils/liveId';
 import { createLogger } from '../../util/Logger';
 import type { IpcHandlerContext } from './context';
 
@@ -95,7 +96,8 @@ export function registerVideoHandlers(ctx: IpcHandlerContext): {
       }
     }
     // BrowserWindow生成と並列でWatchInfo取得を開始（レンダラー準備完了前に先行）
-    if (params.videoId) {
+    // 保存した生放送 (lv) は動画APIに存在せず 400 になるので先読みしない
+    if (params.videoId && !isLiveProgramId(params.videoId)) {
       watchInfoPrefetchCache.set(
         params.videoId,
         WatchInfoHandler.fetchWatchInfo(params.videoId)

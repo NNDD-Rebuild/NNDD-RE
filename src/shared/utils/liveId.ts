@@ -31,3 +31,8 @@ export function extractLiveIdFromInput(input: string): string | null {
   if (!LIVE_HOST_RE.test(url.hostname)) return null;
   return url.pathname.match(LIVE_WATCH_ID_RE)?.[1].toLowerCase() ?? null;
 }
+
+/** 文字列全体が生放送の番組ID (lv12345) か。保存したタイムシフトは動画ID (sm12345 等) と同じ枠で扱われるが、動画APIには存在しない */
+export function isLiveProgramId(s: string): boolean {
+  return /^lv\d+$/i.test(s);
+}

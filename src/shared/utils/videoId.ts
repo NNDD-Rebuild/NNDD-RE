@@ -3,7 +3,9 @@
  * 接頭辞を限定しているのは、`[Owner]` `[ThumbInfo]` 等のサフィックスと区別するため。
  */
 const VIDEO_ID_BODY = '(?:sm|nm|so|ax|sd|ca|cd|cw|zb|ze|yo)\\d+';
-const BRACKETED_VIDEO_ID_RE = new RegExp(`\\[(${VIDEO_ID_BODY})\\]`);
+/** ファイル名に埋め込まれるID。動画IDに加えて、保存した生放送のタイムシフト (lv12345) も含む */
+const FILE_ID_BODY = `(?:${VIDEO_ID_BODY}|lv\\d+)`;
+const BRACKETED_VIDEO_ID_RE = new RegExp(`\\[(${FILE_ID_BODY})\\]`);
 const VIDEO_ID_RE = new RegExp(`^${VIDEO_ID_BODY}$`);
 
 /** ファイル名・パス中の `[sm12345]` から動画IDを取り出す。無ければ null */
