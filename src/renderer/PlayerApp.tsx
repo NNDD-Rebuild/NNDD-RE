@@ -7,6 +7,7 @@ import { VideoController } from './components/player/VideoController';
 import { VideoInfoView } from './components/player/VideoInfoView';
 import { HistoryBlockedDialog } from './components/player/HistoryBlockedDialog';
 import { NicowariBanner } from './components/player/NicowariBanner';
+import { JumpConfirmDialog } from './components/player/JumpConfirmDialog';
 import { ensureCommandResolved } from './util/commentCommands';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useConfig } from './hooks/useConfig';
@@ -521,7 +522,23 @@ export default function PlayerApp(): JSX.Element {
 
   useWatchHistory({ currentVideoId, watch, video, playInfoRef });
   useDiscordPresence({ video, src, playInfoRef });
-  useJumpCommand({ video, comments, isLocalRef, autoNextFolderRef });
+  const [jumpCommand] = useConfig<'ask' | 'auto' | 'off'>('player.jumpCommand', 'ask');
+  const [pendingJump, setPendingJump] = useState<{ videoId: string; msg?: string } | null>(null);
+  const resumeAfterJumpRef = useRef(false);
+  useJumpCommand({
+    video,
+    comments,
+    isLocalRef,
+    autoNextFolderRef,
+    mode: jumpCommand,
+    onAskJump: (videoId, msg) => {
+      // 確認している間は本編を止める。「ジャンプしない」なら再生に戻す
+      const v = videoElementRef.current;
+      resumeAfterJumpRef.current = !!v && !v.paused;
+      v?.pause();
+      setPendingJump({ videoId, msg });
+    }
+  });
   const endNicowari = useNicowari({
     video,
     comments,
@@ -818,6 +835,20 @@ export default function PlayerApp(): JSX.Element {
           />
         </aside>
       </div>
+      {pendingJump && (
+        <JumpConfirmDialog
+          videoId={pendingJump.videoId}
+          msg={pendingJump.msg}
+          onJump={() => {
+            window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, { videoId: pendingJump.videoId, autoNext: true });
+            setPendingJump(null);
+          }}
+          onCancel={() => {
+            setPendingJump(null);
+            if (resumeAfterJumpRef.current) videoElementRef.current?.play().catch(() => {});
+          }}
+        />
+      )}
       {showHistoryBlockedDialog && (
         <HistoryBlockedDialog onChoice={(allow, remember) => { handleHistoryBlockedChoice(allow, remember).catch(console.error); }} />
       )}

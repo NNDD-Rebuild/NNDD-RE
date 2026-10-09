@@ -97,6 +97,7 @@ export function PlayerSettings(): JSX.Element {
     'player.resumePlayback',
     false
   );
+  const [jumpCommand, setJumpCommand] = useConfig<'ask' | 'auto' | 'off'>('player.jumpCommand', 'ask');
   const [controlsAlwaysVisible, setControlsAlwaysVisible] = useConfig<boolean>(
     'player.controlsAlwaysVisible',
     true
@@ -480,6 +481,31 @@ export function PlayerSettings(): JSX.Element {
           />
           <p className="text-xs text-nndd-subtext mt-0.5">
             前回の再生位置を記憶し、次回開いた時に続きから再生 (OFF時は常に最初から)
+          </p>
+        </Row>
+        <Row label="＠ジャンプ">
+          <div className="flex gap-1">
+            {([
+              { value: 'ask', label: '確認して移動' },
+              { value: 'auto', label: '確認せず移動' },
+              { value: 'off', label: '無効' },
+            ] as const).map(({ value, label }) => (
+              <button
+                key={value}
+                onClick={() => setJumpCommand(value)}
+                className={[
+                  'text-xs px-3 py-1 rounded',
+                  jumpCommand === value
+                    ? 'bg-nndd-accent text-white'
+                    : 'bg-nndd-border hover:bg-nndd-accent/70'
+                ].join(' ')}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-nndd-subtext mt-0.5 ml-2">
+            投稿者コメントのニコスクリプト。別動画へ移るときだけ確認します (動画内の移動は常に即時)。「無効」では動画内の移動・ラベルも動きません
           </p>
         </Row>
         <Row label="コントロールUIサイズ">

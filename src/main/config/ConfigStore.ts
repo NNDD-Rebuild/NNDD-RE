@@ -234,6 +234,13 @@ export interface NnddConfig {
     /** 前回の再生位置から続きを再生する (OFF時は常に最初から再生) */
     resumePlayback: boolean;
     /**
+     * 投稿者コメントのニコスクリプト (＠ジャンプ) の扱い。
+     *   - 'ask' (デフォルト): 別動画へ移る前に確認する (同一動画内の移動は確認なし)
+     *   - 'auto': 確認せず移る
+     *   - 'off': 実行しない
+     */
+    jumpCommand: 'ask' | 'auto' | 'off';
+    /**
      * ウィンドウ表示 (非フルスクリーン) 時、下部コントロールバーを常時表示する。
      * OFF (デフォルト) 時は従来通りマウス操作なしで一定時間後に自動的にフェードアウトする。
      * フルスクリーン時の自動非表示挙動には影響しない。
@@ -459,6 +466,7 @@ const DEFAULTS: NnddConfig = {
     controlUiSize: 'normal',
     openVideoLinkInPlayer: true,
     resumePlayback: false,
+    jumpCommand: 'ask',
     controlsAlwaysVisible: true,
     autoNextFolder: false,
     pastCommentMaxCount: 0

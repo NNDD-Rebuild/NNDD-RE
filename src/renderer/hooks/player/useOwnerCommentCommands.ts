@@ -1,4 +1,4 @@
-import { useCallback, useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { useCallback, useEffect, useRef, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import type { NNDDREComment, NicowariContent } from '@shared/types';
 import { IpcChannel } from '@shared/types';
 import {
@@ -21,15 +21,23 @@ export function useJumpCommand({
   video,
   comments,
   isLocalRef,
-  autoNextFolderRef
+  autoNextFolderRef,
+  mode,
+  onAskJump
 }: {
   video: HTMLVideoElement | null;
   comments: NNDDREComment[];
   isLocalRef: MutableRefObject<boolean>;
   autoNextFolderRef: MutableRefObject<boolean>;
+  mode: 'ask' | 'auto' | 'off';
+  /** mode が 'ask' のとき、別動画へ移る前に呼ぶ (移るかどうかは呼び出し側が確認する) */
+  onAskJump: (videoId: string, msg?: string) => void;
 }): void {
+  const onAskJumpRef = useRef(onAskJump);
+  onAskJumpRef.current = onAskJump;
+
   useEffect(() => {
-    if (!video) return;
+    if (!video || mode === 'off') return;
     const parsed = comments
       .filter((c) => c.fork === 'owner' || c.fork === '1')
       .map((c) => ({ c, cmd: parseNicoScript(c.text ?? '', c.mail ?? ''), vposMs: c.vposMs }));
@@ -45,7 +53,8 @@ export function useJumpCommand({
       if (cmd.kind === 'jump') {
         // フォルダ連続再生中は、次の動画へ進む流れを邪魔しない
         if (isLocalRef.current && autoNextFolderRef.current) return;
-        window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, { videoId: cmd.videoId, autoNext: true });
+        if (mode === 'ask') onAskJumpRef.current(cmd.videoId, cmd.msg);
+        else window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, { videoId: cmd.videoId, autoNext: true });
         return;
       }
       let sec: number | null = null;
@@ -79,7 +88,7 @@ export function useJumpCommand({
       video.removeEventListener('timeupdate', onTime);
       video.removeEventListener('seeked', onSeeked);
     };
-  }, [video, comments]);
+  }, [video, comments, mode]);
 }
 
 /**
