@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { LiveListItem, NgListItem, NNDDREComment } from '@shared/types';
 import { CommentList } from '../player/CommentList';
@@ -19,7 +19,8 @@ export function LiveSidePanel({
   positionMs,
   onAddNg,
   onRemoveNg,
-  programInfo
+  programInfo,
+  ncvLinked
 }: {
   isFullscreen: boolean;
   width: number;
@@ -36,8 +37,13 @@ export function LiveSidePanel({
   onRemoveNg: (item: NgListItem) => Promise<void>;
   /** 「番組情報」タブの中身 */
   programInfo: ReactNode;
+  /** NCV にコメント表示を任せているか (true になった時点で「番組情報」タブを開く) */
+  ncvLinked: boolean;
 }): JSX.Element {
-  const [sideTab, setSideTab] = useState<'info' | 'comments' | 'notices'>('comments');
+  const [sideTab, setSideTab] = useState<'info' | 'comments' | 'notices'>(ncvLinked ? 'info' : 'comments');
+  useEffect(() => {
+    if (ncvLinked) setSideTab('info');
+  }, [ncvLinked]);
   const listComments = useMemo<NNDDREComment[]>(
     () => listItems.flatMap((i) => (i.comment ? [i.comment] : [])),
     [listItems]

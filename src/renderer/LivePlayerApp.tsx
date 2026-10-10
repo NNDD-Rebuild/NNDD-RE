@@ -797,6 +797,7 @@ export default function LivePlayerApp(): JSX.Element {
         positionMs={positionMs}
         onAddNg={handleAddNg}
         onRemoveNg={handleRemoveNg}
+        ncvLinked={ncvLinked}
         programInfo={
           <ProgramInfo
             program={program}
