@@ -278,8 +278,8 @@ export function ExternalToolsSettings(): JSX.Element {
         platform={platform}
       />
 
-      <div className="space-y-2">
-        <h3 className="text-sm font-semibold text-nndd-text">外部プレイヤー</h3>
+      <section className="bg-nndd-panel border border-nndd-border rounded p-4 space-y-3">
+        <h3 className="text-sm font-medium text-nndd-text">外部プレイヤー</h3>
         <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
           <input
             type="checkbox"
@@ -288,19 +288,20 @@ export function ExternalToolsSettings(): JSX.Element {
           />
           動画を外部のプレイヤーで再生する
         </label>
-        <div className="flex items-center gap-2">
+        <div className="flex gap-2">
           <input
+            type="text"
             value={externalInput}
             onChange={(e) => setExternalInput(e.target.value)}
             onBlur={() => void setExternalPath(externalInput.trim())}
             placeholder="VLC や mpv などの実行ファイル"
-            className="flex-1 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
+            className="flex-1 bg-nndd-bg border border-nndd-border rounded px-2 py-1 text-xs text-nndd-text placeholder-nndd-subtext focus:outline-none focus:border-nndd-accent"
           />
           <button
             onClick={() => void browseExternal()}
-            className="text-xs px-3 py-1 bg-nndd-border text-nndd-text rounded hover:bg-nndd-accent hover:text-white"
+            className="px-2 py-1 text-xs bg-nndd-border text-nndd-text rounded hover:bg-nndd-accent hover:text-white"
           >
-            参照...
+            参照
           </button>
         </div>
         <p className="text-xs text-nndd-subtext">
@@ -308,10 +309,10 @@ export function ExternalToolsSettings(): JSX.Element {
           プレイヤーによっては再生できません (mpv は yt-dlp があれば再生できます)。
           連続再生では、選択した動画以降のファイルをまとめて渡します (最大100件)。macOS は .app も指定できます。
         </p>
-      </div>
+      </section>
 
-      <div className="space-y-2">
-        <h3 className="text-sm font-semibold text-nndd-text">NCV (ニコ生コメントビューア)</h3>
+      <section className="bg-nndd-panel border border-nndd-border rounded p-4 space-y-3">
+        <h3 className="text-sm font-medium text-nndd-text">NCV (ニコ生コメントビューア)</h3>
         <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
           <input
             type="checkbox"
@@ -329,19 +330,20 @@ export function ExternalToolsSettings(): JSX.Element {
           />
           タイムシフト視聴時も起動する
         </label>
-        <div className="flex items-center gap-2">
+        <div className="flex gap-2">
           <input
+            type="text"
             value={ncvInput}
             onChange={(e) => setNcvInput(e.target.value)}
             onBlur={() => void setNcvPath(ncvInput.trim())}
             placeholder="NiconamaCommentViewer.exe のパス"
-            className="flex-1 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
+            className="flex-1 bg-nndd-bg border border-nndd-border rounded px-2 py-1 text-xs text-nndd-text placeholder-nndd-subtext focus:outline-none focus:border-nndd-accent"
           />
           <button
             onClick={() => void browseNcv()}
-            className="text-xs px-3 py-1 bg-nndd-border text-nndd-text rounded hover:bg-nndd-accent hover:text-white"
+            className="px-2 py-1 text-xs bg-nndd-border text-nndd-text rounded hover:bg-nndd-accent hover:text-white"
           >
-            参照...
+            参照
           </button>
         </div>
         <div className="flex items-center gap-2 text-sm ml-6">
@@ -369,7 +371,7 @@ export function ExternalToolsSettings(): JSX.Element {
           起動済みの NCV を使い回して新しい放送に接続します。
           NCV から開いた番組では NCV を起動しません。
         </p>
-      </div>
+      </section>
     </div>
   );
 }
