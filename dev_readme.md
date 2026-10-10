@@ -284,7 +284,7 @@ live.nicovideo.jp/watch/lvXXX の #embedded-data (data-props)
 - `schedule` の時刻の形式 (ISO 文字列 / 秒 / ミリ秒のどれでも読めるようにしてあるが、実データは未確認)
 - `move_order` と `ssng_updated` の中身 (生データをログに出している。SSNG の種別対応は USER → ユーザーID、COMMAND → コマンド、WORD → ワード)
 - タイムシフト予約の解除 API の応答形式、一般会員での予約件数制限などのエラーコード (`nico-account-diff` のとおり会員種別による差は未検証)
-- タイムシフト予約一覧の視聴期限・公開終了のキー名 (`timeshiftDeadlines` は候補を順に見るだけ。予約一覧の取得時に先頭1件の `timeshift` をログに出す)
+- タイムシフト予約一覧の `timeshiftSetting` (`status` / `watchLimit` / `endTime`) と `timeshiftTicket.expireTimeMs` の読み方は、プレミアム会員の実通信 (HAR) で確認済み。一般会員での値は未検証 (カードの視聴可否・期限表示は `LiveView.tsx` の `timeshiftStatusOf`。公式の一覧ページの判定を移植したもの)
 
 ### その他
 

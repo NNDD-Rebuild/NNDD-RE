@@ -99,6 +99,43 @@ function formatDateTime(ms: number): string {
   return `${d.getMonth() + 1}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+function formatDateTimeFull(ms: number): string {
+  const d = new Date(ms);
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return `${d.getFullYear()}/${d.getMonth() + 1}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * 終了済み番組のタイムシフトの視聴可否・期限。ニコニコ公式のタイムシフト予約一覧と同じ判定
+ * (視聴チケットの期限 > 公開終了日時 > 視聴回数の順に見る)。分からなければ undefined
+ */
+function timeshiftStatusOf(p: LiveProgramSummary, now: number): { text: string; available: boolean } | undefined {
+  if (p.status !== 'ENDED') return undefined;
+  const s = p.timeshiftSetting;
+  if (!s) {
+    if (p.timeshiftEnabled === false) return { text: 'タイムシフト非対応になりました', available: false };
+    if (p.timeshiftPlayable === false) return { text: 'タイムシフト視聴不可', available: false };
+    return undefined;
+  }
+  if (s.status === 'BEFORE_OPEN') return { text: 'タイムシフト公開前', available: false };
+  if (s.status === 'CLOSED') return { text: '公開期間が終了しました', available: false };
+  const end = s.publicationEndMs;
+  if (s.watchLimit === 'UNLIMITED') {
+    return { text: end ? `${formatDateTimeFull(end)}まで何回でも視聴可能` : 'いつでも何回でも視聴可能', available: true };
+  }
+  // 視聴回数制限あり: 視聴を始めるとチケットの期限まで視聴できる
+  const t = s.ticketExpireMs;
+  if (t) {
+    return now < t
+      ? { text: `${formatDateTimeFull(t)}まで視聴可能`, available: true }
+      : { text: '視聴期限が切れました', available: false };
+  }
+  return {
+    text: end ? `${formatDateTimeFull(end)}まで1回のみ視聴可能` : '1回のみ視聴可能',
+    available: true
+  };
+}
+
 /** 番組の長さ (開始〜終了予定)。1 時間未満は M:SS、以上は H:MM:SS。長さが分からなければ空文字 */
 function formatProgramLength(beginMs: number, endMs: number): string {
   if (!(beginMs > 0 && endMs > beginMs)) return '';
@@ -148,7 +185,12 @@ function ProgramCard({
   /** 録画予約の追加・解除 (放送予定の番組にだけボタンを出す) */
   onRecordReserve?: (p: LiveProgramSummary) => void;
 }): JSX.Element {
-  const badge = STATUS_BADGE[p.status];
+  const tsStatus = timeshiftStatusOf(p, Date.now());
+  // 終了済みでタイムシフトの状態が分かる番組は、公式の一覧と同じく「タイムシフト」/「公開終了」のバッジにする
+  const badge =
+    p.status === 'ENDED' && tsStatus
+      ? { label: tsStatus.available ? 'タイムシフト' : '公開終了', className: tsStatus.available ? 'bg-blue-600' : 'bg-neutral-600' }
+      : STATUS_BADGE[p.status];
   const length = formatProgramLength(p.beginAtMs, p.endAtMs);
   // 見た目は動画一覧のカード (VideoCard のグリッド表示) に揃える
   return (
@@ -204,14 +246,12 @@ function ProgramCard({
           {p.comments !== undefined && <span>💬 {p.comments.toLocaleString()}</span>}
           <span className="ml-auto">{formatDateTime(p.beginAtMs)}</span>
         </div>
-        {p.status === 'ENDED' && p.timeshiftPlayable === false && (
-          <div className="text-xs text-nndd-subtext">タイムシフト視聴不可</div>
-        )}
-        {p.timeshiftViewingLimitMs !== undefined && (
-          <div className="text-xs text-nndd-subtext">視聴期限: {formatDateTime(p.timeshiftViewingLimitMs)}</div>
-        )}
-        {p.timeshiftPublicationEndMs !== undefined && (
-          <div className="text-xs text-nndd-subtext">公開終了: {formatDateTime(p.timeshiftPublicationEndMs)}</div>
+        {tsStatus ? (
+          <div className={`text-xs ${tsStatus.available ? 'text-pink-400' : 'text-nndd-subtext'}`}>{tsStatus.text}</div>
+        ) : (
+          p.timeshiftViewingLimitMs !== undefined && (
+            <div className="text-xs text-nndd-subtext">視聴期限: {formatDateTime(p.timeshiftViewingLimitMs)}</div>
+          )
         )}
         <div className="mt-auto pt-2 flex gap-1">
           <button

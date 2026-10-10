@@ -234,6 +234,18 @@ export interface LiveCommentRange {
   toVposMs: number;
 }
 
+/** タイムシフトの公開・視聴回数設定 (番組一覧のカードに視聴可否・期限を出すための値) */
+export interface LiveTimeshiftSetting {
+  /** BEFORE_OPEN (公開前) / OPENED / CLOSED (公開終了) */
+  status: string;
+  /** UNLIMITED (何回でも) / ONCE (1回のみ。視聴開始後は視聴チケットの期限まで) */
+  watchLimit: string;
+  /** 公開終了日時 (unix ms)。無期限なら undefined */
+  publicationEndMs?: number;
+  /** 視聴チケットの期限 (unix ms)。視聴を開始していなければ undefined */
+  ticketExpireMs?: number;
+}
+
 /** 番組一覧 (フォロー中・検索・タイムシフト予約) の1件 */
 export interface LiveProgramSummary {
   programId: string;
@@ -254,8 +266,8 @@ export interface LiveProgramSummary {
   timeshiftPlayable?: boolean;
   /** タイムシフトの視聴期限 (unix ms)。予約一覧で分かる場合のみ */
   timeshiftViewingLimitMs?: number;
-  /** タイムシフトの公開終了 (unix ms)。分かる場合のみ */
-  timeshiftPublicationEndMs?: number;
+  /** タイムシフトの公開・視聴回数設定。タイムシフト予約一覧で分かる場合のみ */
+  timeshiftSetting?: LiveTimeshiftSetting;
   /** タイムシフト予約に対応した番組か (分かる場合のみ。false なら予約ボタンを出さない) */
   timeshiftEnabled?: boolean;
 }

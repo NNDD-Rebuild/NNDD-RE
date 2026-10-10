@@ -6,7 +6,8 @@ import type {
   LiveRankingParams,
   LiveRankingResult,
   LiveRecentParams,
-  LiveSearchParams
+  LiveSearchParams,
+  LiveTimeshiftSetting
 } from '@shared/types';
 import { NicoContext } from '../NicoContext';
 import { createLogger } from '../../util/Logger';
@@ -232,35 +233,19 @@ function fromEmbeddedProgram(r: NicoLiveEmbeddedProgram): LiveProgramSummary {
     providerType: str(r.providerType),
     isMemberOnly: Boolean(r.isFollowerOnly || r.payment),
     timeshiftPlayable: typeof r.timeshift?.isPlayable === 'boolean' ? r.timeshift.isPlayable : undefined,
-    ...timeshiftDeadlines(r)
+    timeshiftSetting: timeshiftSettingOf(r)
   };
 }
 
-/**
- * タイムシフトの視聴期限・公開終了の時刻。埋め込みデータのキー名は未確認のため、
- * 想定される候補を順に見る (取れなければ入れない)。タイムシフト予約一覧の取得時に実際の形をログに出す
- */
-function timeshiftDeadlines(r: NicoLiveEmbeddedProgram): Pick<LiveProgramSummary, 'timeshiftViewingLimitMs' | 'timeshiftPublicationEndMs'> {
-  const pick = (...vals: unknown[]): number | undefined => {
-    for (const v of vals) {
-      const ms = typeof v === 'string' ? isoToMs(v) : toMs(v);
-      if (ms > 0) return ms;
-    }
-    return undefined;
-  };
+/** 埋め込みデータの timeshiftSetting / timeshiftTicket を一覧用に整える。timeshiftSetting が無ければ undefined */
+function timeshiftSettingOf(r: NicoLiveEmbeddedProgram): LiveTimeshiftSetting | undefined {
+  const s = r.timeshiftSetting;
+  if (!s) return undefined;
   return {
-    timeshiftViewingLimitMs: pick(
-      r.timeshift?.viewing?.endTime,
-      r.timeshift?.viewingEndTime,
-      r.timeshift?.expireTime,
-      r.reservation?.expireTime,
-      r.expireTime
-    ),
-    timeshiftPublicationEndMs: pick(
-      r.timeshift?.publication?.endTime,
-      r.timeshift?.publicationEndTime,
-      r.timeshiftPublicationEndTime
-    )
+    status: str(s.status),
+    watchLimit: str(s.watchLimit),
+    publicationEndMs: isoToMs(s.endTime) || undefined,
+    ticketExpireMs: num(r.timeshiftTicket?.expireTimeMs) || undefined
   };
 }
 
@@ -277,12 +262,11 @@ async function fetchEmbeddedData(path: string, label: string): Promise<NicoLiveE
 export async function fetchTimeshiftReservations(): Promise<LiveProgramListResult> {
   const props = await fetchEmbeddedData('/embed/timeshift-reservations', 'タイムシフト予約一覧');
   const items = props.reservations?.reservations ?? [];
-  if (items[0]) {
-    // 視聴期限などのキー名を確認するため、先頭1件の timeshift 関連を残す
-    const { timeshift, reservation } = items[0];
-    log.info(`timeshift reservation sample: ${JSON.stringify({ timeshift, reservation }).slice(0, 1500)}`);
-  }
-  const programs = items.map(fromEmbeddedProgram);
+  // 予約一覧の番組は必ず timeshiftSetting を持つ。無いものはタイムシフト非対応になった番組
+  const programs = items.map((r) => {
+    const p = fromEmbeddedProgram(r);
+    return r.timeshiftSetting ? p : { ...p, timeshiftEnabled: false };
+  });
   return { programs, total: programs.length };
 }
 

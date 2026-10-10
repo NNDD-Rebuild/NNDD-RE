@@ -386,17 +386,18 @@ export interface NicoLiveEmbeddedProgram {
   providerType?: string;
   isFollowerOnly?: boolean;
   payment?: unknown;
-  timeshift?: {
-    isPlayable?: boolean;
-    viewing?: { endTime?: unknown };
-    viewingEndTime?: unknown;
-    expireTime?: unknown;
-    publication?: { endTime?: unknown };
-    publicationEndTime?: unknown;
+  timeshift?: { isPlayable?: boolean; isReservable?: boolean };
+  /** タイムシフトの公開・視聴回数設定 (タイムシフト予約一覧で確認済み。未設定ならタイムシフト非対応) */
+  timeshiftSetting?: {
+    /** BEFORE_OPEN (公開前) / OPENED / CLOSED (公開終了) */
+    status?: string;
+    /** UNLIMITED (何回でも) / ONCE (1回のみ。視聴開始後は視聴チケットの期限まで) */
+    watchLimit?: string;
+    /** 公開終了日時 (ISO 8601)。無期限なら null */
+    endTime?: string | null;
   };
-  reservation?: { expireTime?: unknown };
-  expireTime?: unknown;
-  timeshiftPublicationEndTime?: unknown;
+  /** タイムシフト視聴チケット。視聴を開始すると expireTimeMs (unix ms) が入る */
+  timeshiftTicket?: { expireTimeMs?: number; reserveTimeMs?: number };
 }
 
 // 生放送: ランキングの要素 ({ type, value } 形式。value が無ければ番組そのもの)
