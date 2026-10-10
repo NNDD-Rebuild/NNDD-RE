@@ -267,8 +267,8 @@ function runCommand(
     onProgress(0.1);
     const proc = spawn(cmd, args, { windowsHide: true });
 
-    proc.stdout?.on('data', (d: Buffer) => log.debug(`[${cmd}] ${d.toString().trim()}`));
-    proc.stderr?.on('data', (d: Buffer) => log.debug(`[${cmd}] stderr: ${d.toString().trim()}`));
+    proc.stdout?.on('data', (d: Buffer) => log.verbose(`[${cmd}] ${d.toString().trim()}`));
+    proc.stderr?.on('data', (d: Buffer) => log.verbose(`[${cmd}] stderr: ${d.toString().trim()}`));
 
     proc.on('error', (e) => reject(new Error(`${cmd} 起動失敗: ${e.message}`)));
     proc.on('close', (code) => {

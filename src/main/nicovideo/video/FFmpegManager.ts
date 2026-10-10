@@ -104,7 +104,7 @@ export class FFmpegManager {
   ): Promise<void> {
     return new Promise((resolve, reject) => {
       const ffmpegPath = BinaryInstaller.findFfmpeg();
-      log.debug('spawn ffmpeg:', ffmpegPath, args.join(' '));
+      log.verbose('spawn ffmpeg:', ffmpegPath, args.join(' '));
       const proc = spawn(ffmpegPath, args, {
         stdio: ['ignore', 'pipe', 'pipe']
       });

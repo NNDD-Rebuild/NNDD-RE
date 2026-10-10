@@ -368,7 +368,7 @@ export class LibraryScanner {
   ): Promise<PreparedVideo> {
     const { filePath, baseName, videoId } = entry;
     if (!videoId) {
-      log.debug('skip (Nicowari素材 or no videoId):', filePath);
+      log.verbose('skip (Nicowari素材 or no videoId):', filePath);
       return { kind: 'skip' };
     }
 
@@ -427,7 +427,7 @@ export class LibraryScanner {
       fs.existsSync(existing.uri) &&
       this.filePriority(filePath) < this.filePriority(existing.uri)
     ) {
-      log.debug('skip (同じ動画IDの優先ファイルあり):', filePath, '<', existing.uri);
+      log.verbose('skip (同じ動画IDの優先ファイルあり):', filePath, '<', existing.uri);
       return 'skipped';
     }
 

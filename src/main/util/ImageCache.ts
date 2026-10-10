@@ -46,7 +46,7 @@ export class ImageCache {
 
   static setEnabled(v: boolean): void {
     this._enabled = v;
-    log.info('ImageCache enabled:', v);
+    log.verbose('ImageCache enabled:', v);
   }
 
   static isEnabled(): boolean {
@@ -62,7 +62,7 @@ export class ImageCache {
     try {
       const files = await fs.promises.readdir(this.cacheDir);
       this._cachedKeys = new Set(files);
-      log.info(`ImageCache init: ${files.length} files loaded`);
+      log.verbose(`ImageCache init: ${files.length} files loaded`);
     } catch { /* キャッシュディレクトリ未作成 (初回起動) 時は空のまま始める */ }
   }
 
@@ -172,7 +172,7 @@ export class ImageCache {
       const p = path.join(this.cacheDir, name);
       await this.writeViaWorker(p, buf);
       this._cachedKeys.add(name);
-      log.debug('cached:', name, '<-', url);
+      log.verbose('cached:', name, '<-', url);
       return this.toLocalUrl(p);
     } catch (e) {
       log.warn('fetch failed, using original URL:', url, String(e));

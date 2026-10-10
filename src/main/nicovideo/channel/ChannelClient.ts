@@ -18,7 +18,7 @@ export class ChannelClient {
     cacheImages = true
   ): Promise<{ items: MyListItem[]; total: number; name?: string }> {
     const url = NicoEndpoint.channelVideos(channelId, page);
-    log.debug('fetch channel videos:', url);
+    log.verbose('fetch channel videos:', url);
     const res = await NicoContext.get().http.fetch(url, { timeoutMs: 10000 });
     if (!res.ok) {
       throw new Error(`チャンネル動画の取得に失敗: status=${res.status}`);
@@ -61,7 +61,7 @@ export class ChannelClient {
       const urls = ImageCache.cacheUrlList(mapped.map(i => i.thumbnailUrl), http);
       mapped = mapped.map((i, idx) => ({ ...i, thumbnailUrl: urls[idx] }));
     }
-    log.debug(`channel ${channelId} page=${page} items=${mapped.length} total=${total}`);
+    log.verbose(`channel ${channelId} page=${page} items=${mapped.length} total=${total}`);
     return { items: mapped, total, name };
   }
 }

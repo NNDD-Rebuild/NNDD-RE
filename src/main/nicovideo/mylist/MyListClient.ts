@@ -38,7 +38,7 @@ export class MyListClient {
     let res: NicoNvapiMylistResponse | null = null;
     let lastError: unknown = null;
     for (const url of candidates) {
-      log.debug('fetch mylist:', url);
+      log.verbose('fetch mylist:', url);
       try {
         res = await ctx.http.getJson<NicoNvapiMylistResponse>(url);
         const status = res.meta?.status;
@@ -60,7 +60,7 @@ export class MyListClient {
     }
     const rawItems = res.data?.mylist?.items ?? res.data?.items ?? [];
     const total = res.data?.mylist?.totalItemCount ?? rawItems.length;
-    log.debug(`mylist ${mylistId} page=${page} items=${rawItems.length} total=${total}`);
+    log.verbose(`mylist ${mylistId} page=${page} items=${rawItems.length} total=${total}`);
     let items = rawItems.map((i) => ({
       videoId: i.video.id,
       title: i.video.title,
@@ -150,7 +150,7 @@ export class MyListClient {
 
     const ctx = NicoContext.get();
     const url = NicoEndpoint.myMylists();
-    log.debug('fetch account mylists:', url);
+    log.verbose('fetch account mylists:', url);
     const res = await ctx.http.getJson<AccountMylistsResponse>(url);
     const status = res.meta?.status;
     if (status && status >= 400) {
@@ -206,7 +206,7 @@ export class MyListClient {
       sensitiveContents: 'mask'
     });
     const url = NicoEndpoint.userVideos(userId, params);
-    log.debug('fetch user videos:', url);
+    log.verbose('fetch user videos:', url);
     const res = await ctx.http.getJson<NvApiUserVideosResponse>(url);
     const status = res.meta?.status;
     if (status && status >= 400) {
@@ -237,7 +237,7 @@ export class MyListClient {
       const urls = ImageCache.cacheUrlList(items.map(i => i.thumbnailUrl), http);
       items = items.map((i, idx) => ({ ...i, thumbnailUrl: urls[idx] }));
     }
-    log.debug(`user ${userId} page=${page} items=${items.length} total=${total}`);
+    log.verbose(`user ${userId} page=${page} items=${items.length} total=${total}`);
     return { items, total };
   }
 
@@ -258,7 +258,7 @@ export class MyListClient {
       };
     }
     const url = NicoEndpoint.userMylists(userId);
-    log.debug('fetch user mylists:', url);
+    log.verbose('fetch user mylists:', url);
     const res = await NicoContext.get().http.getJson<NvApiUserMylistsResponse>(url);
     const status = res.meta?.status;
     if (status && status >= 400) {
@@ -287,7 +287,7 @@ export class MyListClient {
       );
       return res.data?.user?.nickname ?? null;
     } catch (e) {
-      log.debug(`fetchUserName failed for ${userId}:`, e);
+      log.verbose(`fetchUserName failed for ${userId}:`, e);
       return null;
     }
   }

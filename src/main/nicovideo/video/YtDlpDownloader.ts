@@ -56,7 +56,7 @@ export class YtDlpDownloader {
       args.push(url);
 
       log.info('yt-dlp start:', exePath, url);
-      log.debug('yt-dlp args:', args.join(' '));
+      log.verbose('yt-dlp args:', args.join(' '));
 
       // video/audio 別フェーズで 0→50→100 にマッピングする
       let phase = 0; // 0=video, 1=audio

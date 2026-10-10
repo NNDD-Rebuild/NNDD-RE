@@ -298,7 +298,7 @@ export class CommentClient {
         const batch: NicoV3CommentItem[] = threads.flatMap((t) => t.comments ?? []);
 
         if (batch.length === 0) {
-          log.debug(`thread=${target.id} round=${round}: no more comments`);
+          log.verbose(`thread=${target.id} round=${round}: no more comments`);
           break;
         }
 
@@ -315,7 +315,7 @@ export class CommentClient {
         onProgress?.(`コメント取得中 (${target.fork} / ${seen.size} 件取得)`);
 
         if (options?.maxTotalCount && seen.size >= options.maxTotalCount) {
-          log.debug(`reached maxTotalCount=${options.maxTotalCount}`);
+          log.verbose(`reached maxTotalCount=${options.maxTotalCount}`);
           reachedLimit = true;
           break;
         }
@@ -323,7 +323,7 @@ export class CommentClient {
         // 先頭コメント no < 5 → スレッドの最初に到達
         const minNo = Math.min(...batch.map((c) => c.no));
         if (minNo < 5) {
-          log.debug(`thread=${target.id}: reached beginning at round=${round}`);
+          log.verbose(`thread=${target.id}: reached beginning at round=${round}`);
           break;
         }
 
@@ -339,7 +339,7 @@ export class CommentClient {
 
         // 取得済みの区間まで遡った。重複分は呼び出し側で (thread, no) 照合して除く
         if (options?.stopAtUnixSec && earliestSec <= options.stopAtUnixSec) {
-          log.debug(`thread=${target.id}: reached stopAt at round=${round}`);
+          log.verbose(`thread=${target.id}: reached stopAt at round=${round}`);
           break;
         }
 
