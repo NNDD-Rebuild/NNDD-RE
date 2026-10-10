@@ -130,6 +130,8 @@ export default function LivePlayerApp(): JSX.Element {
   const [statistics, setStatistics] = useState<LiveStatistics | null>(null);
   const [operatorComment, setOperatorComment] = useState<LiveNotice | null>(null);
   const [enquete, setEnquete] = useState<LiveEnquete | null>(null);
+  /** 自分が回答した選択肢 (質問文で紐付け。次のアンケートが来れば別の質問文になり未回答扱いに戻る) */
+  const [enqueteAnswer, setEnqueteAnswer] = useState<{ question: string; index: number } | null>(null);
   const [moveOrder, setMoveOrder] = useState<LiveMoveOrder | null>(null);
   const [autoFollowMoveOrder, , autoFollowLoading] = useConfig<boolean>('live.autoFollowMoveOrder', false);
   const [creatorSupport, setCreatorSupport] = useState<LiveCreatorSupport | null>(null);
@@ -294,6 +296,7 @@ export default function LivePlayerApp(): JSX.Element {
           break;
         case 'enquete':
           setEnquete(ev.enquete);
+          if (!ev.enquete) setEnqueteAnswer(null);
           break;
         case 'schedule': {
           // 延長されると終了予定が変わる。番組情報の開始・終了時刻を差し替える
@@ -470,6 +473,12 @@ export default function LivePlayerApp(): JSX.Element {
   const pendingChaseSeekRef = useRef<{ vposMs: number; fromHls: Hls | null; timer: number } | null>(null);
 
   /** 追っかけ再生 (巻き戻し可能・高遅延) と低遅延のライブ視聴を切り替える。新しい stream が届くと映像が読み込み直される */
+  const answerEnquete = (index: number): void => {
+    if (!enquete) return;
+    void window.nndd.invoke(IpcChannel.LIVE_ANSWER_ENQUETE, index).catch(() => {});
+    setEnqueteAnswer({ question: enquete.question, index });
+  };
+
   const setChasePlayMode = (enabled: boolean): void => {
     void window.nndd.invoke(IpcChannel.LIVE_SET_CHASE_PLAY, enabled).catch(() => {});
   };
@@ -701,7 +710,14 @@ export default function LivePlayerApp(): JSX.Element {
           )}
           {creatorSupport && <CreatorSupportBar support={creatorSupport} lowered={moveOrder !== null} />}
           {commentLock && commentLock.status !== 'unrestricted' && <CommentLockChip lock={commentLock} />}
-          {enquete && <EnqueteOverlay enquete={enquete} onClose={() => setEnquete(null)} />}
+          {enquete && (
+            <EnqueteOverlay
+              enquete={enquete}
+              answeredIndex={enqueteAnswer?.question === enquete.question ? enqueteAnswer.index : null}
+              onAnswer={answerEnquete}
+              onClose={() => setEnquete(null)}
+            />
+          )}
           {accessRestricted && (
             <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/60">
               <div className="bg-nndd-panel border border-nndd-border rounded p-5 max-w-sm text-sm text-center">

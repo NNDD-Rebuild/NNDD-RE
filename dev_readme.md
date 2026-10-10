@@ -213,7 +213,7 @@ live.nicovideo.jp/watch/lvXXX の #embedded-data (data-props)
 
 コメントサーバー (NDGR) からは、コメント以外に放送者の操作や番組の状態も届く。`LiveSession` が `LiveEvent` に変換して renderer へ送る。`NicoliveState` は変わった項目だけが入ってくる。
 
-- **アンケート** (`enquete`): 映像の左下に表示 (`LiveOverlays.tsx` の `EnqueteOverlay`)。投票中は選択肢、結果は得票率のバー。表示のみで投票はできない。開始と結果はお知らせタブにも残る
+- **アンケート** (`enquete`): 映像の左下に表示 (`LiveOverlays.tsx` の `EnqueteOverlay`)。投票中は選択肢、結果は得票率のバー。左下のパネルから投票できる (視聴 WebSocket へ `{type:"answerEnquete",data:{answer:選択肢の0始まりindex}}` を送る。サーバーからの応答は無い)。開始と結果はお知らせタブにも残る
 - **コメント表示レイアウト** (`comment_mode`): `splitTop` はコメントを映像の上半分だけに流す、`background` はコメントを薄く (不透明度 0.4) 表示する。コメント描画領域 (`overlayRef`) のスタイルを切り替えるだけで、描画エンジンは ResizeObserver で追従する
 - **コメント投稿制限** (`comment_lock`): 制限中は映像の右下に表示し、番組情報タブにも出す。コメント投稿の UI はまだ無いので状態の表示のみ
 - **タグ更新** (`tag_updated`): 番組情報のタグを差し替える

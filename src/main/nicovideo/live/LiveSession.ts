@@ -226,6 +226,12 @@ export class LiveSession {
     this.send({ type: 'changeStream', data: this.streamRequest() });
   }
 
+  /** アンケートに回答する。サーバーからの応答は無い (fire-and-forget)。index は選択肢の 0 始まり */
+  answerEnquete(index: number): void {
+    if (!Number.isInteger(index) || index < 0) return;
+    this.send({ type: 'answerEnquete', data: { answer: index } });
+  }
+
   private streamRequest(): Record<string, unknown> {
     return { quality: this.quality, protocol: 'hls', latency: 'low', chasePlay: this.chasePlay };
   }

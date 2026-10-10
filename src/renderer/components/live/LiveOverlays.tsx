@@ -10,12 +10,17 @@ import type {
  * 放送者の操作 (アンケート・コメント制限・移動指示など) に応じて出し入れする。
  */
 
-/** アンケート。投票中は選択肢、結果表示では得票率のバーを出す (投票そのものは視聴ページ側の機能で、ここは表示のみ) */
+/** アンケート。投票中は選択肢のボタン (クリックで回答)、結果表示では得票率のバーを出す */
 export function EnqueteOverlay({
   enquete,
+  answeredIndex,
+  onAnswer,
   onClose
 }: {
   enquete: LiveEnquete;
+  /** 自分が回答済みの選択肢 (0 始まり)。未回答は null */
+  answeredIndex: number | null;
+  onAnswer: (index: number) => void;
   onClose: () => void;
 }): JSX.Element {
   const isResult = enquete.status === 'result';
@@ -37,8 +42,28 @@ export function EnqueteOverlay({
         </button>
       </div>
       <div className="p-2 space-y-1.5">
+        {!isResult && answeredIndex !== null && (
+          <div className="text-[10px] text-green-400">回答を送信しました</div>
+        )}
         {enquete.choices.map((c, i) => {
           const percent = c.perMille !== undefined ? Math.max(0, Math.min(100, c.perMille / 10)) : undefined;
+          if (!isResult) {
+            const selected = answeredIndex === i;
+            return (
+              <button
+                key={i}
+                onClick={() => onAnswer(i)}
+                className={`block w-full text-left break-words rounded px-2 py-1 border ${
+                  selected
+                    ? 'bg-nndd-accent border-nndd-accent'
+                    : 'bg-white/10 border-white/30 hover:bg-white/25'
+                }`}
+              >
+                {i + 1}. {c.description}
+                {selected && ' ✓'}
+              </button>
+            );
+          }
           return (
             <div key={i}>
               <div className="flex justify-between gap-2">

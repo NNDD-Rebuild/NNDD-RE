@@ -224,6 +224,8 @@ export const IpcChannel = {
   LIVE_CHANGE_QUALITY: 'nndd:live:changeQuality',
   /** 追っかけ再生 (巻き戻し可能・高遅延) / 通常のライブ視聴 (低遅延) の切り替え (enabled: boolean) */
   LIVE_SET_CHASE_PLAY: 'nndd:live:setChasePlay',
+  /** アンケートに回答する (選択肢の 0 始まりインデックス) */
+  LIVE_ANSWER_ENQUETE: 'nndd:live:answerEnquete',
   /** 録画の開始前の確認 (最初から録画できる番組なら選ばせる)。戻り値は 'fromStart' | 'now' | 'cancel' */
   LIVE_RECORD_ASK: 'nndd:live:recordAsk',
   /** 録画予約の追加 (放送予定の番組を開始時刻に自動録画) */

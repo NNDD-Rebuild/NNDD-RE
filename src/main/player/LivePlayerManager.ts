@@ -239,6 +239,10 @@ export class LivePlayerManager {
     this.sessions.get(webContentsId)?.setChasePlay(enabled);
   }
 
+  answerEnquete(webContentsId: number, index: number): void {
+    this.sessions.get(webContentsId)?.answerEnquete(index);
+  }
+
   private setupSession(ses: Session): void {
     ses.webRequest.onBeforeSendHeaders({ urls: NICO_URL_PATTERNS }, (details, callback) => {
       const cookies = this.streamCookies.get(ses);

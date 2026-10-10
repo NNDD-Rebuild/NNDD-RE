@@ -144,6 +144,10 @@ export function registerLiveHandlers(recordScheduler: LiveRecordScheduler): void
   ipcMain.handle(IpcChannel.LIVE_AKASHIC_API, (_e, req: LiveAkashicApiRequest) =>
     sendAkashicApi(req)
   );
+  ipcMain.handle(IpcChannel.LIVE_ANSWER_ENQUETE, (e, index: number) => {
+    LivePlayerManager.get().answerEnquete(e.sender.id, Number(index));
+  });
+
   ipcMain.handle(IpcChannel.LIVE_SET_CHASE_PLAY, (e, enabled: boolean) => {
     LivePlayerManager.get().setChasePlay(e.sender.id, Boolean(enabled));
   });
