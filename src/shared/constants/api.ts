@@ -195,9 +195,9 @@ export const NicoEndpoint = {
   /** 生放送: タイムシフト予約 (POST 予約 / PATCH 視聴開始) */
   liveTimeshiftReservation: (programId: string) =>
     `${NicoApi.LIVE2_API_BASE}/api/v2/programs/${programId}/timeshift/reservation`,
-  /** 生放送: タイムシフト予約の一括解除 (DELETE) */
+  /** 生放送: タイムシフト予約の一括解除 (DELETE)。番組IDは programIds=a&programIds=b と同じキーを繰り返す (カンマ区切りは 400) */
   liveTimeshiftReservations: (programIds: string[]) =>
-    `${NicoApi.LIVE2_API_BASE}/api/v2/timeshift/reservations?programIds=${programIds.join(',')}`,
+    `${NicoApi.LIVE2_API_BASE}/api/v2/timeshift/reservations?${programIds.map((id) => `programIds=${enc(id)}`).join('&')}`,
   /** 生放送: 番組検索 (CAS) */
   liveSearchPrograms: (query: Query) => `${NicoApi.CAS_API_BASE}/v2/search/programs.json?${query}`,
   /** 生放送: フォロー中の番組 (onair) */

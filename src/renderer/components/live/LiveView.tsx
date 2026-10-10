@@ -15,6 +15,7 @@ import { extractLiveIdFromInput } from '@shared/utils/liveId';
 import { useAppStore } from '@renderer/store/useAppStore';
 import { enqueueLiveDownload, enqueueLiveRecord } from '@renderer/util/enqueueDownload';
 import { VirtualizedItemList } from '../common/VirtualizedItemList';
+import { TimeshiftBulkCancelDialog, type BulkCancelItem } from './TimeshiftBulkCancelDialog';
 
 type SubTab = 'followOnair' | 'followReserved' | 'ranking' | 'recent' | 'anime' | 'search' | 'timeshift' | 'recordReservations';
 type RankingKind = 'official' | 'user';
@@ -107,32 +108,37 @@ function formatDateTimeFull(ms: number): string {
 
 /**
  * 終了済み番組のタイムシフトの視聴可否・期限。ニコニコ公式のタイムシフト予約一覧と同じ判定
- * (視聴チケットの期限 > 公開終了日時 > 視聴回数の順に見る)。分からなければ undefined
+ * (視聴チケットの期限 > 公開終了日時 > 視聴回数の順に見る)。分からなければ undefined。
+ * gone は「もう視聴できないと確定している」(公開前や、購入すれば見られる可能性のあるものは含めない)
  */
-function timeshiftStatusOf(p: LiveProgramSummary, now: number): { text: string; available: boolean } | undefined {
+function timeshiftStatusOf(
+  p: LiveProgramSummary,
+  now: number
+): { text: string; available: boolean; gone: boolean } | undefined {
   if (p.status !== 'ENDED') return undefined;
   const s = p.timeshiftSetting;
   if (!s) {
-    if (p.timeshiftEnabled === false) return { text: 'タイムシフト非対応になりました', available: false };
-    if (p.timeshiftPlayable === false) return { text: 'タイムシフト視聴不可', available: false };
+    if (p.timeshiftEnabled === false) return { text: 'タイムシフト非対応になりました', available: false, gone: true };
+    if (p.timeshiftPlayable === false) return { text: 'タイムシフト視聴不可', available: false, gone: false };
     return undefined;
   }
-  if (s.status === 'BEFORE_OPEN') return { text: 'タイムシフト公開前', available: false };
-  if (s.status === 'CLOSED') return { text: '公開期間が終了しました', available: false };
+  if (s.status === 'BEFORE_OPEN') return { text: 'タイムシフト公開前', available: false, gone: false };
+  if (s.status === 'CLOSED') return { text: '公開期間が終了しました', available: false, gone: true };
   const end = s.publicationEndMs;
   if (s.watchLimit === 'UNLIMITED') {
-    return { text: end ? `${formatDateTimeFull(end)}まで何回でも視聴可能` : 'いつでも何回でも視聴可能', available: true };
+    return { text: end ? `${formatDateTimeFull(end)}まで何回でも視聴可能` : 'いつでも何回でも視聴可能', available: true, gone: false };
   }
   // 視聴回数制限あり: 視聴を始めるとチケットの期限まで視聴できる
   const t = s.ticketExpireMs;
   if (t) {
     return now < t
-      ? { text: `${formatDateTimeFull(t)}まで視聴可能`, available: true }
-      : { text: '視聴期限が切れました', available: false };
+      ? { text: `${formatDateTimeFull(t)}まで視聴可能`, available: true, gone: false }
+      : { text: '視聴期限が切れました', available: false, gone: true };
   }
   return {
     text: end ? `${formatDateTimeFull(end)}まで1回のみ視聴可能` : '1回のみ視聴可能',
-    available: true
+    available: true,
+    gone: false
   };
 }
 
@@ -539,6 +545,48 @@ export function LiveView(): JSX.Element {
     }
   };
 
+  /** 視聴できないと確定しているタイムシフト予約 (一括解除の候補)。予約一覧のタブでだけ使う */
+  const goneReservations = useMemo<BulkCancelItem[]>(() => {
+    if (subTab !== 'timeshift') return [];
+    const now = Date.now();
+    return programs.flatMap((p) => {
+      const st = timeshiftStatusOf(p, now);
+      return st?.gone ? [{ programId: p.programId, title: p.title, reason: st.text }] : [];
+    });
+  }, [subTab, programs]);
+  const [bulkCancelOpen, setBulkCancelOpen] = useState(false);
+  const [bulkCancelBusy, setBulkCancelBusy] = useState(false);
+
+  const onBulkCancel = async (ids: string[]): Promise<void> => {
+    setBulkCancelBusy(true);
+    setTsMessage(null);
+    // 一度に渡す番組数を抑えるため分けて解除する。途中で失敗しても、解除できた分は一覧から外す
+    const CHUNK = 20;
+    const done = new Set<string>();
+    let error = '';
+    try {
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const chunk = ids.slice(i, i + CHUNK);
+        await window.nndd.invoke(IpcChannel.LIVE_TIMESHIFT_CANCEL, chunk);
+        chunk.forEach((id) => done.add(id));
+      }
+    } catch (e) {
+      error = errorText(e);
+    } finally {
+      setBulkCancelBusy(false);
+    }
+    if (done.size > 0) {
+      setPrograms((prev) => prev.filter((x) => !done.has(x.programId)));
+      setTotal((n) => Math.max(0, n - done.size));
+    }
+    setBulkCancelOpen(false);
+    setTsMessage(
+      error
+        ? { text: `${done.size} 件解除後にエラーが発生しました: ${error}`, isError: true }
+        : { text: `視聴できない予約を ${done.size} 件解除しました`, isError: false }
+    );
+  };
+
   /** 録画予約済みの番組ID */
   const [reservedIds, setReservedIds] = useState<Set<string>>(new Set());
   useEffect(() => {
@@ -673,6 +721,16 @@ export function LiveView(): JSX.Element {
           </button>
         ))}
         <div className="flex-1" />
+        {subTab === 'timeshift' && (
+          <button
+            onClick={() => setBulkCancelOpen(true)}
+            disabled={loading || goneReservations.length === 0}
+            title="視聴期限切れ・公開終了など、もう視聴できない予約をまとめて解除"
+            className="px-2 py-1 text-xs hover:bg-nndd-border rounded disabled:opacity-50"
+          >
+            視聴できない予約を解除 ({goneReservations.length})
+          </button>
+        )}
         {subTab !== 'search' && (
           <button
             onClick={() => void load(subTab, null, false, 0)}
@@ -929,6 +987,14 @@ export function LiveView(): JSX.Element {
           </div>
         )}
       </div>
+      {bulkCancelOpen && (
+        <TimeshiftBulkCancelDialog
+          items={goneReservations}
+          busy={bulkCancelBusy}
+          onConfirm={(ids) => void onBulkCancel(ids)}
+          onCancel={() => setBulkCancelOpen(false)}
+        />
+      )}
     </div>
   );
 }
