@@ -67,6 +67,13 @@ export function HttpServerSection(): JSX.Element {
 
   useEffect(() => { setAllowedHostsText(allowedHosts.join(', ')); }, [allowedHosts]);
 
+  // 起動中は Tailscale の接続状態の変化 (待機 → 接続) を反映する
+  useEffect(() => {
+    if (!httpStatus.running) return;
+    const timer = setInterval(refreshHttpStatus, 5000);
+    return () => clearInterval(timer);
+  }, [httpStatus.running]);
+
   // tailscale モードはトークン必須
   const tokenActive = requireToken || bindMode === 'tailscale';
 
@@ -156,7 +163,7 @@ export function HttpServerSection(): JSX.Element {
                 >
                   {showQr ? 'QRコードを隠す' : 'QRコードを表示'}
                 </button>
-                {showQr && (
+                {showQr && !httpStatus.waitingForTailscale && (
                   <div className="mt-2 inline-block bg-white p-3">
                     <QRCodeSVG
                       value={withToken(`http://${httpStatus.tailscaleIp ?? httpStatus.lanIp ?? 'localhost'}:${httpStatus.port}/library`)}
@@ -164,7 +171,7 @@ export function HttpServerSection(): JSX.Element {
                     />
                   </div>
                 )}
-                {showQr && (
+                {showQr && !httpStatus.waitingForTailscale && (
                   <p className="text-xs text-nndd-subtext mt-1">
                     {`http://${httpStatus.tailscaleIp ?? httpStatus.lanIp ?? 'localhost'}:${httpStatus.port}/library`}
                     {tokenActive && ' (QRコードにはアクセストークンが含まれます)'}

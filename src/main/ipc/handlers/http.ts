@@ -1,11 +1,9 @@
-import os from 'node:os';
 import { ipcMain } from 'electron';
 import { IpcChannel } from '@shared/types';
 import { getConfigStore } from '../../config/ConfigStore';
 import { NnddHttpServer } from '../../server/NnddHttpServer';
 import { LanLibraryClient } from '../../server/LanLibraryClient';
 import { SecretStore } from '../../server/SecretStore';
-import { detectTailscaleIps } from '../../server/ServerStats';
 import { createLogger } from '../../util/Logger';
 import { isHeadless } from '../../util/headless';
 import { startHeadlessDashboard } from '../../server/headlessDashboard';
@@ -38,8 +36,10 @@ export function registerHttpHandlers(ctx: IpcHandlerContext): void {
 
   ipcMain.handle(IpcChannel.HTTPD_START, async () => {
     if (runtimeHttpServer) return { port: runtimeHttpServer.getPort(), running: true };
-    runtimeHttpServer = new NnddHttpServer(library);
-    const { port } = await runtimeHttpServer.start();
+    // start() が失敗 (ポート使用中など) したときに停止済みのインスタンスを残さない
+    const server = new NnddHttpServer(library);
+    const { port } = await server.start();
+    runtimeHttpServer = server;
     return { port, running: true };
   });
   ipcMain.handle(IpcChannel.HTTPD_STOP, async () => {
@@ -53,9 +53,9 @@ export function registerHttpHandlers(ctx: IpcHandlerContext): void {
     if (runtimeHttpServer) {
       const port = runtimeHttpServer.getPort();
       const bindMode = runtimeHttpServer.getBindMode();
-      let lanIp: string | undefined;
-      if (bindMode === 'lan') lanIp = getLanIp();
-      const tailscaleIp = bindMode === 'tailscale' ? detectTailscaleIps()[0] : undefined;
+      // 設定画面の URL・QR は getAccessUrls と同じ優先順位の先頭を使う (Tailscale の 100.x を LAN と取り違えない)
+      const lanIp = bindMode === 'lan' ? runtimeHttpServer.getAccessHosts()[0] : undefined;
+      const tailscaleIp = bindMode === 'tailscale' ? runtimeHttpServer.getAccessHosts()[0] : undefined;
       return {
         running: true,
         port,
@@ -105,20 +105,4 @@ export function registerHttpHandlers(ctx: IpcHandlerContext): void {
     const client = lanClient(cfg);
     return await client.getVideoById(videoId);
   });
-}
-
-function getLanIp(): string | undefined {
-  const nets = os.networkInterfaces();
-  for (const name of Object.keys(nets)) {
-    for (const net of nets[name] ?? []) {
-      if (
-        net.family === 'IPv4' &&
-        !net.internal &&
-        !net.address.startsWith('169.254.')
-      ) {
-        return net.address;
-      }
-    }
-  }
-  return undefined;
 }

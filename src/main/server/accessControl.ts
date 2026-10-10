@@ -163,6 +163,10 @@ export function createTokenGuard(opts: AccessControlOptions): RequestHandler {
     }
     const ip = req.socket.remoteAddress ?? '';
     const now = Date.now();
+    // 期限切れのエントリを掃除する (Map が増え続けないように)
+    if (failures.size > 1000) {
+      for (const [k, v] of failures) if (v.resetAt <= now) failures.delete(k);
+    }
     const fail = failures.get(ip);
     if (fail && fail.resetAt <= now) failures.delete(ip);
     const current = failures.get(ip);
@@ -173,25 +177,29 @@ export function createTokenGuard(opts: AccessControlOptions): RequestHandler {
     }
 
     const expected = opts.getToken();
+    const bearer = readBearer(req);
     const queryToken = typeof req.query.token === 'string' ? req.query.token : undefined;
-    const presented = readBearer(req) ?? readCookie(req, TOKEN_COOKIE) ?? queryToken;
+    const cookie = readCookie(req, TOKEN_COOKIE);
 
-    if (presented && tokensMatch(presented, expected)) {
-      if (queryToken && tokensMatch(queryToken, expected) && wantsHtml(req)) {
-        res.cookie(TOKEN_COOKIE, expected, {
-          httpOnly: true,
-          sameSite: 'lax',
-          path: '/',
-          maxAge: 365 * 24 * 60 * 60 * 1000
-        });
-        res.redirect(302, stripTokenFromUrl(req.originalUrl));
-        return;
-      }
+    // トークンの再生成後は古い Cookie が残っている。有効な Bearer / ?token= を Cookie より優先して引き換える
+    if (tokensMatch(queryToken, expected) && wantsHtml(req)) {
+      res.cookie(TOKEN_COOKIE, expected, {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 365 * 24 * 60 * 60 * 1000
+      });
+      res.redirect(302, stripTokenFromUrl(req.originalUrl));
+      return;
+    }
+    if (tokensMatch(bearer, expected) || tokensMatch(queryToken, expected) || tokensMatch(cookie, expected)) {
       next();
       return;
     }
 
-    if (presented) {
+    // 総当たり対策のカウントは Bearer / ?token= を提示して間違えた場合だけ。
+    // 古い Cookie は画像・動画の 1 リクエストごとに送られるため、数えると正規の利用者が締め出される
+    if (bearer !== undefined || queryToken !== undefined) {
       const entry = failures.get(ip) ?? { count: 0, resetAt: now + FAIL_WINDOW_MS };
       entry.count++;
       failures.set(ip, entry);

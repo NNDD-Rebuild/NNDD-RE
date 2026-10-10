@@ -33,10 +33,12 @@ function parseAttrs(attrStr: string): Record<string, string> {
 
 export class LanLibraryClient {
   private base: string;
+  private readonly host: string;
 
   /** token: 接続先がアクセストークン認証を要求している場合のトークン (Authorization: Bearer で送る) */
   constructor(address: string, port: number, private readonly token?: string) {
     this.base = `http://${address}:${port}`;
+    this.host = new URL(this.base).host;
   }
 
   private xmlHeaders(): Record<string, string> {
@@ -45,11 +47,15 @@ export class LanLibraryClient {
     return headers;
   }
 
-  /** 動画URLは <video> から直接読まれ、ヘッダーを付けられないため ?token= で渡す */
+  /**
+   * 動画URLは <video> から直接読まれ、ヘッダーを付けられないため ?token= で渡す。
+   * 接続先が返した URL のホストが設定した接続先と違う場合は、トークンを送らない。
+   */
   private withToken(url: string): string {
     if (!this.token) return url;
     try {
       const u = new URL(url);
+      if (u.host !== this.host) return url;
       u.searchParams.set('token', this.token);
       return u.toString();
     } catch {

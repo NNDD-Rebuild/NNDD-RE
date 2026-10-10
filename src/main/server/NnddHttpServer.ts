@@ -57,6 +57,7 @@ export class NnddHttpServer {
   private bindMode: HttpBindMode;
   private boundAddr: string | null = null;
   private running = false;
+  private syncing = false;
   private watchTimer: NodeJS.Timeout | null = null;
   private allowMyList: boolean;
   private readonly stats = new ServerStats();
@@ -64,6 +65,18 @@ export class NnddHttpServer {
   constructor(private readonly library: LibraryManager) {
     this.app = express();
     this.app.disable('x-powered-by');
+    // アクセス制御はボディ解析より前に置く (拒否するリクエストのボディを読まない)。
+    // Host / Origin 検証は全モードで常時適用 (DNS リバインディング・CSRF 対策)、
+    // トークン認証は tailscale モード、または設定 httpServer.requireToken が有効なときだけ
+    this.app.use(createHostGuard({ getAllowedHosts: () => this.getAllowedHosts() }));
+    this.app.use(
+      createTokenGuard({
+        getAllowedHosts: () => this.getAllowedHosts(),
+        isTokenRequired: () => this.isTokenRequired(),
+        getToken: () => SecretStore.getOrCreateAccessToken(),
+        publicPaths: ['/health']
+      })
+    );
     this.app.use(express.text({ type: 'application/xml', limit: '256kb' }));
     this.app.use(express.text({ type: 'text/xml', limit: '256kb' }));
     this.app.use(express.json({ limit: '256kb' }));
@@ -73,8 +86,9 @@ export class NnddHttpServer {
     const httpCfg = cfg.get('httpServer');
     this.port = forcePort ?? httpCfg.port ?? 12345;
     this.allowVideo = httpCfg.allowVideo ?? true;
-    // --allow-external は設定より優先して LAN 公開にする
-    this.bindMode = forceAllowExternal ? 'lan' : resolveBindMode(httpCfg);
+    // --allow-external は「このPCのみ」を LAN 公開に引き上げる。tailscale 設定はそのまま (トークン必須を外さない)
+    const configured = resolveBindMode(httpCfg);
+    this.bindMode = forceAllowExternal && configured === 'loopback' ? 'lan' : configured;
     this.allowMyList = httpCfg.allowMyList ?? true;
   }
 
@@ -92,7 +106,8 @@ export class NnddHttpServer {
       this.running = false;
       throw e;
     }
-    if (this.bindMode === 'tailscale') {
+    // syncBinding の await 中に stop() された場合は監視を始めない
+    if (this.running && this.bindMode === 'tailscale') {
       this.watchTimer = setInterval(() => {
         this.syncBinding().catch((e) => log.warn('Tailscale rebind failed (will retry):', e));
       }, TAILSCALE_WATCH_INTERVAL_MS);
@@ -103,6 +118,18 @@ export class NnddHttpServer {
 
   /** 現在の bind モードに合わせて待受を作る・張り直す */
   private async syncBinding(): Promise<void> {
+    // 監視 tick の多重実行を避ける (listen / close が完了する前に次の tick が走らないように)
+    if (this.syncing) return;
+    this.syncing = true;
+    try {
+      await this.doSyncBinding();
+    } finally {
+      this.syncing = false;
+    }
+  }
+
+  private async doSyncBinding(): Promise<void> {
+    if (!this.running) return;
     let addr: string | null;
     if (this.bindMode === 'tailscale') {
       addr = detectTailscaleIps()[0] ?? null;
@@ -118,7 +145,11 @@ export class NnddHttpServer {
       log.info('Tailscale IP not found: waiting for Tailscale to connect');
       return;
     }
+    // closeServer の await 中に stop() されていたら張り直さない
+    if (!this.running) return;
     await this.listenOn(addr);
+    // listen の完了までに stop() されていたら閉じる
+    if (!this.running) await this.closeServer();
   }
 
   private listenOn(addr: string): Promise<void> {
@@ -193,6 +224,11 @@ export class NnddHttpServer {
     return urls.map((u) => `${u}?token=${token}`);
   }
 
+  /** 現在の待受範囲で到達できるホスト (トークンなし。設定画面の表示用。getAccessUrls と同じ優先順位) */
+  getAccessHosts(): string[] {
+    return getAccessUrls(this.port, this.bindMode).map((u) => new URL(u).hostname);
+  }
+
   /** トークン認証が有効か (設定の変更を再起動なしで反映する) */
   isTokenRequired(): boolean {
     // tailscale モードは tailnet の他端末にも届くため、設定に関わらずトークン必須
@@ -205,18 +241,6 @@ export class NnddHttpServer {
   }
 
   private setupRoutes(): void {
-    // アクセス制御: Host / Origin 検証は全モードで常時適用 (DNS リバインディング・CSRF 対策)、
-    // トークン認証は設定 httpServer.requireToken が有効なときだけ
-    this.app.use(createHostGuard({ getAllowedHosts: () => this.getAllowedHosts() }));
-    this.app.use(
-      createTokenGuard({
-        getAllowedHosts: () => this.getAllowedHosts(),
-        isTokenRequired: () => this.isTokenRequired(),
-        getToken: () => SecretStore.getOrCreateAccessToken(),
-        publicPaths: ['/health']
-      })
-    );
-
     // 接続台数の集計 (ステータス表示・ヘルスチェック自身のアクセスは除く)
     this.app.use((req, _res, next) => {
       if (req.path !== '/status' && req.path !== '/api/status' && req.path !== '/health') {

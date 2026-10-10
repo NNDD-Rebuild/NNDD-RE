@@ -108,6 +108,8 @@
 - `tailscale` モードは Tailscale の IPv4(100.64.0.0/10。NIC 名が `tailscale` / `utun` のものを優先)にだけバインドし、トークン認証を強制する。
 - Tailscale 未接続(IP なし)のときは待機して 15 秒ごとに再検出。IP が変わったら再バインド。`start()` は待機中でも成功を返し、`HTTPD_STATUS.waitingForTailscale` とヘッドレスのダッシュボードに表示する。
 - `getAccessUrls(port, mode)` は `string[]` のまま(種別の型は付けず、モードごとに内容を切り替え)。
+- レビュー反映: 有効な `?token=` / Bearer を古い Cookie より優先(トークン再生成後も QR から入れる)。失敗カウントは Bearer / `?token=` を間違えたときだけ(古い Cookie は数えない)。`start()` / `stop()` / 監視 tick の競合を `running` と多重実行防止で解消。`HTTPD_START` 失敗時にインスタンスを残さない。ガードはボディ解析より前。`--allow-external` は `loopback` のときだけ `lan` に引き上げ、`tailscale` 設定は変えない。リモート NNDD が返す動画 URL のホストが接続先と違えばトークンを付けない。
+- GitHub 同期: `requireToken` / `allowedHosts` / `bindMode` は端末固有なので、バックアップに含めず、復元でもローカルの値を保持する。
 - 未実施: 実機の Tailscale での動作確認(IP 検出は NIC のモックでのみ確認)、IPv6、MagicDNS 名の表示(フェーズ 3 で CLI を使う場合に検討)。
 
 ### フェーズ 3: Serve 連携(任意)
