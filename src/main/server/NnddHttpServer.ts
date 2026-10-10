@@ -9,7 +9,7 @@ import { VideoFileSuffix } from '@shared/constants/paths';
 import { extractBracketedVideoId } from '@shared/utils/videoId';
 import { LibraryManager } from '../db/LibraryManager';
 import { isPathAllowed } from '../player/LocalVideoProtocol';
-import { getConfigStore } from '../config/ConfigStore';
+import { getConfigStore, resolveBindMode, type HttpBindMode } from '../config/ConfigStore';
 import { createLogger } from '../util/Logger';
 import { forceAllowExternal, forcePort } from '../util/headless';
 import QRCode from 'qrcode';
@@ -18,8 +18,14 @@ import { CommentXmlReader } from '../nicovideo/comment/CommentXmlReader';
 import { ThumbInfoXmlReader } from '../nicovideo/video/ThumbInfoXmlReader';
 import { generateLibraryPage } from './libraryPage';
 import { registerWebPlayerRoutes } from './webPlayerBridge';
+import { clientIpOf, createHostGuard, createSidecarTrust } from './accessControl';
+import type { Exposure, ExposureStatus } from './tailscale/exposure';
+import { TailscaleSidecar } from './tailscale/TailscaleSidecar';
 
 const log = createLogger('HTTPServer');
+
+/** Tailscale (サイドカー) の状態確認・再起動の間隔 */
+const EXPOSURE_REFRESH_INTERVAL_MS = 15_000;
 
 /** XML 属性値・テキスト用の最小エスケープ */
 const esc = (s: string): string =>
@@ -41,19 +47,31 @@ const esc = (s: string): string =>
  *
  *  - `GET  /library`, `/web-player.html?videoId=` ─ REのライブラリ+プレイヤーをそのままブラウザ配信 (web-app.html)
  *  - `POST /api/ipc` ─ ブラウザ版プレイヤー用 IPC ブリッジ (ホワイトリスト制)
+ *
+ * アクセス制御 (accessControl.ts): Host / Origin 検証を常時適用する (DNS リバインディング・CSRF 対策)。
+ * 認証は無い。LAN 内は信頼できるネットワークとして公開し、Tailscale 経由は Tailscale の ACL (管理画面) で絞る。
  */
 export class NnddHttpServer {
   private app: Express;
   private server: http.Server | null = null;
   private port: number;
   private allowVideo: boolean;
-  private allowExternal: boolean;
+  private bindMode: HttpBindMode;
+  private running = false;
+  /** tailscale-node: 127.0.0.1 待受をさらに Tailscale へ公開する仕組み (サイドカー) */
+  private exposure: Exposure | null = null;
+  private refreshTimer: NodeJS.Timeout | null = null;
   private allowMyList: boolean;
   private readonly stats = new ServerStats();
 
   constructor(private readonly library: LibraryManager) {
     this.app = express();
     this.app.disable('x-powered-by');
+    // アクセス制御はボディ解析より前に置く (拒否するリクエストのボディを読まない)。
+    // サイドカー経由 (共有シークレット一致) のリクエストだけ、転送された接続元IPを信頼する
+    this.app.use(createSidecarTrust((given) => this.exposure?.verifySecret?.(given) ?? false));
+    // Host / Origin 検証は全モードで常時適用 (DNS リバインディング・CSRF 対策)
+    this.app.use(createHostGuard({ getAllowedHosts: () => this.getAllowedHosts() }));
     this.app.use(express.text({ type: 'application/xml', limit: '256kb' }));
     this.app.use(express.text({ type: 'text/xml', limit: '256kb' }));
     this.app.use(express.json({ limit: '256kb' }));
@@ -63,40 +81,101 @@ export class NnddHttpServer {
     const httpCfg = cfg.get('httpServer');
     this.port = forcePort ?? httpCfg.port ?? 12345;
     this.allowVideo = httpCfg.allowVideo ?? true;
-    this.allowExternal = forceAllowExternal || (httpCfg.allowExternal ?? false);
+    // --allow-external は「このPCのみ」を LAN 公開に引き上げる
+    const configured = resolveBindMode(httpCfg);
+    this.bindMode = forceAllowExternal && configured === 'loopback' ? 'lan' : configured;
+    if (this.bindMode === 'tailscale-node') {
+      // 設定は Gist バックアップ等でも入りうるので、main 側でも検証する (不正値は既定値)
+      const name = httpCfg.nodeHostname ?? '';
+      this.exposure = new TailscaleSidecar({
+        hostname: /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(name) ? name : 'nndd-re'
+      });
+    }
     this.allowMyList = httpCfg.allowMyList ?? true;
   }
 
-  /** サーバー起動 */
-  start(): Promise<{ port: number }> {
-    if (this.server) return Promise.resolve({ port: this.port });
-    const bindAddr = this.allowExternal ? '0.0.0.0' : '127.0.0.1';
+  /** サーバー起動。サイドカー の起動は待たずに進め、状態は getExposureStatus で見せる */
+  async start(): Promise<{ port: number }> {
+    if (this.running) return { port: this.port };
+    this.running = true;
+    try {
+      await this.listen();
+    } catch (e) {
+      this.running = false;
+      throw e;
+    }
+    // listen の await 中に stop() された場合は何も始めない
+    if (this.running && this.exposure) {
+      // 待つと HTTPD_START の IPC が長く返らず、その間は起動中のサーバーとして扱われない
+      void this.exposure.start(this.port).catch((e) => log.warn('Tailscale exposure start failed:', e));
+      this.refreshTimer = setInterval(() => {
+        this.exposure?.refresh().catch((e) => log.warn('Tailscale exposure refresh failed:', e));
+      }, EXPOSURE_REFRESH_INTERVAL_MS);
+      this.refreshTimer.unref();
+    }
+    return { port: this.port };
+  }
+
+  private listen(): Promise<void> {
+    // loopback 以外は 0.0.0.0。lan は同じ PC の Tailscale 経由でも届く。
+    // tailscale-node は、サイドカーが 127.0.0.1 へ転送しつつ、LAN 内の IP からも入れるようにする
+    const addr = this.bindMode === 'loopback' ? '127.0.0.1' : '0.0.0.0';
     return new Promise((resolve, reject) => {
-      const server = this.app.listen(this.port, bindAddr, () => {
-        const addr = server.address();
-        const port =
-          typeof addr === 'object' && addr ? addr.port : this.port;
-        this.port = port;
-        log.info(`HTTP server listening on http://${bindAddr}:${port}`);
-        resolve({ port });
+      const server = this.app.listen(this.port, addr, () => {
+        const a = server.address();
+        this.port = typeof a === 'object' && a ? a.port : this.port;
+        log.info(`HTTP server listening on http://${addr}:${this.port}`);
+        resolve();
       });
-      server.on('error', reject);
+      server.once('error', (e) => {
+        if (this.server === server) this.server = null;
+        reject(e);
+      });
       this.server = server;
     });
   }
 
-  stop(): Promise<void> {
+  private closeServer(): Promise<void> {
     return new Promise((resolve) => {
-      if (!this.server) {
+      const server = this.server;
+      this.server = null;
+      if (!server) {
         resolve();
         return;
       }
-      this.server.close(() => {
-        this.server = null;
-        log.info('HTTP server stopped');
-        resolve();
-      });
+      server.close(() => resolve());
+      // 配信中の長い接続 (動画ストリーム) が閉じるのを待たない
+      server.closeAllConnections();
     });
+  }
+
+  async stop(): Promise<void> {
+    if (this.refreshTimer) {
+      clearInterval(this.refreshTimer);
+      this.refreshTimer = null;
+    }
+    this.running = false;
+    await this.exposure?.stop();
+    await this.closeServer();
+    log.info('HTTP server stopped');
+  }
+
+  /**
+   * サイドカー (tailscale-node) をログアウトして状態を消す。サーバーが動いていなくても状態ディレクトリは消す。
+   * 返り値: tailnet 側の端末も削除できた
+   */
+  async logoutExposure(): Promise<boolean> {
+    if (this.exposure instanceof TailscaleSidecar) return this.exposure.logout();
+    return false;
+  }
+
+  getBindMode(): HttpBindMode {
+    return this.bindMode;
+  }
+
+  /** Tailscale の公開状態 (無ければ null) */
+  getExposureStatus(): ExposureStatus | null {
+    return this.exposure ? this.exposure.getStatus() : null;
   }
 
   setAllowVideo(allow: boolean): void {
@@ -107,32 +186,34 @@ export class NnddHttpServer {
     return this.port;
   }
 
-  getAllowExternal(): boolean {
-    return this.allowExternal;
-  }
-
   /** 接続台数・視聴数のスナップショット */
   getStats(): ServerStatsSnapshot {
     return this.stats.snapshot();
   }
 
-  /** アクセス用URL一覧 (LAN公開時は各NICのIPv4) */
+  /** アクセス用URL一覧。lan は各NICのIPv4 (Tailscale の IP を含む)、サイドカーは公開が成立しているときだけ */
   getAccessUrls(): string[] {
-    return getAccessUrls(this.port, this.allowExternal);
+    if (this.exposure) return this.exposure.getStatus().urls;
+    return getAccessUrls(this.port, this.bindMode);
+  }
+
+  private getAllowedHosts(): string[] {
+    const hosts = getConfigStore().get('httpServer').allowedHosts;
+    return Array.isArray(hosts) ? hosts : [];
   }
 
   private setupRoutes(): void {
     // 接続台数の集計 (ステータス表示・ヘルスチェック自身のアクセスは除く)
     this.app.use((req, _res, next) => {
       if (req.path !== '/status' && req.path !== '/api/status' && req.path !== '/health') {
-        this.stats.recordRequest(req.ip ?? req.socket.remoteAddress ?? '');
+        this.stats.recordRequest(clientIpOf(req));
       }
       next();
     });
 
     // 全リクエストをログ
     this.app.use((req, _res, next) => {
-      log.verbose(`→ ${req.method} ${req.url} from ${req.ip} [CT:${req.headers['content-type'] ?? 'none'} CL:${req.headers['content-length'] ?? 'none'}]`);
+      log.verbose(`→ ${req.method} ${req.url} from ${clientIpOf(req)} [CT:${req.headers['content-type'] ?? 'none'} CL:${req.headers['content-length'] ?? 'none'}]`);
       next();
     });
 
@@ -254,7 +335,7 @@ export class NnddHttpServer {
     log.debug('legacy NNDDServer POST:', xml.slice(0, 200));
 
     log.verbose([
-      `NNDDServer ${req.method} from ${req.ip}`,
+      `NNDDServer ${req.method} from ${clientIpOf(req)}`,
       `  URL: ${req.url}`,
       `  Content-Type: ${req.headers['content-type'] ?? 'none'}`,
       `  Content-Length: ${req.headers['content-length'] ?? 'none'}`,
@@ -366,7 +447,7 @@ export class NnddHttpServer {
     }
     // 視聴数の集計: 配信が終わる (完了・中断とも close) まで「配信中」とする
     const endStream = this.stats.beginStream(
-      req.ip ?? req.socket.remoteAddress ?? '',
+      clientIpOf(req),
       extractBracketedVideoId(filePath) ?? path.basename(filePath)
     );
     res.on('close', endStream);
@@ -408,7 +489,7 @@ export class NnddHttpServer {
   }
 
   private async buildStatus(): Promise<
-    ServerStatsSnapshot & { urls: { url: string; qrSvg: string }[]; allowExternal: boolean }
+    ServerStatsSnapshot & { urls: { url: string; qrSvg: string }[]; allowExternal: boolean; bindMode: HttpBindMode; exposure: ExposureStatus | null }
   > {
     // QR は先頭 (本命) のURLだけ。複数NICでもQRが並ばないようにする
     const urls = await Promise.all(
@@ -417,7 +498,13 @@ export class NnddHttpServer {
         qrSvg: i === 0 ? await QRCode.toString(url, { type: 'svg', margin: 1 }) : ''
       }))
     );
-    return { ...this.stats.snapshot(), urls, allowExternal: this.allowExternal };
+    return {
+      ...this.stats.snapshot(),
+      urls,
+      allowExternal: this.bindMode === 'lan',
+      bindMode: this.bindMode,
+      exposure: this.getExposureStatus()
+    };
   }
 
   private handleThumb(req: Request, res: Response): void {
@@ -586,8 +673,12 @@ export class NnddHttpServer {
     const vid = this.extractVideoId(v.uri) ?? '';
     const filename = path.basename(v.uri);
     const ext = path.extname(v.uri).slice(1);
-    const localAddr = (req.socket.localAddress ?? '').replace(/^::ffff:/, '');
-    const videoUrl = `http://${localAddr}:${this.port}/NNDDServer/${esc(vid)}`;
+    // 接続先が実際に使ったホスト名で URL を作る (Host は hostGuard で検証済み。サイドカー経由でも正しくなる)
+    const hostHeader = req.headers.host;
+    const base = hostHeader
+      ? `${req.protocol}://${hostHeader}`
+      : `http://${(req.socket.localAddress ?? '').replace(/^::ffff:/, '')}:${this.port}`;
+    const videoUrl = `${base}/NNDDServer/${esc(vid)}`;
     const lines = [
       '<?xml version="1.0" encoding="UTF-8"?>',
       '<nnddResponse>',

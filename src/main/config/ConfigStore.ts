@@ -6,6 +6,17 @@ import { COMMENT_FONT_FAMILY } from '@shared/constants';
  * アプリ全体の設定。
  * 元: src/org/mineap/util/config/ConfigManager.as
  */
+/** 内蔵HTTPサーバーの待受範囲 */
+export type HttpBindMode = 'loopback' | 'lan' | 'tailscale-node';
+
+/** 設定から待受範囲を決める。bindMode が無ければ従来の allowExternal から導出する */
+export function resolveBindMode(cfg: { bindMode?: HttpBindMode; allowExternal?: boolean }): HttpBindMode {
+  if (cfg.bindMode === 'loopback' || cfg.bindMode === 'lan' || cfg.bindMode === 'tailscale-node') {
+    return cfg.bindMode;
+  }
+  return cfg.allowExternal ? 'lan' : 'loopback';
+}
+
 export interface NnddConfig {
   /** ライブラリのルートディレクトリ (空ならデフォルト) */
   libraryRoot: string;
@@ -294,12 +305,23 @@ export interface NnddConfig {
   httpServer: {
     enabled: boolean;
     port: number;
-    /** LAN内の他端末からのアクセスを許可 (0.0.0.0バインド) */
+    /** LAN内の他端末からのアクセスを許可 (0.0.0.0バインド)。bindMode が無い設定 (旧バージョン・バックアップ) の互換用 */
     allowExternal: boolean;
+    /**
+     * 待受範囲。未設定なら allowExternal から導出する (resolveBindMode)。
+     * - loopback: このPCのみ (127.0.0.1)
+     * - lan: LAN内の他端末にも公開 (0.0.0.0)。同じPCの Tailscale 経由 (100.x.x.x) でも届く
+     * - tailscale-node: lan に加えて、RE 専用の独立した Tailscale 端末 (tsnet サイドカー) としても公開する
+     */
+    bindMode?: HttpBindMode;
     /** 動画ファイルのストリーミング配信を許可 */
     allowVideo: boolean;
     /** マイリスト情報の共有を許可 */
     allowMyList: boolean;
+    /** tailscale-node モードの tailnet 上の端末名 (MagicDNS 名になる) */
+    nodeHostname: string;
+    /** Host ヘッダーとして追加で許可する名前 (`example.lan` / `*.example.lan`)。DNS リバインディング対策の例外 */
+    allowedHosts: string[];
   };
 
   /** リモートNNDDサーバー (LANライブラリ参照、本家NNDD互換) */
@@ -499,8 +521,13 @@ const DEFAULTS: NnddConfig = {
     enabled: false,
     port: 12345,
     allowExternal: false,
+    // 既定値を持たせると旧設定 (allowExternal=true) の導出が効かなくなるため undefined にする。
+    // キー自体は CONFIG_SET の許可判定 (DEFAULT_CONFIG に存在するキーのみ) のために必要
+    bindMode: undefined,
     allowVideo: true,
-    allowMyList: true
+    allowMyList: true,
+    nodeHostname: 'nndd-re',
+    allowedHosts: []
   },
   remoteNndd: {
     enabled: false,

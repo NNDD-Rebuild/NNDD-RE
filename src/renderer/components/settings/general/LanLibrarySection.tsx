@@ -6,7 +6,6 @@ export function LanLibrarySection(): JSX.Element {
   const [remoteEnabled, setRemoteEnabled] = useConfig<boolean>('remoteNndd.enabled', false);
   const [remoteAddress, setRemoteAddress] = useConfig<string>('remoteNndd.address', '');
   const [remotePort, setRemotePort] = useConfig<number>('remoteNndd.port', 12300);
-
   return (
     <Section title="LANライブラリ (リモートNNDD参照)">
       <CheckRow
