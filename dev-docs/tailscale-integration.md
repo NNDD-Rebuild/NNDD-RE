@@ -62,11 +62,14 @@
 - 除外は `/health` のみ。`/status` と `/api/status` は URL と QR を返すので**認証対象**。
 - `POST /api/ipc` は認証対象に加え、Origin 検証を入れる。
 
-**既存クライアントの互換(要決定)**
-- `/NNDDServer*`(旧 XML API)は旧 NNDD 本家クライアントがヘッダー/Cookie を付けられない。案: `?token=` を許容する。または認証対象から外し、設定で明示的に有効化する(警告付き)。
-- `LanLibraryClient.ts` に接続先のトークン設定欄を追加する。
-- 案: loopback モードは Host 検証のみ(従来どおり)。`lan` / `tailscale` モードはトークン必須。LAN モードで認証を無効化する場合は、明示的なオプトアウト + 警告にする。
-- 判定は `remoteAddress` ではなく、bind モードと Host 検証に基づく。
+**認証の適用範囲(決定)**
+- 対象は NNDD-RE 本体のみ。**旧 NNDD(本家)クライアントとの互換は考慮しない。**
+- `loopback` モード: Host 検証のみ(トークンなし。従来どおり)。
+- `lan` モード: 現状どおり**認証なし**(Host 検証のみ)。もともと認証が無いので、LAN モードにオプトアウトの概念は不要。UI に警告を出す。将来の任意機能として「LAN でもトークンを要求する」トグルを検討する。
+- `tailscale` モード(および Serve / サイドカー経由): **トークン必須**。
+- 判定は `remoteAddress` ではなく、bind モードに基づく。
+- `/NNDDServer*` は RE 同士の LAN ライブラリ参照(`LanLibraryClient.ts`)が使う。`tailscale` モードの接続先に対して使えるよう、`LanLibraryClient.ts` に接続先のトークン設定欄を追加する。
+- Host 検証は LAN モードでも適用する。`.local`(mDNS)名など、ユーザーが LAN で使う名前を弾かないよう許可リストを設計する(要確認)。
 
 ### フェーズ 2: Tailscale の検出と bind モード
 
@@ -156,12 +159,12 @@ npm run build
 - macOS arm64 での DL 実行ファイルの署名要件。
 - Funnel の帯域制限は非公開。動画用途では使わない。
 - Cloudflare Tunnel は CDN 経由の動画配信が規約上グレー。採用しない。
-- 旧クライアント互換とトークン必須範囲(§3 フェーズ 1)。
 - `anyArgs` チャンネルがログイン Cookie で何を呼べるか(要確認)。
 
 ## 7. リポジトリ作成の状況
 
 - `NNDD-Rebuild/nndd-re-tailscale`(public)の作成は、このセッションの GitHub 権限では 404 で失敗した。GitHub 上で作成した後に、セッションへ追加する。
+- ライセンスは本体(`package.json` の `license: MPL-2.0`)に合わせて MPL-2.0 を第一候補とする。サイドカーは Tailscale(BSD-3-Clause)の依存を含むため、配布物に Tailscale の著作権表示とライセンス文(`THIRD_PARTY_NOTICES`)を同梱する。
 
 ## 8. フェーズ 4 の着手判断基準
 
@@ -175,5 +178,5 @@ npm run build
 
 - フェーズ 3 を実施するか(フェーズ 1・2 の後で判断)。
 - サイドカーの端末名の既定値(`nndd-re` か `nndd-re-<PC 名>`)。
-- 旧 XML API のトークン方式(`?token=` か除外か)。
-- LAN モードの認証オプトアウトの扱い。
+- LAN モードでトークンを任意で要求するトグルを作るか(将来)。
+- LAN モードの Host 検証で許可する名前の範囲(`.local` 等)。
