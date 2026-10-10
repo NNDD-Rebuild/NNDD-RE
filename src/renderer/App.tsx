@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { MAIN_TABS, useAppStore, type MainTab } from './store/useAppStore';
-import { IpcChannel } from '@shared/types';
+import { IpcChannel, type TelemetryState } from '@shared/types';
 import { RankingView } from './components/ranking/RankingView';
 import { SearchView } from './components/search/SearchView';
 import { FollowView } from './components/follow/FollowView';
@@ -14,6 +14,8 @@ import { SettingsView } from './components/settings/SettingsView';
 import { LoginArea } from './components/common/LoginArea';
 import { StatusBar } from './components/common/StatusBar';
 import { OpenVideoDialog } from './components/common/OpenVideoDialog';
+import { TelemetryConsentDialog } from './components/telemetry/TelemetryConsentDialog';
+import { trackRenderer } from './util/telemetry';
 
 export default function App(): JSX.Element {
   const activeTab = useAppStore((s) => s.activeTab);
@@ -38,6 +40,15 @@ export default function App(): JSX.Element {
       .then((v) => { if (v === 'light') document.documentElement.classList.add('light'); })
       .catch(() => {});
   }, [setContentViewMode, setLibraryViewMode]);
+
+  // 匿名の利用統計: 未回答 (または送信項目が増えた) ときだけ同意ダイアログを出す
+  const [consentDialog, setConsentDialog] = useState(false);
+  useEffect(() => {
+    window.nndd
+      .invoke<TelemetryState>(window.nndd.channels.TELEMETRY_GET_STATE)
+      .then((s) => setConsentDialog(s.needsConsent))
+      .catch(() => {});
+  }, []);
 
   // 「動画を開く」ダイアログ (Ctrl/Cmd+O)
   const [openVideoDialog, setOpenVideoDialog] = useState(false);
@@ -152,7 +163,10 @@ export default function App(): JSX.Element {
         {MAIN_TABS.map((tab) => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => {
+              trackRenderer({ name: 'tab_view', props: { tab: tab.id, changed: tab.id !== activeTab } });
+              setActiveTab(tab.id);
+            }}
             className={[
               'px-4 py-2 text-sm border-r border-nndd-border transition-colors',
               activeTab === tab.id
@@ -180,6 +194,7 @@ export default function App(): JSX.Element {
       </div>
       <StatusBar />
       {openVideoDialog && <OpenVideoDialog onClose={() => setOpenVideoDialog(false)} />}
+      {consentDialog && <TelemetryConsentDialog onDone={() => setConsentDialog(false)} />}
       {toastMessage && (
         <div className="fixed bottom-10 right-4 z-50 px-4 py-2 bg-nndd-accent text-white text-sm rounded shadow-lg pointer-events-none">
           {toastMessage}

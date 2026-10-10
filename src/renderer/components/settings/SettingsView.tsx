@@ -13,6 +13,7 @@ import { ExternalToolsSettings } from './ExternalToolsSettings';
 import { DebugSettings } from './DebugSettings';
 import { NgCommentSettings } from './NgCommentSettings';
 import { BackupSettings } from './BackupSettings';
+import { trackRenderer } from '@renderer/util/telemetry';
 
 /**
  * 設定タブ。
@@ -83,7 +84,10 @@ export function SettingsView(): JSX.Element {
           {SUBTABS.map((t) => (
             <button
               key={t.id}
-              onClick={() => setActive(t.id)}
+              onClick={() => {
+                trackRenderer({ name: 'settings_subtab', props: { sub: t.id, changed: t.id !== active } });
+                setActive(t.id);
+              }}
               className={[
                 'block w-full text-left px-4 py-2 text-sm border-b border-nndd-border whitespace-nowrap',
                 active === t.id
@@ -96,7 +100,10 @@ export function SettingsView(): JSX.Element {
           ))}
           {developerEnabled && (
             <button
-              onClick={() => setActive('debug')}
+              onClick={() => {
+                trackRenderer({ name: 'settings_subtab', props: { sub: 'debug', changed: active !== 'debug' } });
+                setActive('debug');
+              }}
               className={[
                 'block w-full text-left px-4 py-2 text-sm border-b border-nndd-border whitespace-nowrap',
                 active === 'debug'

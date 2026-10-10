@@ -58,6 +58,11 @@ export function registerConfigHandlers(ctx: IpcHandlerContext): void {
       log.warn('CONFIG_SET: unknown config key, ignored:', key);
       return false;
     }
+    // 匿名統計の同意・ID は TELEMETRY_* 経由でのみ変更する (送信の開始/停止と対で更新するため)
+    if (key === 'telemetry' || key.startsWith('telemetry.')) {
+      log.warn('CONFIG_SET: telemetry.* は TELEMETRY_SET_CONSENT で変更してください:', key);
+      return false;
+    }
     getConfigStore().set(key, value);
     if (key === 'ui.theme') {
       const bgColor = value === 'light' ? '#f0f0f0' : '#1e1e1e';

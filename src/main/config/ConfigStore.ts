@@ -437,6 +437,18 @@ export interface NnddConfig {
      */
     channel: 'stable' | 'beta';
   };
+
+  /** 匿名の利用統計 (Aptabase)。同意するまで何も送らない (オプトイン) */
+  telemetry: {
+    /** 'unknown': 未回答 (起動時に同意ダイアログを出す) / 'granted': 送信する / 'denied': 送信しない */
+    consent: 'unknown' | 'granted' | 'denied';
+    /** 同意した時点の送信項目の版。送信項目を増やしたら TELEMETRY_CONSENT_VERSION を上げて再確認する */
+    consentVersion: number;
+    /** 匿名のランダムID (同意した端末ごとに生成。同意を外すと削除。端末同期の対象外) */
+    installId: string;
+    /** 終了時に送れていなかった操作イベント。次回起動時に送ってから空にする */
+    pending: { name: string; props?: Record<string, string | number | boolean> }[];
+  };
 }
 
 const DEFAULTS: NnddConfig = {
@@ -590,6 +602,12 @@ const DEFAULTS: NnddConfig = {
   update: {
     mode: 'ask',
     channel: 'stable'
+  },
+  telemetry: {
+    consent: 'unknown',
+    consentVersion: 0,
+    installId: '',
+    pending: []
   }
 };
 

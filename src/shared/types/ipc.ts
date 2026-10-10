@@ -482,7 +482,17 @@ export const IpcChannel = {
   /** (selection: HonkeImportSelection) → HonkeImportReport */
   HONKE_APPLY: 'nndd:honke:apply',
   /** main → renderer: HonkeImportProgress */
-  HONKE_PROGRESS: 'nndd:honke:progress'
+  HONKE_PROGRESS: 'nndd:honke:progress',
+
+  // 匿名の利用統計 (オプトイン)
+  /** → TelemetryState */
+  TELEMETRY_GET_STATE: 'nndd:telemetry:getState',
+  /** (granted: boolean) → TelemetryState。同意/拒否を保存し、送信の開始/停止を即時反映する */
+  TELEMETRY_SET_CONSENT: 'nndd:telemetry:setConsent',
+  /** → void。匿名IDを作り直す (同意中のみ) */
+  TELEMETRY_RESET_ID: 'nndd:telemetry:resetId',
+  /** (TelemetryRendererEvent) → void。許可リスト外のイベントや同意前は何もしない */
+  TELEMETRY_TRACK: 'nndd:telemetry:track'
 } as const;
 
 export type IpcChannelValue = typeof IpcChannel[keyof typeof IpcChannel];

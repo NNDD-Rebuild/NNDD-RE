@@ -99,7 +99,7 @@ export class LiveRecordScheduler {
         continue;
       }
       log.info(`start reserved record: ${r.programId}`);
-      this.dlManager.enqueue({ videoId: r.programId, record: true, thumbnailUrl: r.thumbnailUrl || undefined });
+      this.dlManager.enqueue({ videoId: r.programId, record: true, thumbnailUrl: r.thumbnailUrl || undefined, source: 'live_record' });
       this.trayManager?.notify('録画予約を開始', r.title);
     }
   }

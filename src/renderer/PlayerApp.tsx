@@ -35,6 +35,7 @@ import { useJumpCommand, useNicowari } from './hooks/player/useOwnerCommentComma
 import { usePlaybackTicker } from './hooks/player/usePlaybackTicker';
 import { useCommentWindow } from './hooks/player/useCommentWindow';
 import { useFullscreenControls } from './hooks/player/useFullscreenControls';
+import { trackRenderer } from './util/telemetry';
 
 interface StreamProgress {
   videoId: string;
@@ -397,6 +398,7 @@ export default function PlayerApp(): JSX.Element {
   };
 
   const handleQualityChange = async (qualityId: string): Promise<void> => {
+    trackRenderer({ name: 'quality_change', props: { kind: 'video' } });
     const currentSec = videoElementRef.current?.currentTime ?? 0;
     pendingSeekRef.current = currentSec;
     setSelectedQualityId(qualityId);
@@ -859,10 +861,12 @@ export default function PlayerApp(): JSX.Element {
           videoId={pendingJump.videoId}
           msg={pendingJump.msg}
           onJump={() => {
+            trackRenderer({ name: 'jump_command', props: { result: 'accept' } });
             window.nndd.invoke(IpcChannel.VIDEO_OPEN_PLAYER, { videoId: pendingJump.videoId, autoNext: true });
             setPendingJump(null);
           }}
           onCancel={() => {
+            trackRenderer({ name: 'jump_command', props: { result: 'reject' } });
             setPendingJump(null);
             if (resumeAfterJumpRef.current) videoElementRef.current?.play().catch(() => {});
           }}

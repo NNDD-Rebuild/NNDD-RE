@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useConfig } from '@renderer/hooks/useConfig';
 import { Btn, Hint, PageTitle, RadioGroup, Section, SettingsPage } from './common';
+import { TelemetrySettings } from './TelemetrySettings';
 
 type UpdateEvent =
   | { event: 'checking' }
@@ -129,6 +130,8 @@ export function UpdateSettings(): JSX.Element {
         </div>
         <Hint>{describe(status)}</Hint>
       </Section>
+
+      <TelemetrySettings />
     </SettingsPage>
   );
 }

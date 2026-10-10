@@ -19,7 +19,7 @@ export function registerHonkeImportHandlers(ctx: IpcHandlerContext): void {
   const createImporter = (): HonkeImporter =>
     new HonkeImporter({
       library: ctx.library,
-      enqueueDownload: (videoId) => ctx.dlManager.enqueue({ videoId }),
+      enqueueDownload: (videoId) => ctx.dlManager.enqueue({ videoId, source: 'import' }),
       onProgress: (p: HonkeImportProgress) => broadcast(IpcChannel.HONKE_PROGRESS, p),
       onNgChanged: () => broadcast(IpcChannel.NG_COMMENT_CHANGED)
     });

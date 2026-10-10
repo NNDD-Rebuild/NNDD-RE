@@ -1,4 +1,5 @@
 import { ipcMain, type IpcMainInvokeEvent } from 'electron';
+import { trackIpcCall } from '../telemetry/ipcEvents';
 
 /**
  * ipcMain.handle に登録されたハンドラを記録し、HTTP (ブラウザ版プレイヤー) からも
@@ -20,8 +21,14 @@ export function installIpcRegistry(): void {
   const origRemove = ipcMain.removeHandler.bind(ipcMain);
 
   ipcMain.handle = ((channel: string, listener: Handler) => {
-    handlers.set(channel, listener);
-    return origHandle(channel, listener);
+    // 匿名統計 (同意時のみ送信) の計測点もここに集約する。HTTP 経由の呼び出しも同じ関数を通る
+    const wrapped: Handler = (event, ...args) => {
+      const result = listener(event, ...args);
+      trackIpcCall(channel, args, result);
+      return result;
+    };
+    handlers.set(channel, wrapped);
+    return origHandle(channel, wrapped);
   }) as typeof ipcMain.handle;
 
   ipcMain.removeHandler = ((channel: string) => {

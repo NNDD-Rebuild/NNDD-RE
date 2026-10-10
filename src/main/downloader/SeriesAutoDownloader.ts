@@ -39,7 +39,7 @@ export class SeriesAutoDownloader {
 
     for (const item of items) {
       if (knownKeys.has(item.videoId)) continue;
-      this.downloader.enqueue({ videoId: item.videoId, saveDir });
+      this.downloader.enqueue({ videoId: item.videoId, saveDir, source: 'series_auto' });
       queued++;
     }
 

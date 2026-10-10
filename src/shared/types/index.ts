@@ -15,3 +15,4 @@ export * from './player';
 export * from './ipc';
 export * from './honkeImport';
 export * from './libraryScan';
+export * from './telemetry';

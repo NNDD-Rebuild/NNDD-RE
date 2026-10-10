@@ -44,7 +44,7 @@ export class MyListAutoDownloader {
 
     for (const item of items) {
       if (knownKeys.has(item.videoId)) continue;
-      this.downloader.enqueue({ videoId: item.videoId });
+      this.downloader.enqueue({ videoId: item.videoId, source: 'mylist_auto' });
       queued++;
     }
 

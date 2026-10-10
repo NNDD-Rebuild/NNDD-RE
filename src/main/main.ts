@@ -28,6 +28,7 @@ import { getUpdateManager } from './update/UpdateManager';
 import { NNDD_RE_CMD_SCHEME } from '../shared/constants/paths';
 import { extractCmdUrlFromArgv, handleCmdUrl } from './protocol/CmdProtocol';
 import type { CmdApi } from './ipc/registerIpc';
+import { initTelemetry, saveTelemetryQueue, startTelemetry } from './telemetry/Telemetry';
 
 const log = createLogger('Main');
 
@@ -54,6 +55,10 @@ if (!app.isPackaged) {
 
 // app.whenReady() より前にスキーム登録が必要
 registerScheme();
+
+// 匿名統計 (Aptabase) の初期化は app ready より前に行う必要がある (SDK の制約)。
+// initialize 自体は何も送らない。送信は同意済みのときだけ startTelemetry / track() が行う
+initTelemetry();
 
 // 外部 (ブラウザ拡張等) からの起動用プロトコル (nndd-re-cmd://) を登録。
 // 開発時 (electron-vite経由でelectronバイナリを直接起動) はexecPathがelectron.exe自体を
@@ -287,6 +292,9 @@ app.whenReady().then(async () => {
     void getUpdateManager().checkOnStartup(() => mainWindow, updateMode);
   }
 
+  // 匿名統計: 同意済みなら起動イベントと設定を送り、生存通知を始める (未同意なら何もしない)
+  startTelemetry();
+
   app.on('activate', () => {
     if (!isHeadless && BrowserWindow.getAllWindows().length === 0) {
       mainWindow = createMainWindow();
@@ -316,6 +324,7 @@ app.on('before-quit', (event) => {
   quitCleanupStarted = true;
 
   void (async () => {
+    saveTelemetryQueue();
     stopStreamServer();
     PlayerManager.get().closeAll();
     // 内蔵HTTPサーバーと Tailscale への公開 (serve の設定・サイドカー) を止める。応答しなくても終了を妨げない
@@ -342,6 +351,8 @@ app.on('before-quit', (event) => {
       library = null;
     }
 
+    // 終了処理の待ち時間中に増えた分も残す (送れなかった操作イベントは次回起動時に送る)
+    saveTelemetryQueue();
     app.quit();
   })();
 });

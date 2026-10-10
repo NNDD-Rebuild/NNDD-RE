@@ -55,7 +55,7 @@ export function registerDownloadHandlers(ctx: IpcHandlerContext): void {
 
   ipcMain.handle(IpcChannel.DOWNLOAD_LIST, () => dlManager.list());
   ipcMain.handle(IpcChannel.DOWNLOAD_ENQUEUE, (_e, opts: EnqueueOptions) =>
-    dlManager.enqueue(opts)
+    dlManager.enqueue({ ...opts, source: 'manual' })
   );
   ipcMain.handle(IpcChannel.DOWNLOAD_CANCEL, (_e, id: string) =>
     dlManager.cancel(id)

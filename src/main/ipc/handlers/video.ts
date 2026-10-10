@@ -23,6 +23,7 @@ import { isLiveProgramId } from '@shared/utils/liveId';
 import { watchUrl } from '@shared/utils/nicoUrl';
 import { isExternalPlayerEnabled, launchExternalPlayer } from '../../player/ExternalPlayer';
 import { createLogger } from '../../util/Logger';
+import { track } from '../../telemetry/Telemetry';
 import type { IpcHandlerContext } from './context';
 
 const log = createLogger('IPC');
@@ -84,11 +85,13 @@ export function registerVideoHandlers(ctx: IpcHandlerContext): {
     // 外部プレイヤー設定 (保存していない生放送の番組は専用ウィンドウで扱うので対象外)
     if (isExternalPlayerEnabled() && !(params.videoId && isLiveProgramId(params.videoId) && !params.localPath)) {
       openInExternalPlayer(params);
+      track('video_play', { origin: 'external' });
       return;
     }
     // streamUrl 指定 → LANライブラリのHTTPストリームをそのまま再生 (videoId不明のためレジューム対象外)
     if (params.streamUrl) {
       PlayerManager.get().open(params);
+      track('video_play', { origin: 'lan' });
       return;
     }
 
@@ -115,6 +118,7 @@ export function registerVideoHandlers(ctx: IpcHandlerContext): {
             audioOnly: params.audioOnly,
             resumeSec,
           });
+          track('video_play', { origin: 'local' });
           return;
         }
         // DL済み扱いなのに実ファイルが無い = ライブラリとディスクの不整合
@@ -141,6 +145,7 @@ export function registerVideoHandlers(ctx: IpcHandlerContext): {
     const resolvedLocalPath = params.localPath
       ? await ensurePlayableLocalPath(params.localPath)
       : params.localPath;
+    track('video_play', { origin: params.localPath ? 'local' : 'stream' });
     PlayerManager.get().open({
       ...params,
       localFiles: resolvedLocalFiles,

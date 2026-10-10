@@ -28,6 +28,7 @@ import {
 import { LibraryManager } from '../db/LibraryManager';
 import { getConfigStore } from '../config/ConfigStore';
 import { createLogger } from '../util/Logger';
+import { track } from '../telemetry/Telemetry';
 
 const log = createLogger('DownloadManager');
 
@@ -88,7 +89,22 @@ export interface EnqueueOptions {
   fromStart?: boolean;
   /** 生放送のサムネイルの URL (一覧で見えていたもの)。番組情報から取れないときの代わりに使う */
   thumbnailUrl?: string;
+  /**
+   * 登録元 (匿名統計の集計用。動作には影響しない)。省略は手動 (画面からの操作)。
+   * 'internal' は他の処理が内部で足す登録で、統計には載せない
+   */
+  source?: EnqueueSource;
 }
+
+export type EnqueueSource =
+  | 'manual'
+  | 'mylist_auto'
+  | 'series_auto'
+  | 'follow_auto'
+  | 'live_record'
+  | 'cmd'
+  | 'import'
+  | 'internal';
 
 /** 生放送 (タイムシフト) の保存先サブフォルダ名 (設定 downloadLiveToSubfolder が有効なとき) */
 const LIVE_SUBDIR = 'live';
@@ -193,6 +209,21 @@ export class DownloadManager extends EventEmitter {
     this.queue.push(item);
     this.emit('change', item);
     this.tick();
+    const source = opts.source ?? 'manual';
+    if (source !== 'internal') {
+      const kind = opts.record
+        ? 'record'
+        : opts.commentDiff
+          ? 'commentDiff'
+          : opts.commentOnly
+            ? 'comment'
+            : opts.audioOnly
+              ? 'audio'
+              : opts.videoOnly
+                ? 'videoOnly'
+                : 'video';
+      track('download_enqueue', { kind, source, live: isLive });
+    }
     return item;
   }
 
@@ -636,7 +667,7 @@ export class DownloadManager extends EventEmitter {
 
         if (missingSecondary.length > 0) {
           log.warn(`DL後に不足ファイル検出 (${missingSecondary.join(', ')}) — commentOnly で再キュー`);
-          this.enqueue({ videoId: watch.videoId, saveDir: baseDir, commentOnly: true });
+          this.enqueue({ videoId: watch.videoId, saveDir: baseDir, commentOnly: true, source: 'internal' });
         }
       }
 

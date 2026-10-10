@@ -33,6 +33,7 @@ import { registerHttpHandlers } from './handlers/http';
 import { registerNavigationHandlers } from './handlers/navigation';
 import { registerImageHandlers } from './handlers/image';
 import { registerHonkeImportHandlers } from './handlers/honkeImport';
+import { registerTelemetryHandlers } from './handlers/telemetry';
 
 const log = createLogger('IPC');
 
@@ -110,6 +111,7 @@ export function registerIpcHandlers(
   const { navigateMylist } = registerNavigationHandlers(ctx);
   registerImageHandlers();
   registerHonkeImportHandlers(ctx);
+  registerTelemetryHandlers();
 
   // セッションの定期チェック (起動直後に1回 + 30分ごと)
   startSessionCheck(ctx);
@@ -118,7 +120,7 @@ export function registerIpcHandlers(
 
   return {
     openPlayer,
-    enqueueDownload: (opts) => dlManager.enqueue(opts),
+    enqueueDownload: (opts) => dlManager.enqueue({ ...opts, source: 'cmd' }),
     navigateMylist,
     addNgComment: (item) => {
       const added = addNgComment(item);

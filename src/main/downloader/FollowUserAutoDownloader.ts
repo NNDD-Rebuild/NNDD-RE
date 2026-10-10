@@ -40,7 +40,7 @@ export class FollowUserAutoDownloader {
 
     for (const item of items) {
       if (knownKeys.has(item.videoId)) continue;
-      this.downloader.enqueue({ videoId: item.videoId, saveDir });
+      this.downloader.enqueue({ videoId: item.videoId, saveDir, source: 'follow_auto' });
       queued++;
     }
 
