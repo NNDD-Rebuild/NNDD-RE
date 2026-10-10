@@ -1,6 +1,6 @@
 /**
  * 内蔵HTTPサーバー (127.0.0.1 待受) を Tailscale 経由で公開する仕組みの共通インターフェース。
- * 実装: TailscaleServe (既存の Tailscale + `tailscale serve`) / TailscaleSidecar (RE 専用の独立端末)。
+ * 実装: TailscaleSidecar (RE 専用の独立した Tailscale 端末)。
  */
 export type ExposureState =
   | 'idle'

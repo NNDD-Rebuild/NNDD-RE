@@ -128,12 +128,10 @@ export function detectTailscaleIps(): string[] {
  * アクセス用URL一覧。
  *  - loopback: ループバックのみ
  *  - lan: 各NICのIPv4 (複数NICなら仮想アダプタを後ろ、家庭内LANらしいアドレスを前。先頭が本命)
- *  - tailscale: Tailscale の IP のみ (未接続なら空)
  */
 export function getAccessUrls(port: number, mode: HttpBindMode): string[] {
-  // tailscale-serve / tailscale-node は待受が 127.0.0.1。公開URLは NnddHttpServer が Exposure から取得する
-  if (mode === 'loopback' || mode === 'tailscale-serve' || mode === 'tailscale-node') return [`http://127.0.0.1:${port}/library`];
-  if (mode === 'tailscale') return detectTailscaleIps().map((ip) => `http://${ip}:${port}/library`);
+  // tailscale-node は待受が 127.0.0.1。公開URLは NnddHttpServer が Exposure から取得する
+  if (mode === 'loopback' || mode === 'tailscale-node') return [`http://127.0.0.1:${port}/library`];
   const found: { ip: string; virtual: boolean }[] = [];
   for (const [name, nets] of Object.entries(os.networkInterfaces())) {
     for (const net of nets ?? []) {

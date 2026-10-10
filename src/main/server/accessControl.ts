@@ -1,18 +1,11 @@
-import crypto from 'node:crypto';
 import net from 'node:net';
 import os from 'node:os';
 import type { Request, RequestHandler, Response } from 'express';
 
 /**
- * 内蔵 HTTP サーバーのアクセス制御 (Host / Origin 検証・アクセストークン認証)。
+ * 内蔵 HTTP サーバーのアクセス制御 (Host / Origin 検証)。認証は無い (Tailscale 経由は Tailscale の ACL で絞る)。
  * electron に依存しない純粋なロジックだけを置く (単体で検証できるようにするため)。
  */
-
-export const TOKEN_COOKIE = 'nndd_token';
-
-/** 失敗をカウントする窓と上限 (トークンを提示して間違えた回数) */
-const FAIL_WINDOW_MS = 60_000;
-const FAIL_LIMIT = 10;
 
 /** `host[:port]` / `[v6]:port` からホスト部だけを取り出す (小文字・末尾ドット除去) */
 export function parseHostname(hostHeader: string | undefined): string | null {
@@ -77,62 +70,13 @@ export function isSameOrigin(originHeader: string | undefined, hostHeader: strin
   }
 }
 
-/** ログ出力用: URL のクエリ中の token 値を伏せる */
-export function maskTokenInUrl(url: string): string {
-  return url.replace(/([?&]token=)[^&#\s]*/gi, '$1***');
-}
-
-function sha256(s: string): Buffer {
-  return crypto.createHash('sha256').update(s).digest();
-}
-
-/** 定数時間でトークンを比較する */
-export function tokensMatch(given: string | undefined, expected: string): boolean {
-  if (!given || !expected) return false;
-  return crypto.timingSafeEqual(sha256(given), sha256(expected));
-}
-
-function readCookie(req: Request, name: string): string | undefined {
-  const raw = req.headers.cookie;
-  if (!raw) return undefined;
-  for (const part of raw.split(';')) {
-    const i = part.indexOf('=');
-    if (i < 0) continue;
-    if (part.slice(0, i).trim() === name) return part.slice(i + 1).trim();
-  }
-  return undefined;
-}
-
-function readBearer(req: Request): string | undefined {
-  const m = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization ?? '');
-  return m ? m[1] : undefined;
-}
-
-function wantsHtml(req: Request): boolean {
-  return req.method === 'GET' && (req.headers.accept ?? '').includes('text/html');
-}
-
-function stripTokenFromUrl(originalUrl: string): string {
-  const u = new URL(originalUrl, 'http://placeholder');
-  u.searchParams.delete('token');
-  return u.pathname + u.search;
-}
-
-const UNAUTHORIZED_HTML = `<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NNDD-RE</title></head><body style="font-family:sans-serif;padding:2em"><h1>アクセストークンが必要です</h1><p>NNDD-RE の設定画面に表示される QR コード、または URL (<code>?token=…</code> 付き) から開き直してください。</p></body></html>`;
-
-export interface AccessControlOptions {
+export interface HostGuardOptions {
   /** `httpServer.allowedHosts` (毎リクエスト評価。設定変更を再起動なしで反映する) */
   getAllowedHosts: () => readonly string[];
-  /** トークン認証を要求するか */
-  isTokenRequired: () => boolean;
-  /** 現在の有効なトークン */
-  getToken: () => string;
-  /** トークン認証の対象外にするパス */
-  publicPaths?: readonly string[];
 }
 
 /** Host / Origin 検証 (全モードで常時適用) */
-export function createHostGuard(opts: Pick<AccessControlOptions, 'getAllowedHosts'>): RequestHandler {
+export function createHostGuard(opts: HostGuardOptions): RequestHandler {
   return (req: Request, res: Response, next) => {
     if (!isAllowedHostHeader(req.headers.host, opts.getAllowedHosts())) {
       res.status(403).json({ error: 'forbidden host' });
@@ -143,74 +87,6 @@ export function createHostGuard(opts: Pick<AccessControlOptions, 'getAllowedHost
       return;
     }
     next();
-  };
-}
-
-/**
- * アクセストークン認証。`Authorization: Bearer` / Cookie / `?token=` のいずれかで受け付ける。
- *  - `<video>` / `<img>` はヘッダーを付けられないので Cookie (または ?token=) が必要
- *  - ブラウザの画面遷移 (Accept: text/html) で ?token= が来たら Cookie に引き換えて、URL からトークンを消してリダイレクトする
- *  - 誤ったトークンを提示し続ける IP は一定時間 429 にする
- */
-export function createTokenGuard(opts: AccessControlOptions): RequestHandler {
-  const publicPaths = new Set(opts.publicPaths ?? []);
-  const failures = new Map<string, { count: number; resetAt: number }>();
-
-  return (req: Request, res: Response, next) => {
-    if (!opts.isTokenRequired() || publicPaths.has(req.path)) {
-      next();
-      return;
-    }
-    // プロキシ (サイドカー / Tailscale Serve) 経由は socket が常に 127.0.0.1 になる。接続元ごとに数えるため転送元IPを使う
-    const ip = clientIpOf(req);
-    const now = Date.now();
-    // 期限切れのエントリを掃除する (Map が増え続けないように)
-    if (failures.size > 1000) {
-      for (const [k, v] of failures) if (v.resetAt <= now) failures.delete(k);
-    }
-    const fail = failures.get(ip);
-    if (fail && fail.resetAt <= now) failures.delete(ip);
-    const current = failures.get(ip);
-    if (current && current.count >= FAIL_LIMIT) {
-      res.setHeader('Retry-After', String(Math.ceil((current.resetAt - now) / 1000)));
-      res.status(429).json({ error: 'too many attempts' });
-      return;
-    }
-
-    const expected = opts.getToken();
-    const bearer = readBearer(req);
-    const queryToken = typeof req.query.token === 'string' ? req.query.token : undefined;
-    const cookie = readCookie(req, TOKEN_COOKIE);
-
-    // トークンの再生成後は古い Cookie が残っている。有効な Bearer / ?token= を Cookie より優先して引き換える
-    if (tokensMatch(queryToken, expected) && wantsHtml(req)) {
-      res.cookie(TOKEN_COOKIE, expected, {
-        httpOnly: true,
-        sameSite: 'lax',
-        path: '/',
-        maxAge: 365 * 24 * 60 * 60 * 1000
-      });
-      res.redirect(302, stripTokenFromUrl(req.originalUrl));
-      return;
-    }
-    if (tokensMatch(bearer, expected) || tokensMatch(queryToken, expected) || tokensMatch(cookie, expected)) {
-      next();
-      return;
-    }
-
-    // 総当たり対策のカウントは Bearer / ?token= を提示して間違えた場合だけ。
-    // 古い Cookie は画像・動画の 1 リクエストごとに送られるため、数えると正規の利用者が締め出される
-    if (bearer !== undefined || queryToken !== undefined) {
-      const entry = failures.get(ip) ?? { count: 0, resetAt: now + FAIL_WINDOW_MS };
-      entry.count++;
-      failures.set(ip, entry);
-    }
-    res.setHeader('Cache-Control', 'no-store');
-    if (wantsHtml(req)) {
-      res.status(401).type('text/html; charset=utf-8').send(UNAUTHORIZED_HTML);
-    } else {
-      res.status(401).json({ error: 'unauthorized' });
-    }
   };
 }
 

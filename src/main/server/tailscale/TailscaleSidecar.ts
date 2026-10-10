@@ -17,10 +17,6 @@ const STABLE_MS = 60_000;
 export interface SidecarOptions {
   /** tailnet 上の端末名 (MagicDNS 名になる) */
   hostname: string;
-  /** HTTPS (443) で公開する。要: 管理画面で HTTPS 証明書を有効化 */
-  https: boolean;
-  /** 停止で端末一覧から消える一時的な端末にする */
-  ephemeral: boolean;
 }
 
 interface SidecarEvent {
@@ -108,8 +104,6 @@ export class TailscaleSidecar implements Exposure {
       '--hostname', this.opts.hostname,
       '--upstream', `http://127.0.0.1:${this.port}`
     ];
-    if (this.opts.https) args.push('--https');
-    if (this.opts.ephemeral) args.push('--ephemeral');
 
     this.status = { state: 'starting', urls: [] };
     this.stderrTail = [];

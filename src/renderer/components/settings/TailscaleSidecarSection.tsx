@@ -170,6 +170,8 @@ export function TailscaleSidecarSection(): JSX.Element {
         <Hint>
           Tailscale の管理画面で作った使い捨て (one-off)・期限付きの Auth key を推奨します。ログインできた時点で破棄します。
           Auth key を使わない場合は、起動後に表示されるログイン用ページで承認します。
+          アクセスできる端末を絞るには、管理画面で Auth key にタグ (例: tag:nndd-re) を付けて作成し、ACL で
+          {"{ \"action\": \"accept\", \"src\": [\"autogroup:member\"], \"dst\": [\"tag:nndd-re:80\"] }"} のように許可します。
         </Hint>
       </div>
 

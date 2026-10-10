@@ -1,6 +1,5 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import crypto from 'node:crypto';
 import { app, safeStorage } from 'electron';
 import { createLogger } from '../util/Logger';
 
@@ -10,13 +9,13 @@ const FILE_NAME = 'nndd-http-secrets.json';
 /** safeStorage が使えない環境で平文保存した値の目印 */
 const PLAIN_PREFIX = 'plain:';
 
-type SecretName = 'httpAccessToken' | 'remoteNnddToken' | 'tailscaleAuthKey';
+type SecretName = 'tailscaleAuthKey';
 
 /**
- * HTTP アクセストークン等の秘密情報の保管庫。
+ * Tailscale の Auth key 等の秘密情報の保管庫。
  *
- * ConfigStore (electron-store) には置かない。httpServer / remoteNndd は GitHub Gist バックアップの
- * 同期対象 (BackupManager.SYNCABLE_CONFIG_KEYS) で、トークンが外部へ送られてしまうため。
+ * ConfigStore (electron-store) には置かない。httpServer は GitHub Gist バックアップの
+ * 同期対象 (BackupManager.SYNCABLE_CONFIG_KEYS) で、秘密情報が外部へ送られてしまうため。
  * userData 配下の専用ファイルに safeStorage で暗号化して保存する。
  */
 export class SecretStore {
@@ -71,19 +70,5 @@ export class SecretStore {
     if (!(name in data)) return;
     delete data[name];
     this.write(data);
-  }
-
-  /** 内蔵 HTTP サーバーのアクセストークン。未生成なら作る */
-  static getOrCreateAccessToken(): string {
-    const existing = this.get('httpAccessToken');
-    if (existing) return existing;
-    return this.regenerateAccessToken();
-  }
-
-  /** アクセストークンを作り直す (旧トークンは即無効) */
-  static regenerateAccessToken(): string {
-    const token = crypto.randomBytes(24).toString('base64url');
-    this.set('httpAccessToken', token);
-    return token;
   }
 }

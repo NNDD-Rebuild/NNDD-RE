@@ -13,21 +13,19 @@ import { getConfigStore, resolveBindMode, type HttpBindMode } from '../config/Co
 import { createLogger } from '../util/Logger';
 import { forceAllowExternal, forcePort } from '../util/headless';
 import QRCode from 'qrcode';
-import { ServerStats, getAccessUrls, detectTailscaleIps, type ServerStatsSnapshot } from './ServerStats';
+import { ServerStats, getAccessUrls, type ServerStatsSnapshot } from './ServerStats';
 import { CommentXmlReader } from '../nicovideo/comment/CommentXmlReader';
 import { ThumbInfoXmlReader } from '../nicovideo/video/ThumbInfoXmlReader';
 import { generateLibraryPage } from './libraryPage';
 import { registerWebPlayerRoutes } from './webPlayerBridge';
-import { clientIpOf, createHostGuard, createSidecarTrust, createTokenGuard, maskTokenInUrl } from './accessControl';
-import { SecretStore } from './SecretStore';
+import { clientIpOf, createHostGuard, createSidecarTrust } from './accessControl';
 import type { Exposure, ExposureStatus } from './tailscale/exposure';
-import { TailscaleServe } from './tailscale/TailscaleServe';
 import { TailscaleSidecar } from './tailscale/TailscaleSidecar';
 
 const log = createLogger('HTTPServer');
 
-/** tailscale モードで Tailscale の IP の変化を確認する間隔 */
-const TAILSCALE_WATCH_INTERVAL_MS = 15_000;
+/** Tailscale 独立端末 (サイドカー) の状態確認・再起動の間隔 */
+const EXPOSURE_REFRESH_INTERVAL_MS = 15_000;
 
 /** XML 属性値・テキスト用の最小エスケープ */
 const esc = (s: string): string =>
@@ -50,7 +48,8 @@ const esc = (s: string): string =>
  *  - `GET  /library`, `/web-player.html?videoId=` ─ REのライブラリ+プレイヤーをそのままブラウザ配信 (web-app.html)
  *  - `POST /api/ipc` ─ ブラウザ版プレイヤー用 IPC ブリッジ (ホワイトリスト制)
  *
- * アクセス制御 (accessControl.ts): Host / Origin 検証を常時、アクセストークン認証を設定で有効化できる。
+ * アクセス制御 (accessControl.ts): Host / Origin 検証を常時適用する (DNS リバインディング・CSRF 対策)。
+ * 認証は無い。LAN 内は信頼できるネットワークとして公開し、Tailscale 経由は Tailscale の ACL (管理画面) で絞る。
  */
 export class NnddHttpServer {
   private app: Express;
@@ -58,12 +57,10 @@ export class NnddHttpServer {
   private port: number;
   private allowVideo: boolean;
   private bindMode: HttpBindMode;
-  private boundAddr: string | null = null;
   private running = false;
-  private syncing = false;
-  /** tailscale-serve など、127.0.0.1 待受をさらに Tailscale へ公開する仕組み */
+  /** tailscale-node: 127.0.0.1 待受をさらに Tailscale へ公開する仕組み (サイドカー) */
   private exposure: Exposure | null = null;
-  private watchTimer: NodeJS.Timeout | null = null;
+  private refreshTimer: NodeJS.Timeout | null = null;
   private allowMyList: boolean;
   private readonly stats = new ServerStats();
 
@@ -71,19 +68,10 @@ export class NnddHttpServer {
     this.app = express();
     this.app.disable('x-powered-by');
     // アクセス制御はボディ解析より前に置く (拒否するリクエストのボディを読まない)。
-    // Host / Origin 検証は全モードで常時適用 (DNS リバインディング・CSRF 対策)、
-    // トークン認証は tailscale モード、または設定 httpServer.requireToken が有効なときだけ
     // サイドカー経由 (共有シークレット一致) のリクエストだけ、転送された接続元IPを信頼する
     this.app.use(createSidecarTrust((given) => this.exposure?.verifySecret?.(given) ?? false));
+    // Host / Origin 検証は全モードで常時適用 (DNS リバインディング・CSRF 対策)
     this.app.use(createHostGuard({ getAllowedHosts: () => this.getAllowedHosts() }));
-    this.app.use(
-      createTokenGuard({
-        getAllowedHosts: () => this.getAllowedHosts(),
-        isTokenRequired: () => this.isTokenRequired(),
-        getToken: () => SecretStore.getOrCreateAccessToken(),
-        publicPaths: ['/health']
-      })
-    );
     this.app.use(express.text({ type: 'application/xml', limit: '256kb' }));
     this.app.use(express.text({ type: 'text/xml', limit: '256kb' }));
     this.app.use(express.json({ limit: '256kb' }));
@@ -93,98 +81,48 @@ export class NnddHttpServer {
     const httpCfg = cfg.get('httpServer');
     this.port = forcePort ?? httpCfg.port ?? 12345;
     this.allowVideo = httpCfg.allowVideo ?? true;
-    // --allow-external は「このPCのみ」を LAN 公開に引き上げる。tailscale 設定はそのまま (トークン必須を外さない)
+    // --allow-external は「このPCのみ」を LAN 公開に引き上げる
     const configured = resolveBindMode(httpCfg);
     this.bindMode = forceAllowExternal && configured === 'loopback' ? 'lan' : configured;
-    if (this.bindMode === 'tailscale-serve') {
+    if (this.bindMode === 'tailscale-node') {
       // 設定は Gist バックアップ等でも入りうるので、main 側でも検証する (不正値は既定値)
-      const sp = httpCfg.serveHttpsPort;
-      this.exposure = new TailscaleServe(Number.isInteger(sp) && sp >= 1 && sp <= 65535 ? sp : 8443);
-      // Tailscale Serve 経由のリクエストは 127.0.0.1 から届くため、X-Forwarded-For を信頼して接続元を集計する
-      this.app.set('trust proxy', 'loopback');
-    } else if (this.bindMode === 'tailscale-node') {
+      const name = httpCfg.nodeHostname ?? '';
       this.exposure = new TailscaleSidecar({
-        hostname: /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(httpCfg.nodeHostname ?? '') ? httpCfg.nodeHostname : 'nndd-re',
-        https: httpCfg.nodeHttps === true,
-        ephemeral: httpCfg.nodeEphemeral === true
+        hostname: /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(name) ? name : 'nndd-re'
       });
     }
     this.allowMyList = httpCfg.allowMyList ?? true;
   }
 
-  /**
-   * サーバー起動。
-   * tailscale モードで Tailscale の IP がまだ無い (未接続・OS起動直後) ときは待機し、
-   * 検出できた時点で自動的にバインドする。IP が変わったときも再バインドする。
-   */
+  /** サーバー起動。独立端末 (サイドカー) の起動は待たずに進め、状態は getExposureStatus で見せる */
   async start(): Promise<{ port: number }> {
     if (this.running) return { port: this.port };
     this.running = true;
     try {
-      await this.syncBinding();
+      await this.listen();
     } catch (e) {
       this.running = false;
       throw e;
     }
-    // 以降の await 中に stop() された場合は何も始めない
-    // CLI の探索・serve の設定・サイドカーの起動には時間がかかる。待たずに進めて、状態は getExposureStatus で見せる
-    // (待つと HTTPD_START の IPC が長く返らず、その間は起動中のサーバーとして扱われない)
+    // listen の await 中に stop() された場合は何も始めない
     if (this.running && this.exposure) {
+      // 待つと HTTPD_START の IPC が長く返らず、その間は起動中のサーバーとして扱われない
       void this.exposure.start(this.port).catch((e) => log.warn('Tailscale exposure start failed:', e));
-    }
-    if (this.running && (this.bindMode === 'tailscale' || this.exposure)) {
-      this.watchTimer = setInterval(() => {
-        this.syncBinding().catch((e) => log.warn('Tailscale rebind failed (will retry):', e));
+      this.refreshTimer = setInterval(() => {
         this.exposure?.refresh().catch((e) => log.warn('Tailscale exposure refresh failed:', e));
-      }, TAILSCALE_WATCH_INTERVAL_MS);
-      this.watchTimer.unref();
+      }, EXPOSURE_REFRESH_INTERVAL_MS);
+      this.refreshTimer.unref();
     }
     return { port: this.port };
   }
 
-  /** 現在の bind モードに合わせて待受を作る・張り直す */
-  private async syncBinding(): Promise<void> {
-    // 監視 tick の多重実行を避ける (listen / close が完了する前に次の tick が走らないように)
-    if (this.syncing) return;
-    this.syncing = true;
-    try {
-      await this.doSyncBinding();
-    } finally {
-      this.syncing = false;
-    }
-  }
-
-  private async doSyncBinding(): Promise<void> {
-    if (!this.running) return;
-    let addr: string | null;
-    if (this.bindMode === 'tailscale') {
-      addr = detectTailscaleIps()[0] ?? null;
-    } else {
-      // loopback / tailscale-serve は 127.0.0.1 (後者は Tailscale Serve が転送してくる)
-      addr = this.bindMode === 'lan' ? '0.0.0.0' : '127.0.0.1';
-    }
-    if (addr === this.boundAddr) return;
-    if (this.server) {
-      log.info(`Tailscale address changed (${this.boundAddr ?? 'none'} → ${addr ?? 'none'}): rebinding`);
-      await this.closeServer();
-    }
-    if (addr === null) {
-      log.info('Tailscale IP not found: waiting for Tailscale to connect');
-      return;
-    }
-    // closeServer の await 中に stop() されていたら張り直さない
-    if (!this.running) return;
-    await this.listenOn(addr);
-    // listen の完了までに stop() されていたら閉じる
-    if (!this.running) await this.closeServer();
-  }
-
-  private listenOn(addr: string): Promise<void> {
+  private listen(): Promise<void> {
+    // lan は 0.0.0.0 (同じ PC の Tailscale 経由でも届く)。loopback / tailscale-node は 127.0.0.1
+    const addr = this.bindMode === 'lan' ? '0.0.0.0' : '127.0.0.1';
     return new Promise((resolve, reject) => {
       const server = this.app.listen(this.port, addr, () => {
         const a = server.address();
         this.port = typeof a === 'object' && a ? a.port : this.port;
-        this.boundAddr = addr;
         log.info(`HTTP server listening on http://${addr}:${this.port}`);
         resolve();
       });
@@ -200,7 +138,6 @@ export class NnddHttpServer {
     return new Promise((resolve) => {
       const server = this.server;
       this.server = null;
-      this.boundAddr = null;
       if (!server) {
         resolve();
         return;
@@ -212,19 +149,14 @@ export class NnddHttpServer {
   }
 
   async stop(): Promise<void> {
-    if (this.watchTimer) {
-      clearInterval(this.watchTimer);
-      this.watchTimer = null;
+    if (this.refreshTimer) {
+      clearInterval(this.refreshTimer);
+      this.refreshTimer = null;
     }
     this.running = false;
     await this.exposure?.stop();
     await this.closeServer();
     log.info('HTTP server stopped');
-  }
-
-  /** 待受を作れていない (tailscale モードで Tailscale 未接続) */
-  isWaitingForTailscale(): boolean {
-    return this.running && this.bindMode === 'tailscale' && this.boundAddr === null;
   }
 
   /**
@@ -240,7 +172,7 @@ export class NnddHttpServer {
     return this.bindMode;
   }
 
-  /** Tailscale への公開状態 (tailscale-serve など。無ければ null) */
+  /** Tailscale 独立端末の公開状態 (無ければ null) */
   getExposureStatus(): ExposureStatus | null {
     return this.exposure ? this.exposure.getStatus() : null;
   }
@@ -258,29 +190,10 @@ export class NnddHttpServer {
     return this.stats.snapshot();
   }
 
-  /** アクセス用URL一覧 (LAN公開時は各NICのIPv4)。トークン認証が有効なら ?token= を付ける */
+  /** アクセス用URL一覧。lan は各NICのIPv4 (Tailscale の IP を含む)、独立端末は公開が成立しているときだけ */
   getAccessUrls(): string[] {
-    const urls = this.baseAccessUrls();
-    if (!this.isTokenRequired()) return urls;
-    const token = encodeURIComponent(SecretStore.getOrCreateAccessToken());
-    return urls.map((u) => `${u}?token=${token}`);
-  }
-
-  /** 現在の待受範囲で到達できるホスト (トークンなし。設定画面の表示用。getAccessUrls と同じ優先順位) */
-  getAccessHosts(): string[] {
-    return this.baseAccessUrls().map((u) => new URL(u).hostname);
-  }
-
-  /** トークンなしのアクセスURL。Tailscale への公開 (serve など) は公開が成立しているときだけ返す */
-  private baseAccessUrls(): string[] {
     if (this.exposure) return this.exposure.getStatus().urls;
     return getAccessUrls(this.port, this.bindMode);
-  }
-
-  /** トークン認証が有効か (設定の変更を再起動なしで反映する) */
-  isTokenRequired(): boolean {
-    // tailscale モードは tailnet の他端末にも届くため、設定に関わらずトークン必須
-    return this.bindMode.startsWith('tailscale') || getConfigStore().get('httpServer').requireToken === true;
   }
 
   private getAllowedHosts(): string[] {
@@ -299,7 +212,7 @@ export class NnddHttpServer {
 
     // 全リクエストをログ
     this.app.use((req, _res, next) => {
-      log.verbose(`→ ${req.method} ${maskTokenInUrl(req.url)} from ${clientIpOf(req)} [CT:${req.headers['content-type'] ?? 'none'} CL:${req.headers['content-length'] ?? 'none'}]`);
+      log.verbose(`→ ${req.method} ${req.url} from ${clientIpOf(req)} [CT:${req.headers['content-type'] ?? 'none'} CL:${req.headers['content-length'] ?? 'none'}]`);
       next();
     });
 
@@ -422,7 +335,7 @@ export class NnddHttpServer {
 
     log.verbose([
       `NNDDServer ${req.method} from ${clientIpOf(req)}`,
-      `  URL: ${maskTokenInUrl(req.url)}`,
+      `  URL: ${req.url}`,
       `  Content-Type: ${req.headers['content-type'] ?? 'none'}`,
       `  Content-Length: ${req.headers['content-length'] ?? 'none'}`,
       `  Query: ${JSON.stringify(req.query)}`,
@@ -575,7 +488,7 @@ export class NnddHttpServer {
   }
 
   private async buildStatus(): Promise<
-    ServerStatsSnapshot & { urls: { url: string; qrSvg: string }[]; allowExternal: boolean; bindMode: HttpBindMode; waitingForTailscale: boolean; exposure: ExposureStatus | null }
+    ServerStatsSnapshot & { urls: { url: string; qrSvg: string }[]; allowExternal: boolean; bindMode: HttpBindMode; exposure: ExposureStatus | null }
   > {
     // QR は先頭 (本命) のURLだけ。複数NICでもQRが並ばないようにする
     const urls = await Promise.all(
@@ -589,7 +502,6 @@ export class NnddHttpServer {
       urls,
       allowExternal: this.bindMode === 'lan',
       bindMode: this.bindMode,
-      waitingForTailscale: this.isWaitingForTailscale(),
       exposure: this.getExposureStatus()
     };
   }
@@ -760,12 +672,10 @@ export class NnddHttpServer {
     const vid = this.extractVideoId(v.uri) ?? '';
     const filename = path.basename(v.uri);
     const ext = path.extname(v.uri).slice(1);
-    // 接続先が実際に使ったホスト名で URL を作る (Host は hostGuard で検証済み。プロキシ経由 (Tailscale Serve) でも正しくなる)
+    // 接続先が実際に使ったホスト名で URL を作る (Host は hostGuard で検証済み。サイドカー経由でも正しくなる)
     const hostHeader = req.headers.host;
-    // (Tailscale Serve は TLS を終端するので https。X-Forwarded-Proto の有無に依存しない)
-    const proto = this.bindMode === 'tailscale-serve' ? 'https' : req.protocol;
     const base = hostHeader
-      ? `${proto}://${hostHeader}`
+      ? `${req.protocol}://${hostHeader}`
       : `http://${(req.socket.localAddress ?? '').replace(/^::ffff:/, '')}:${this.port}`;
     const videoUrl = `${base}/NNDDServer/${esc(vid)}`;
     const lines = [

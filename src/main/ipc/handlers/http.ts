@@ -4,6 +4,7 @@ import { getConfigStore } from '../../config/ConfigStore';
 import { NnddHttpServer } from '../../server/NnddHttpServer';
 import { LanLibraryClient } from '../../server/LanLibraryClient';
 import fs from 'node:fs';
+import { detectTailscaleIps, isTailscaleIp } from '../../server/ServerStats';
 import { SecretStore } from '../../server/SecretStore';
 import { SidecarInstaller } from '../../server/tailscale/SidecarInstaller';
 import { createLogger } from '../../util/Logger';
@@ -67,25 +68,20 @@ export function registerHttpHandlers(ctx: IpcHandlerContext): void {
     if (runtimeHttpServer) {
       const port = runtimeHttpServer.getPort();
       const bindMode = runtimeHttpServer.getBindMode();
-      // 設定画面の URL・QR は getAccessUrls と同じ優先順位の先頭を使う (Tailscale の 100.x を LAN と取り違えない)
-      const lanIp = bindMode === 'lan' ? runtimeHttpServer.getAccessHosts()[0] : undefined;
-      const tailscaleIp = bindMode === 'tailscale' ? runtimeHttpServer.getAccessHosts()[0] : undefined;
+      // LAN 公開のときは、同じPCの Tailscale (導入済みなら) 経由でも届く。その URL も画面に出す
+      const lanIp = bindMode === 'lan' ? runtimeHttpServer.getAccessUrls().map((u) => new URL(u).hostname).find((h) => !isTailscaleIp(h)) : undefined;
+      const tailscaleIp = bindMode === 'lan' ? detectTailscaleIps()[0] : undefined;
       return {
         running: true,
         port,
         lanIp,
         bindMode,
         tailscaleIp,
-        waitingForTailscale: runtimeHttpServer.isWaitingForTailscale(),
         exposure: runtimeHttpServer.getExposureStatus() ?? undefined
       };
     }
     return { running: false };
   });
-
-  // アクセストークン (表示・QR 用。再生成すると旧トークンは即無効)
-  ipcMain.handle(IpcChannel.HTTPD_TOKEN_GET, () => ({ token: SecretStore.getOrCreateAccessToken() }));
-  ipcMain.handle(IpcChannel.HTTPD_TOKEN_REGENERATE, () => ({ token: SecretStore.regenerateAccessToken() }));
 
   // --- Tailscale サイドカー (独立端末) ---
   const nodeRunning = (): boolean =>
@@ -132,21 +128,10 @@ export function registerHttpHandlers(ctx: IpcHandlerContext): void {
   });
 
   // --- LANライブラリ (リモートNNDD参照) ---
-  const lanClient = (cfg: { address: string; port: number }): LanLibraryClient =>
-    new LanLibraryClient(cfg.address, cfg.port, SecretStore.get('remoteNnddToken') ?? undefined);
-
-  // 接続先のアクセストークン (設定には保存せず SecretStore へ。空文字で削除)
-  ipcMain.handle(IpcChannel.LAN_TOKEN_STATUS, () => ({ hasToken: SecretStore.get('remoteNnddToken') !== null }));
-  ipcMain.handle(IpcChannel.LAN_TOKEN_SET, (_e, token: unknown) => {
-    const t = typeof token === 'string' ? token.trim() : '';
-    if (t) SecretStore.set('remoteNnddToken', t);
-    else SecretStore.delete('remoteNnddToken');
-    return { hasToken: t.length > 0 };
-  });
   ipcMain.handle(IpcChannel.LAN_STATUS, async () => {
     const cfg = getConfigStore().get('remoteNndd');
     if (!cfg.enabled || !cfg.address) return { reachable: false };
-    const client = lanClient(cfg);
+    const client = new LanLibraryClient(cfg.address, cfg.port);
     const reachable = await client.ping();
     return { reachable };
   });
@@ -154,14 +139,14 @@ export function registerHttpHandlers(ctx: IpcHandlerContext): void {
   ipcMain.handle(IpcChannel.LAN_LIBRARY_LIST, async () => {
     const cfg = getConfigStore().get('remoteNndd');
     if (!cfg.enabled || !cfg.address) return [];
-    const client = lanClient(cfg);
+    const client = new LanLibraryClient(cfg.address, cfg.port);
     return await client.getVideoIdList();
   });
 
   ipcMain.handle(IpcChannel.LAN_VIDEO_STREAM, async (_e, videoId: string) => {
     const cfg = getConfigStore().get('remoteNndd');
     if (!cfg.enabled || !cfg.address) return null;
-    const client = lanClient(cfg);
+    const client = new LanLibraryClient(cfg.address, cfg.port);
     return await client.getVideoById(videoId);
   });
 }

@@ -161,8 +161,8 @@ export class BackupManager {
       for (const key of SYNCABLE_CONFIG_KEYS) {
         config[key] = store.get(key);
       }
-      // 公開範囲・認証に関わる設定は端末固有。他端末へ同期しない
-      const { requireToken: _rt, allowedHosts: _ah, bindMode: _bm, ...httpSync } = store.get('httpServer');
+      // 公開範囲に関わる設定は端末固有。他端末へ同期しない
+      const { allowedHosts: _ah, bindMode: _bm, ...httpSync } = store.get('httpServer');
       config['httpServer'] = httpSync;
       payload.config = config;
     }
@@ -245,12 +245,11 @@ export class BackupManager {
       for (const key of SYNCABLE_CONFIG_KEYS) {
         if (key in payload.config) {
           if (key === 'httpServer') {
-            // 復元で認証・公開範囲の設定が黙って外れないよう、ローカルの値を保持する
+            // 復元で公開範囲の設定が黙って変わらないよう、ローカルの値を保持する
             const local = store.get('httpServer');
             const incoming = payload.config[key] as Record<string, unknown>;
             store.set('httpServer', {
               ...incoming,
-              requireToken: local.requireToken,
               allowedHosts: local.allowedHosts,
               bindMode: local.bindMode
             } as never);

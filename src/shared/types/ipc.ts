@@ -266,15 +266,11 @@ export const IpcChannel = {
   HTTPD_START: 'nndd:httpd:start',
   HTTPD_STOP: 'nndd:httpd:stop',
   HTTPD_STATUS: 'nndd:httpd:status',
-  HTTPD_TOKEN_GET: 'nndd:httpd:token:get',
-  HTTPD_TOKEN_REGENERATE: 'nndd:httpd:token:regenerate',
 
   // LANライブラリ (本家NNDD互換クライアント)
   LAN_STATUS: 'nndd:lan:status',
   LAN_LIBRARY_LIST: 'nndd:lan:library:list',
   LAN_VIDEO_STREAM: 'nndd:lan:video:stream',
-  LAN_TOKEN_STATUS: 'nndd:lan:token:status',
-  LAN_TOKEN_SET: 'nndd:lan:token:set',
 
   // Tailscale サイドカー (独立端末)。外部ツールとして取得・更新・削除・ログインを行う
   TAILSCALE_STATUS: 'nndd:tailscale:status',
