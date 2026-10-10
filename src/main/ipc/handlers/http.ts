@@ -68,7 +68,7 @@ export function registerHttpHandlers(ctx: IpcHandlerContext): void {
     if (runtimeHttpServer) {
       const port = runtimeHttpServer.getPort();
       const bindMode = runtimeHttpServer.getBindMode();
-      // LAN 内の IP (loopback 以外は 0.0.0.0 で待ち受ける)。独立端末のときも LAN 内の IP から入れる
+      // LAN 内の IP (loopback 以外は 0.0.0.0 で待ち受ける)。Tailscale のときも LAN 内の IP から入れる
       const lanIp =
         bindMode !== 'loopback'
           ? getAccessUrls(port, 'lan').map((u) => new URL(u).hostname).find((h) => h !== '127.0.0.1' && !isTailscaleIp(h))
@@ -87,7 +87,7 @@ export function registerHttpHandlers(ctx: IpcHandlerContext): void {
     return { running: false };
   });
 
-  // --- Tailscale サイドカー (独立端末) ---
+  // --- Tailscale サイドカー ---
   const nodeRunning = (): boolean =>
     runtimeHttpServer !== null && runtimeHttpServer.getBindMode() === 'tailscale-node';
 

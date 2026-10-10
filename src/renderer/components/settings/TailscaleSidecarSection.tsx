@@ -16,7 +16,7 @@ interface SidecarStatusInfo {
   exposure: { state: string; message?: string; authUrl?: string; urls: string[] } | null;
 }
 
-/** 設定 > 外部ツール > Tailscale (RE 専用の独立端末)。取得・更新・削除・ログインを行う */
+/** 設定 > 外部ツール > Tailscale。取得・更新・削除・ログインを行う */
 export function TailscaleSidecarSection(): JSX.Element {
   const [st, setSt] = useState<SidecarStatusInfo | null>(null);
   const [busy, setBusy] = useState(false);
@@ -87,7 +87,7 @@ export function TailscaleSidecarSection(): JSX.Element {
 
   return (
     <Card
-      title="Tailscale (独立端末)"
+      title="Tailscale"
       right={
         !st ? (
           <Hint>確認中…</Hint>
@@ -106,7 +106,7 @@ export function TailscaleSidecarSection(): JSX.Element {
       <Hint>
         NNDD-RE を、PC の Tailscale とは別の「NNDD-RE 専用の端末」として tailnet に参加させます (MagicDNS 名も独自)。
         PC に Tailscale を入れていなくても使えます。閲覧する端末には Tailscale が必要です。
-        使うには、設定 → 全般 → 内蔵HTTPサーバー の待受範囲で「Tailscale 独立端末」を選んで起動してください。
+        使うには、設定 → 全般 → 内蔵HTTPサーバー の待受範囲で「Tailscale」を選んで起動してください。
       </Hint>
 
       {st && st.supported && !st.canInstall && (

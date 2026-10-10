@@ -33,7 +33,7 @@ export function startHeadlessDashboard(server: NnddHttpServer): void {
       lines.push('NNDD-RE ヘッドレスサーバー');
       lines.push('');
       lines.push(`接続台数: ${s.clients}   視聴数: ${s.viewers}`);
-      // Tailscale 独立端末のログイン待ち・エラー。ヘッドレスではここに承認用 URL を出す
+      // Tailscale のログイン待ち・エラー。ヘッドレスではここに承認用 URL を出す
       const ex = server.getExposureStatus();
       if (ex && (ex.state === 'needs_login' || ex.state === 'error')) {
         if (ex.message) lines.push(ex.message);

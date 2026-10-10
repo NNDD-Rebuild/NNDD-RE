@@ -18,9 +18,9 @@
 |---|---|
 | このPCのみ(`loopback`) | 既定。127.0.0.1 |
 | LAN公開(`lan`) | 0.0.0.0。**PC に Tailscale が入っていれば、同じ設定で Tailscale 経由(100.x.x.x)でも届く。** 画面に Tailscale の URL も表示 |
-| Tailscale 独立端末(`tailscale-node`) | PC に Tailscale を入れない人向け。**LAN公開に加えて**、RE 専用の端末(tsnet サイドカー)として tailnet に参加。LAN 内の IP でも入れる(サイドカーは 127.0.0.1 へ転送) |
+| Tailscale(`tailscale-node`) | PC に Tailscale を入れない人向け。**LAN公開に加えて**、RE 専用の端末(tsnet サイドカー)として tailnet に参加。LAN 内の IP でも入れる(サイドカーは 127.0.0.1 へ転送) |
 
-5. 次の機能は作らない(検討の結果、削除した): アクセストークン認証 / 「Tailscale の IP にだけバインド」/ `tailscale serve` による HTTPS 公開 / 独立端末の HTTPS(443)公開・一時的な端末。tailnet 内は WireGuard で暗号化されるので HTTP でも盗聴の心配はなく、動画の再生に HTTPS は不要。
+5. 次の機能は作らない(検討の結果、削除した): アクセストークン認証 / 「Tailscale の IP にだけバインド」/ `tailscale serve` による HTTPS 公開 / サイドカーの HTTPS(443)公開・一時的な端末。tailnet 内は WireGuard で暗号化されるので HTTP でも盗聴の心配はなく、動画の再生に HTTPS は不要。
 6. 閲覧側にも Tailscale が必要という前提は変わらない。
 7. サイドカーは同梱せず、設定画面でオンにしたときだけ取得する。ブランチは `<type>/<slug>`、コミットは `feat:` / `fix:` と揃える。
 
@@ -37,14 +37,14 @@
 - 設定画面の LAN 公開では、`os.networkInterfaces()` から Tailscale の IP(100.64.0.0/10。NIC 名が `tailscale` / `utun` のものを優先。IPv4 のみ)を検出して URL を表示する。
 - 旧 XML API の `videoUrl` は、検証済みの Host ヘッダーから作る。
 
-### 独立端末(サイドカー)
+### Tailscale(サイドカー)
 - サイドカー(`nndd-re-tailscale`): Go + tsnet。転送先は loopback の IP リテラルのみ。`WhoIs` で接続元を確認し、`Tailscale-User-Login` / `Tailscale-Node-Name` を付け直し、起動ごとの共有シークレット(`X-Nndd-Sidecar-Secret`)を付与する。Auth key・共有シークレットは stdin で渡す(argv に載せない)。stdin EOF で停止。制御プロトコルは v1(同リポジトリの README)。
 - 本体: `TailscaleSidecar`(子プロセス管理)/ `SidecarInstaller`(取得・検証・削除)/ `sidecarPin.ts`(ピン)。
   - **取得は `sidecarPin.ts` にピン留めしたバージョン + SHA256 だけ**。未設定なら取得も実行も拒否(fail-closed)。起動のたびにハッシュを再照合する。`latest` は使わない。
   - 共有シークレットが一致したリクエストだけ、サイドカーが付けた `X-Forwarded-For` を接続元として信頼する(`createSidecarTrust`)。loopback から来た、というだけでは信頼しない。
   - 起動(`exposure.start`)は待たずに IPC を返す。サイドカーは異常終了時に最大 5 回再起動する。アプリ終了時に止める(`shutdownHttpServer`)。
 - 秘密情報(Auth key)は `SecretStore`(`safeStorage`)に置く。**`httpServer` は GitHub Gist バックアップの同期対象なので、秘密情報を ConfigStore に置かない。** 公開範囲に関わる設定(`bindMode` / `allowedHosts`)は端末固有なので、バックアップに含めず、復元でもローカルの値を保持する。
-- ACL の例(独立端末を `tag:nndd-re` にして、自分の端末だけに許可): `{ "action": "accept", "src": ["autogroup:member"], "dst": ["tag:nndd-re:80"] }`。タグ付きの Auth key を「外部ツール」で入力する。tailnet の既定の ACL は「全員を許可」なので、1 人で使う分には問題ないが、共有する場合は絞ること。
+- ACL の例(RE の端末を `tag:nndd-re` にして、自分の端末だけに許可): `{ "action": "accept", "src": ["autogroup:member"], "dst": ["tag:nndd-re:80"] }`。タグ付きの Auth key を「外部ツール」で入力する。tailnet の既定の ACL は「全員を許可」なので、1 人で使う分には問題ないが、共有する場合は絞ること。
 
 ## 3. 検証
 
@@ -79,7 +79,7 @@ npm run build
 
 - 検証後・実行前のバイナリ差し替えは防げない(同一ユーザー権限の攻撃者に限る。その権限があれば本体自体を改変できる)。
 - リリース workflow の GitHub Actions はタグ指定(コミット SHA への固定は未実施)。
-- Tailscale の無料枠の端末数・ユーザー数の上限は、現行値を公式で確認する(独立端末は 1 台消費する)。
+- Tailscale の無料枠の端末数・ユーザー数の上限は、現行値を公式で確認する(サイドカーは 1 台消費する)。
 - tsnet サイドカーの実サイズは 20〜22MB/OS(`-s -w -trimpath`、実測)。
 - LAN 公開は無認証のまま(従来どおり)。tailnet の ACL を既定のまま(全員許可)にして他人と共有する場合は、`/api/ipc` の一部の読み取り系(ニコニコ API を呼ぶもの)に他人の端末から届く。ACL で絞ること。
 - macOS arm64 での、取得した実行ファイルの署名要件(実機で確認)。

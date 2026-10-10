@@ -24,7 +24,7 @@ import { TailscaleSidecar } from './tailscale/TailscaleSidecar';
 
 const log = createLogger('HTTPServer');
 
-/** Tailscale 独立端末 (サイドカー) の状態確認・再起動の間隔 */
+/** Tailscale (サイドカー) の状態確認・再起動の間隔 */
 const EXPOSURE_REFRESH_INTERVAL_MS = 15_000;
 
 /** XML 属性値・テキスト用の最小エスケープ */
@@ -94,7 +94,7 @@ export class NnddHttpServer {
     this.allowMyList = httpCfg.allowMyList ?? true;
   }
 
-  /** サーバー起動。独立端末 (サイドカー) の起動は待たずに進め、状態は getExposureStatus で見せる */
+  /** サーバー起動。サイドカー の起動は待たずに進め、状態は getExposureStatus で見せる */
   async start(): Promise<{ port: number }> {
     if (this.running) return { port: this.port };
     this.running = true;
@@ -161,7 +161,7 @@ export class NnddHttpServer {
   }
 
   /**
-   * 独立端末 (tailscale-node) をログアウトして状態を消す。サーバーが動いていなくても状態ディレクトリは消す。
+   * サイドカー (tailscale-node) をログアウトして状態を消す。サーバーが動いていなくても状態ディレクトリは消す。
    * 返り値: tailnet 側の端末も削除できた
    */
   async logoutExposure(): Promise<boolean> {
@@ -173,7 +173,7 @@ export class NnddHttpServer {
     return this.bindMode;
   }
 
-  /** Tailscale 独立端末の公開状態 (無ければ null) */
+  /** Tailscale の公開状態 (無ければ null) */
   getExposureStatus(): ExposureStatus | null {
     return this.exposure ? this.exposure.getStatus() : null;
   }
@@ -191,7 +191,7 @@ export class NnddHttpServer {
     return this.stats.snapshot();
   }
 
-  /** アクセス用URL一覧。lan は各NICのIPv4 (Tailscale の IP を含む)、独立端末は公開が成立しているときだけ */
+  /** アクセス用URL一覧。lan は各NICのIPv4 (Tailscale の IP を含む)、サイドカーは公開が成立しているときだけ */
   getAccessUrls(): string[] {
     if (this.exposure) return this.exposure.getStatus().urls;
     return getAccessUrls(this.port, this.bindMode);

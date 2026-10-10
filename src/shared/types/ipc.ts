@@ -272,7 +272,7 @@ export const IpcChannel = {
   LAN_LIBRARY_LIST: 'nndd:lan:library:list',
   LAN_VIDEO_STREAM: 'nndd:lan:video:stream',
 
-  // Tailscale サイドカー (独立端末)。外部ツールとして取得・更新・削除・ログインを行う
+  // Tailscale サイドカー。外部ツールとして取得・更新・削除・ログインを行う
   TAILSCALE_STATUS: 'nndd:tailscale:status',
   TAILSCALE_INSTALL: 'nndd:tailscale:install',
   TAILSCALE_UNINSTALL: 'nndd:tailscale:uninstall',

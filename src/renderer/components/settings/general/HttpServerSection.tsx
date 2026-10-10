@@ -17,7 +17,7 @@ type BindMode = 'loopback' | 'lan' | 'tailscale-node';
 
 const BIND_MODES: BindMode[] = ['loopback', 'lan', 'tailscale-node'];
 
-/** Tailscale 独立端末 (サイドカー) の公開状態 */
+/** Tailscale (サイドカー) の公開状態 */
 interface ExposureInfo {
   state: 'idle' | 'starting' | 'needs_login' | 'running' | 'error';
   message?: string;
@@ -66,7 +66,7 @@ export function HttpServerSection(): JSX.Element {
     refreshHttpStatus();
   }, []);
 
-  // 起動中は Tailscale 独立端末の状態の変化 (ログイン承認など) を反映する
+  // 起動中は Tailscale の状態の変化 (ログイン承認など) を反映する
   useEffect(() => {
     if (!httpStatus.running) return;
     const timer = setInterval(refreshHttpStatus, 5000);
@@ -101,7 +101,7 @@ export function HttpServerSection(): JSX.Element {
   };
 
   const exposure = httpStatus.exposure;
-  // QR・共有用のURL。独立端末があればその URL、なければ LAN の URL
+  // QR・共有用のURL。Tailscale の URL があればそれ、なければ LAN の URL
   const shareUrl =
     exposure?.urls[0] ?? `http://${httpStatus.lanIp ?? 'localhost'}:${httpStatus.port}/library`;
   const qrAvailable = !exposure || exposure.state === 'running';
@@ -222,8 +222,8 @@ export function HttpServerSection(): JSX.Element {
             },
             {
               value: 'tailscale-node',
-              label: 'Tailscale 独立端末 (NNDD-RE 専用の端末として参加。LAN内からもアクセス可。外部ツールで取得が必要)',
-              hint: 'このPCに Tailscale を入れていなくても使えます。NNDD-RE を PC の Tailscale とは別の「専用の端末」として tailnet に参加させます。LAN内の他端末からも、IP アドレスでアクセスできます (LAN公開と同じ。認証はありません)。設定 → 外部ツール で Tailscale (独立端末) を取得し、起動後に表示されるログイン用ページで承認してください。アクセスできる端末は、Tailscale の管理画面の ACL で絞れます (例: 端末にタグ tag:nndd-re を付け、自分の端末だけに許可)。',
+              label: 'Tailscale (NNDD-RE 専用の端末として参加。LAN内からもアクセス可。外部ツールで取得が必要)',
+              hint: 'このPCに Tailscale を入れていなくても使えます。NNDD-RE を PC の Tailscale とは別の「専用の端末」として tailnet に参加させます。LAN内の他端末からも、IP アドレスでアクセスできます (LAN公開と同じ。認証はありません)。設定 → 外部ツール で Tailscale を取得し、起動後に表示されるログイン用ページで承認してください。アクセスできる端末は、Tailscale の管理画面の ACL で絞れます (例: 端末にタグ tag:nndd-re を付け、自分の端末だけに許可)。',
               children: (
                 <Row label="端末名" hint="MagicDNS 名になります。英小文字・数字・ハイフン">
                   <CommitInput
