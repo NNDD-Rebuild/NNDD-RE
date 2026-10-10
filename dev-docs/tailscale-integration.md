@@ -41,7 +41,7 @@
 | 1 | アクセス制御: Host 検証(全モード)、トークン + Cookie 認証、ログのマスク | 実装済み(`feature/tailscale`)。§3 フェーズ 1 の実装メモ参照 |
 | 2 | 既存 Tailscale の検出と表示、bind モード `loopback / lan / tailscale` | 実装済み(`feature/tailscale`)。§3 フェーズ 2 の実装メモ参照 |
 | 3 | (任意) `tailscale serve` 連携 | 実装済み(`feature/tailscale`)。§3 フェーズ 3 の実装メモ参照 |
-| 4 | (任意) 独立端末: tsnet サイドカー | 未着手。§8 の基準で着手判断 |
+| 4 | (任意) 独立端末: tsnet サイドカー | 実装済み(`feature/tailscale` + `nndd-re-tailscale` の `feature/sidecar`)。**リリース未発行**。§3 フェーズ 4 の実装メモとリリース手順を参照 |
 
 ### フェーズ 1: アクセス制御
 
@@ -154,6 +154,19 @@
 - ACL / タグ(例 `tag:nndd-re`)で到達できる端末を絞る運用をドキュメント化する。
 - プロセス監視: クラッシュ時の再起動、アプリ終了時の停止、ゾンビ化防止。
 - macOS arm64 の署名・quarantine の挙動は実機で確認する。
+
+**実装メモ(フェーズ 4 実装済み)**
+- サイドカー(`NNDD-Rebuild/nndd-re-tailscale`、`feature/sidecar` ブランチ): Go + tsnet。プロトコル v1(README に仕様)。転送先は loopback のみ。`WhoIs` で接続元を確認し、`Tailscale-User-*` を付け直し、起動ごとの共有シークレット(`X-Nndd-Sidecar-Secret`)を付与。Auth key・共有シークレットは stdin で渡す(argv に載せない)。stdin EOF で停止。ビルドは 20〜22MB/OS(`-s -w -trimpath`、実測)。CI は gofmt / vet / test / 4 ターゲットのビルド、リリースは `v*` タグで SHA256SUMS 付きの prerelease。
+- 本体: `bindMode: 'tailscale-node'`(127.0.0.1 待受 + `TailscaleSidecar`)。`SidecarInstaller` が取得・検証・削除。**取得は `sidecarPin.ts` にピン留めしたバージョン + SHA256 だけ**(未設定なら取得も実行も拒否 = fail-closed)。起動のたびにハッシュを再照合。`latest` は使わない。
+- 共有シークレットが一致したリクエストだけ、サイドカーが付けた `X-Forwarded-For` を接続元として信頼する(`createSidecarTrust`)。loopback から来た、というだけでは信頼しない。
+- IPC: `TAILSCALE_STATUS / INSTALL / UNINSTALL / AUTHKEY_SET / LOGOUT`。UI は「外部ツール」に取得・更新・削除・Auth key・ログアウト、「内蔵HTTPサーバー」に端末名・HTTPS・一時端末。ログイン用 URL は設定画面とヘッドレスのダッシュボードに出る。
+- 検証: 偽のサイドカー(プロトコルを話す node スクリプト)で、ピン未設定・ハッシュ不一致・バージョン違い・正常系(引数に Auth key が載らない・stdin 受け渡し・ログイン後の Auth key 破棄)・プロトコル不一致・クラッシュ時の再起動(最大 5 回)・ログアウトを確認。Go 側はプロキシのヘッダー処理(なりすまし除去・WhoIs 失敗時 403・Host 保持)を `go test` で確認。サンドボックスから Tailscale のコントロールプレーンに届かないため、**実際のログイン・接続は未確認**。
+
+**リリース手順(未実施)**
+1. `nndd-re-tailscale` の `feature/sidecar` を `main` にマージする(サンドボックスの権限では PR・タグ push を行っていない)。
+2. `main` に `v0.1.0` タグを push → CI が 4 ターゲットをビルドして prerelease を作る。
+3. 本体で `node scripts/update-sidecar-pin.mjs v0.1.0`。各バイナリを取得して自前でハッシュを計算し、SHA256SUMS と突き合わせたうえで `sidecarPin.ts` を書き換える。差分をレビューしてコミットする。
+4. 実機(Windows / macOS / Linux)で、取得 → ログイン → 閲覧端末からの再生 → ログアウトを確認する。
 
 ## 4. 検証
 

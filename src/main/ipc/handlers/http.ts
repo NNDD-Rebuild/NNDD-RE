@@ -3,7 +3,9 @@ import { IpcChannel } from '@shared/types';
 import { getConfigStore } from '../../config/ConfigStore';
 import { NnddHttpServer } from '../../server/NnddHttpServer';
 import { LanLibraryClient } from '../../server/LanLibraryClient';
+import fs from 'node:fs';
 import { SecretStore } from '../../server/SecretStore';
+import { SidecarInstaller } from '../../server/tailscale/SidecarInstaller';
 import { createLogger } from '../../util/Logger';
 import { isHeadless } from '../../util/headless';
 import { startHeadlessDashboard } from '../../server/headlessDashboard';
@@ -72,6 +74,42 @@ export function registerHttpHandlers(ctx: IpcHandlerContext): void {
   // アクセストークン (表示・QR 用。再生成すると旧トークンは即無効)
   ipcMain.handle(IpcChannel.HTTPD_TOKEN_GET, () => ({ token: SecretStore.getOrCreateAccessToken() }));
   ipcMain.handle(IpcChannel.HTTPD_TOKEN_REGENERATE, () => ({ token: SecretStore.regenerateAccessToken() }));
+
+  // --- Tailscale サイドカー (独立端末) ---
+  const nodeRunning = (): boolean =>
+    runtimeHttpServer !== null && runtimeHttpServer.getBindMode() === 'tailscale-node';
+
+  ipcMain.handle(IpcChannel.TAILSCALE_STATUS, () => ({
+    ...SidecarInstaller.status(),
+    hasAuthKey: SecretStore.get('tailscaleAuthKey') !== null,
+    hasLogin: fs.existsSync(SidecarInstaller.stateDir()),
+    exposure: nodeRunning() ? runtimeHttpServer?.getExposureStatus() ?? null : null
+  }));
+  ipcMain.handle(IpcChannel.TAILSCALE_INSTALL, async (event) => {
+    await SidecarInstaller.install((pct) => {
+      event.sender.send(IpcChannel.BINARY_INSTALL_PROGRESS, { tool: 'tailscale', pct });
+    });
+    return SidecarInstaller.status();
+  });
+  ipcMain.handle(IpcChannel.TAILSCALE_UNINSTALL, () => {
+    if (nodeRunning()) throw new Error('内蔵HTTPサーバーを停止してから削除してください');
+    SidecarInstaller.uninstall();
+    return SidecarInstaller.status();
+  });
+  // Auth key は使い捨て。SecretStore に置き、ログインできたらサイドカーの起動処理が消す (空文字で削除)
+  ipcMain.handle(IpcChannel.TAILSCALE_AUTHKEY_SET, (_e, key: unknown) => {
+    const k = typeof key === 'string' ? key.trim() : '';
+    if (k) SecretStore.set('tailscaleAuthKey', k);
+    else SecretStore.delete('tailscaleAuthKey');
+    return { hasAuthKey: k.length > 0 };
+  });
+  // tailnet からログアウトして (端末を削除) 状態を消す。サーバーが動いていなければ状態だけ消す
+  ipcMain.handle(IpcChannel.TAILSCALE_LOGOUT, async () => {
+    const loggedOut = nodeRunning() ? await runtimeHttpServer!.logoutExposure() : false;
+    if (!loggedOut) SidecarInstaller.removeState();
+    SecretStore.delete('tailscaleAuthKey');
+    return { loggedOut };
+  });
 
   // --- LANライブラリ (リモートNNDD参照) ---
   const lanClient = (cfg: { address: string; port: number }): LanLibraryClient =>

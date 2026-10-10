@@ -18,10 +18,11 @@ import { CommentXmlReader } from '../nicovideo/comment/CommentXmlReader';
 import { ThumbInfoXmlReader } from '../nicovideo/video/ThumbInfoXmlReader';
 import { generateLibraryPage } from './libraryPage';
 import { registerWebPlayerRoutes } from './webPlayerBridge';
-import { createHostGuard, createTokenGuard, maskTokenInUrl } from './accessControl';
+import { clientIpOf, createHostGuard, createSidecarTrust, createTokenGuard, maskTokenInUrl } from './accessControl';
 import { SecretStore } from './SecretStore';
 import type { Exposure, ExposureStatus } from './tailscale/exposure';
 import { TailscaleServe } from './tailscale/TailscaleServe';
+import { TailscaleSidecar } from './tailscale/TailscaleSidecar';
 
 const log = createLogger('HTTPServer');
 
@@ -72,6 +73,8 @@ export class NnddHttpServer {
     // アクセス制御はボディ解析より前に置く (拒否するリクエストのボディを読まない)。
     // Host / Origin 検証は全モードで常時適用 (DNS リバインディング・CSRF 対策)、
     // トークン認証は tailscale モード、または設定 httpServer.requireToken が有効なときだけ
+    // サイドカー経由 (共有シークレット一致) のリクエストだけ、転送された接続元IPを信頼する
+    this.app.use(createSidecarTrust((given) => this.exposure?.verifySecret?.(given) ?? false));
     this.app.use(createHostGuard({ getAllowedHosts: () => this.getAllowedHosts() }));
     this.app.use(
       createTokenGuard({
@@ -97,6 +100,12 @@ export class NnddHttpServer {
       this.exposure = new TailscaleServe(httpCfg.serveHttpsPort ?? 8443);
       // Tailscale Serve 経由のリクエストは 127.0.0.1 から届くため、X-Forwarded-For を信頼して接続元を集計する
       this.app.set('trust proxy', 'loopback');
+    } else if (this.bindMode === 'tailscale-node') {
+      this.exposure = new TailscaleSidecar({
+        hostname: httpCfg.nodeHostname || 'nndd-re',
+        https: httpCfg.nodeHttps === true,
+        ephemeral: httpCfg.nodeEphemeral === true
+      });
     }
     this.allowMyList = httpCfg.allowMyList ?? true;
   }
@@ -212,6 +221,15 @@ export class NnddHttpServer {
     return this.running && this.bindMode === 'tailscale' && this.boundAddr === null;
   }
 
+  /**
+   * 独立端末 (tailscale-node) をログアウトして状態を消す。サーバーが動いていなくても状態ディレクトリは消す。
+   * 返り値: tailnet 側の端末も削除できた
+   */
+  async logoutExposure(): Promise<boolean> {
+    if (this.exposure instanceof TailscaleSidecar) return this.exposure.logout();
+    return false;
+  }
+
   getBindMode(): HttpBindMode {
     return this.bindMode;
   }
@@ -268,14 +286,14 @@ export class NnddHttpServer {
     // 接続台数の集計 (ステータス表示・ヘルスチェック自身のアクセスは除く)
     this.app.use((req, _res, next) => {
       if (req.path !== '/status' && req.path !== '/api/status' && req.path !== '/health') {
-        this.stats.recordRequest(req.ip ?? req.socket.remoteAddress ?? '');
+        this.stats.recordRequest(clientIpOf(req));
       }
       next();
     });
 
     // 全リクエストをログ
     this.app.use((req, _res, next) => {
-      log.verbose(`→ ${req.method} ${maskTokenInUrl(req.url)} from ${req.ip} [CT:${req.headers['content-type'] ?? 'none'} CL:${req.headers['content-length'] ?? 'none'}]`);
+      log.verbose(`→ ${req.method} ${maskTokenInUrl(req.url)} from ${clientIpOf(req)} [CT:${req.headers['content-type'] ?? 'none'} CL:${req.headers['content-length'] ?? 'none'}]`);
       next();
     });
 
@@ -397,7 +415,7 @@ export class NnddHttpServer {
     log.debug('legacy NNDDServer POST:', xml.slice(0, 200));
 
     log.verbose([
-      `NNDDServer ${req.method} from ${req.ip}`,
+      `NNDDServer ${req.method} from ${clientIpOf(req)}`,
       `  URL: ${maskTokenInUrl(req.url)}`,
       `  Content-Type: ${req.headers['content-type'] ?? 'none'}`,
       `  Content-Length: ${req.headers['content-length'] ?? 'none'}`,
@@ -509,7 +527,7 @@ export class NnddHttpServer {
     }
     // 視聴数の集計: 配信が終わる (完了・中断とも close) まで「配信中」とする
     const endStream = this.stats.beginStream(
-      req.ip ?? req.socket.remoteAddress ?? '',
+      clientIpOf(req),
       extractBracketedVideoId(filePath) ?? path.basename(filePath)
     );
     res.on('close', endStream);

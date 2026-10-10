@@ -212,3 +212,30 @@ export function createTokenGuard(opts: AccessControlOptions): RequestHandler {
     }
   };
 }
+
+/** サイドカーが付ける共有シークレットのヘッダー (nndd-re-tailscale の secretHeader と同じ) */
+export const SIDECAR_SECRET_HEADER = 'x-nndd-sidecar-secret';
+
+type RequestWithClient = Request & { nnddClientIp?: string };
+
+/** 接続元IP。サイドカー経由 (共有シークレット一致) なら、サイドカーが付けた X-Forwarded-For を使う */
+export function clientIpOf(req: Request): string {
+  return (req as RequestWithClient).nnddClientIp ?? req.ip ?? req.socket.remoteAddress ?? '';
+}
+
+/**
+ * サイドカー経由のリクエストを判定する。共有シークレットが一致したときだけ X-Forwarded-For を接続元として信頼する。
+ * シークレットのヘッダーは判定後に必ず取り除く (後続の処理・ログに残さない)。
+ */
+export function createSidecarTrust(verify: (given: string | undefined) => boolean): RequestHandler {
+  return (req: Request, _res: Response, next) => {
+    const given = req.headers[SIDECAR_SECRET_HEADER];
+    delete req.headers[SIDECAR_SECRET_HEADER];
+    if (typeof given === 'string' && verify(given)) {
+      const xff = req.headers['x-forwarded-for'];
+      const ip = (typeof xff === 'string' ? xff.split(',').pop() : undefined)?.trim();
+      if (ip) (req as RequestWithClient).nnddClientIp = ip.replace(/^::ffff:/, '');
+    }
+    next();
+  };
+}

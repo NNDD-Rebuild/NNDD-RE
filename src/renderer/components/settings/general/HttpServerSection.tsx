@@ -3,7 +3,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { useConfig } from '@renderer/hooks/useConfig';
 import { Section, Btn } from '../common';
 
-type BindMode = 'loopback' | 'lan' | 'tailscale' | 'tailscale-serve';
+type BindMode = 'loopback' | 'lan' | 'tailscale' | 'tailscale-serve' | 'tailscale-node';
 
 interface ExposureInfo {
   state: 'idle' | 'starting' | 'needs_login' | 'running' | 'error';
@@ -34,6 +34,10 @@ export function HttpServerSection(): JSX.Element {
   const [allowedHosts, setAllowedHosts] = useConfig<string[]>('httpServer.allowedHosts', []);
   const [allowedHostsText, setAllowedHostsText] = useState('');
   const [serveHttpsPort, setServeHttpsPort] = useConfig<number>('httpServer.serveHttpsPort', 8443);
+  const [nodeHostname, setNodeHostname] = useConfig<string>('httpServer.nodeHostname', 'nndd-re');
+  const [nodeHostnameInput, setNodeHostnameInput] = useState('nndd-re');
+  const [nodeHttps, setNodeHttps] = useConfig<boolean>('httpServer.nodeHttps', false);
+  const [nodeEphemeral, setNodeEphemeral] = useConfig<boolean>('httpServer.nodeEphemeral', false);
   const [token, setToken] = useState<string | null>(null);
   const [showToken, setShowToken] = useState(false);
 
@@ -60,7 +64,7 @@ export function HttpServerSection(): JSX.Element {
       .then(([mode, ext]) => {
         // bindMode が無い設定 (旧バージョン) は allowExternal から導出する
         setBindMode(
-          mode === 'loopback' || mode === 'lan' || mode === 'tailscale' || mode === 'tailscale-serve'
+          mode === 'loopback' || mode === 'lan' || mode === 'tailscale' || mode === 'tailscale-serve' || mode === 'tailscale-node'
             ? mode
             : ext === true ? 'lan' : 'loopback'
         );
@@ -78,6 +82,7 @@ export function HttpServerSection(): JSX.Element {
   }, []);
 
   useEffect(() => { setAllowedHostsText(allowedHosts.join(', ')); }, [allowedHosts]);
+  useEffect(() => { setNodeHostnameInput(nodeHostname); }, [nodeHostname]);
 
   // 起動中は Tailscale の接続状態の変化 (待機 → 接続) を反映する
   useEffect(() => {
@@ -246,7 +251,8 @@ export function HttpServerSection(): JSX.Element {
           ['loopback', 'このPCのみ (127.0.0.1)'],
           ['lan', 'LAN内の他端末からのアクセスを許可 (スマホ等から閲覧できます)'],
           ['tailscale', 'Tailscale 経由のみ許可 (外出先から。アクセストークン必須)'],
-          ['tailscale-serve', 'Tailscale Serve で HTTPS 公開 (導入済みの Tailscale を使用。アクセストークン必須)']
+          ['tailscale-serve', 'Tailscale Serve で HTTPS 公開 (導入済みの Tailscale を使用。アクセストークン必須)'],
+          ['tailscale-node', 'Tailscale 独立端末 (NNDD-RE 専用の端末として参加。外部ツールで取得が必要。アクセストークン必須)']
         ] as [BindMode, string][]).map(([mode, label]) => (
           <label key={mode} className="flex items-center gap-2 cursor-pointer select-none py-0.5">
             <input
@@ -293,6 +299,37 @@ export function HttpServerSection(): JSX.Element {
             />
             <span className="text-xs text-nndd-subtext">(デフォルト 8443。443 は他の用途と衝突しやすいため非推奨)</span>
           </div>
+        </div>
+      )}
+      {bindMode === 'tailscale-node' && (
+        <div className="mt-1">
+          <p className="text-xs text-nndd-subtext">
+            NNDD-RE を PC の Tailscale とは別の「専用の端末」として tailnet に参加させます (127.0.0.1 で待受し、LAN内には公開されません)。
+            設定 → 外部ツール で Tailscale (独立端末) を取得し、起動後に表示されるログイン用ページで承認してください。
+          </p>
+          <div className="flex items-center gap-2 mt-1">
+            <span className="text-xs text-nndd-subtext shrink-0">端末名</span>
+            <input
+              type="text"
+              value={nodeHostnameInput}
+              onChange={(e) => setNodeHostnameInput(e.target.value)}
+              onBlur={() => {
+                const v = nodeHostnameInput.trim().toLowerCase();
+                if (/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(v)) void setNodeHostname(v);
+                else setNodeHostnameInput(nodeHostname);
+              }}
+              className="w-40 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
+            />
+            <span className="text-xs text-nndd-subtext">(MagicDNS 名。英数字とハイフン)</span>
+          </div>
+          <label className="flex items-center gap-2 mt-1 cursor-pointer select-none text-sm">
+            <input type="checkbox" checked={nodeHttps} onChange={(e) => void setNodeHttps(e.target.checked)} />
+            HTTPS (443) で公開する (Tailscale の管理画面で HTTPS 証明書の有効化が必要。オフは HTTP 80。tailnet 内は暗号化されます)
+          </label>
+          <label className="flex items-center gap-2 mt-1 cursor-pointer select-none text-sm">
+            <input type="checkbox" checked={nodeEphemeral} onChange={(e) => void setNodeEphemeral(e.target.checked)} />
+            一時的な端末にする (停止すると端末一覧から消えます。毎回ログインが必要になる場合があります)
+          </label>
         </div>
       )}
       {bindMode === 'tailscale' && (

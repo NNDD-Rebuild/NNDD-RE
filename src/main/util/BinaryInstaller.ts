@@ -332,7 +332,7 @@ function fetchText(url: string, signal?: AbortSignal, redirectCount = 0): Promis
 }
 
 /** expectedSha256 を渡すと、保存先へ置く前にハッシュを照合し、不一致なら破棄して失敗にする */
-function downloadFile(
+export function downloadFile(
   url: string,
   destPath: string,
   onProgress: (pct: number) => void,

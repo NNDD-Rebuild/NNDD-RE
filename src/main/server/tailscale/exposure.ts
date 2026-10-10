@@ -27,4 +27,9 @@ export interface Exposure {
   /** 定期確認 (状態の更新・設定が消えていたら再作成) */
   refresh(): Promise<void>;
   getStatus(): ExposureStatus;
+  /**
+   * 転送してきた中継 (サイドカー) が付けた共有シークレットか。一致したリクエストだけ、
+   * 中継が付けた X-Forwarded-For を接続元として信頼する。実装しない公開方式では未定義。
+   */
+  verifySecret?(given: string | undefined): boolean;
 }

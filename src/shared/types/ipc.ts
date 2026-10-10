@@ -276,6 +276,13 @@ export const IpcChannel = {
   LAN_TOKEN_STATUS: 'nndd:lan:token:status',
   LAN_TOKEN_SET: 'nndd:lan:token:set',
 
+  // Tailscale サイドカー (独立端末)。外部ツールとして取得・更新・削除・ログインを行う
+  TAILSCALE_STATUS: 'nndd:tailscale:status',
+  TAILSCALE_INSTALL: 'nndd:tailscale:install',
+  TAILSCALE_UNINSTALL: 'nndd:tailscale:uninstall',
+  TAILSCALE_AUTHKEY_SET: 'nndd:tailscale:authkey:set',
+  TAILSCALE_LOGOUT: 'nndd:tailscale:logout',
+
   // ログ
   LOG_READ: 'nndd:log:read',
   LOG_CLEAR: 'nndd:log:clear',

@@ -34,6 +34,12 @@ export function startHeadlessDashboard(server: NnddHttpServer): void {
       lines.push('');
       lines.push(`接続台数: ${s.clients}   視聴数: ${s.viewers}`);
       if (server.isWaitingForTailscale()) lines.push('Tailscale の接続を待っています…');
+      // Tailscale への公開 (serve / 独立端末) のログイン待ち・エラー。ヘッドレスではここに承認用 URL を出す
+      const ex = server.getExposureStatus();
+      if (ex && (ex.state === 'needs_login' || ex.state === 'error')) {
+        if (ex.message) lines.push(ex.message);
+        if (ex.authUrl) lines.push(`ログイン用URL: ${ex.authUrl}`);
+      }
       for (const v of s.viewerList) lines.push(`  視聴中: ${v.ip}  ${v.videoId}`);
       lines.push('');
       lines.push(`ステータス: ${urls[0]?.replace(/\/library(\?.*)?$/, '/status$1') ?? ''}`);

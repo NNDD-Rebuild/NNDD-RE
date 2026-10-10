@@ -7,7 +7,7 @@ import { COMMENT_FONT_FAMILY } from '@shared/constants';
  * 元: src/org/mineap/util/config/ConfigManager.as
  */
 /** 内蔵HTTPサーバーの待受範囲 */
-export type HttpBindMode = 'loopback' | 'lan' | 'tailscale' | 'tailscale-serve';
+export type HttpBindMode = 'loopback' | 'lan' | 'tailscale' | 'tailscale-serve' | 'tailscale-node';
 
 /** 設定から待受範囲を決める。bindMode が無ければ従来の allowExternal から導出する */
 export function resolveBindMode(cfg: { bindMode?: HttpBindMode; allowExternal?: boolean }): HttpBindMode {
@@ -15,7 +15,8 @@ export function resolveBindMode(cfg: { bindMode?: HttpBindMode; allowExternal?: 
     cfg.bindMode === 'loopback' ||
     cfg.bindMode === 'lan' ||
     cfg.bindMode === 'tailscale' ||
-    cfg.bindMode === 'tailscale-serve'
+    cfg.bindMode === 'tailscale-serve' ||
+    cfg.bindMode === 'tailscale-node'
   ) {
     return cfg.bindMode;
   }
@@ -318,6 +319,7 @@ export interface NnddConfig {
      * - lan: LAN内の他端末にも公開 (0.0.0.0)
      * - tailscale: Tailscale の IP にだけバインド (アクセストークン必須)
      * - tailscale-serve: 127.0.0.1 で待受し、導入済みの Tailscale の `tailscale serve` で HTTPS 公開 (アクセストークン必須)
+     * - tailscale-node: 127.0.0.1 で待受し、RE 専用の独立した Tailscale 端末 (tsnet サイドカー) で公開 (アクセストークン必須)
      */
     bindMode?: HttpBindMode;
     /** 動画ファイルのストリーミング配信を許可 */
@@ -328,6 +330,12 @@ export interface NnddConfig {
     requireToken: boolean;
     /** tailscale-serve モードで使う HTTPS ポート (他の用途と衝突しにくい 8443 が既定) */
     serveHttpsPort: number;
+    /** tailscale-node モードの tailnet 上の端末名 (MagicDNS 名になる) */
+    nodeHostname: string;
+    /** tailscale-node モードで HTTPS (443) 公開する (管理画面で HTTPS 証明書の有効化が必要)。false は HTTP (80) */
+    nodeHttps: boolean;
+    /** tailscale-node モードを一時的な端末として登録する (停止すると端末一覧から消える) */
+    nodeEphemeral: boolean;
     /** Host ヘッダーとして追加で許可する名前 (`example.lan` / `*.example.lan`)。DNS リバインディング対策の例外 */
     allowedHosts: string[];
   };
@@ -536,6 +544,9 @@ const DEFAULTS: NnddConfig = {
     allowMyList: true,
     requireToken: false,
     serveHttpsPort: 8443,
+    nodeHostname: 'nndd-re',
+    nodeHttps: false,
+    nodeEphemeral: false,
     allowedHosts: []
   },
   remoteNndd: {

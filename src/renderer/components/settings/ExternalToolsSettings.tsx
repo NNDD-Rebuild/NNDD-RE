@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useConfig } from '@renderer/hooks/useConfig';
 import { IpcChannel } from '@shared/types';
+import { TailscaleSidecarSection } from './TailscaleSidecarSection';
 
 export interface BinaryStatus {
   found: boolean;
@@ -277,6 +278,8 @@ export function ExternalToolsSettings(): JSX.Element {
         noInstallNote="ffmpeg をインストール後、再起動してください:"
         platform={platform}
       />
+
+      <TailscaleSidecarSection />
 
       <div className="space-y-2">
         <h3 className="text-sm font-semibold text-nndd-text">外部プレイヤー</h3>

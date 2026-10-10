@@ -10,7 +10,7 @@ const FILE_NAME = 'nndd-http-secrets.json';
 /** safeStorage が使えない環境で平文保存した値の目印 */
 const PLAIN_PREFIX = 'plain:';
 
-type SecretName = 'httpAccessToken' | 'remoteNnddToken';
+type SecretName = 'httpAccessToken' | 'remoteNnddToken' | 'tailscaleAuthKey';
 
 /**
  * HTTP アクセストークン等の秘密情報の保管庫。
