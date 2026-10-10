@@ -99,6 +99,16 @@ function formatDateTime(ms: number): string {
   return `${d.getMonth() + 1}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/** 番組の長さ (開始〜終了予定)。1 時間未満は M:SS、以上は H:MM:SS。長さが分からなければ空文字 */
+function formatProgramLength(beginMs: number, endMs: number): string {
+  if (!(beginMs > 0 && endMs > beginMs)) return '';
+  const s = Math.floor((endMs - beginMs) / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const pad = (n: number): string => String(n).padStart(2, '0');
+  return h > 0 ? `${h}:${pad(m)}:${pad(s % 60)}` : `${m}:${pad(s % 60)}`;
+}
+
 const STATUS_BADGE: Record<string, { label: string; className: string }> = {
   ON_AIR: { label: '放送中', className: 'bg-red-600' },
   RELEASED: { label: '放送予定', className: 'bg-blue-600' },
@@ -139,6 +149,7 @@ function ProgramCard({
   onRecordReserve?: (p: LiveProgramSummary) => void;
 }): JSX.Element {
   const badge = STATUS_BADGE[p.status];
+  const length = formatProgramLength(p.beginAtMs, p.endAtMs);
   // 見た目は動画一覧のカード (VideoCard のグリッド表示) に揃える
   return (
     <div
@@ -163,6 +174,9 @@ function ProgramCard({
           <span className="absolute top-1 right-1 px-1.5 py-0.5 rounded text-[10px] text-white bg-black/70">
             限定
           </span>
+        )}
+        {length && (
+          <span className="absolute bottom-1 right-1 px-1 py-0.5 rounded text-xs text-white bg-black/80">{length}</span>
         )}
       </div>
       <div className="p-2 flex-1 flex flex-col">
