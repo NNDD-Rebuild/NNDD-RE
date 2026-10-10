@@ -18,6 +18,8 @@ import { CommentXmlReader } from '../nicovideo/comment/CommentXmlReader';
 import { ThumbInfoXmlReader } from '../nicovideo/video/ThumbInfoXmlReader';
 import { generateLibraryPage } from './libraryPage';
 import { registerWebPlayerRoutes } from './webPlayerBridge';
+import { createHostGuard, createTokenGuard, maskTokenInUrl } from './accessControl';
+import { SecretStore } from './SecretStore';
 
 const log = createLogger('HTTPServer');
 
@@ -41,6 +43,8 @@ const esc = (s: string): string =>
  *
  *  - `GET  /library`, `/web-player.html?videoId=` ─ REのライブラリ+プレイヤーをそのままブラウザ配信 (web-app.html)
  *  - `POST /api/ipc` ─ ブラウザ版プレイヤー用 IPC ブリッジ (ホワイトリスト制)
+ *
+ * アクセス制御 (accessControl.ts): Host / Origin 検証を常時、アクセストークン認証を設定で有効化できる。
  */
 export class NnddHttpServer {
   private app: Express;
@@ -116,12 +120,37 @@ export class NnddHttpServer {
     return this.stats.snapshot();
   }
 
-  /** アクセス用URL一覧 (LAN公開時は各NICのIPv4) */
+  /** アクセス用URL一覧 (LAN公開時は各NICのIPv4)。トークン認証が有効なら ?token= を付ける */
   getAccessUrls(): string[] {
-    return getAccessUrls(this.port, this.allowExternal);
+    const urls = getAccessUrls(this.port, this.allowExternal);
+    if (!this.isTokenRequired()) return urls;
+    const token = encodeURIComponent(SecretStore.getOrCreateAccessToken());
+    return urls.map((u) => `${u}?token=${token}`);
+  }
+
+  /** トークン認証が有効か (設定の変更を再起動なしで反映する) */
+  isTokenRequired(): boolean {
+    return getConfigStore().get('httpServer').requireToken === true;
+  }
+
+  private getAllowedHosts(): string[] {
+    const hosts = getConfigStore().get('httpServer').allowedHosts;
+    return Array.isArray(hosts) ? hosts : [];
   }
 
   private setupRoutes(): void {
+    // アクセス制御: Host / Origin 検証は全モードで常時適用 (DNS リバインディング・CSRF 対策)、
+    // トークン認証は設定 httpServer.requireToken が有効なときだけ
+    this.app.use(createHostGuard({ getAllowedHosts: () => this.getAllowedHosts() }));
+    this.app.use(
+      createTokenGuard({
+        getAllowedHosts: () => this.getAllowedHosts(),
+        isTokenRequired: () => this.isTokenRequired(),
+        getToken: () => SecretStore.getOrCreateAccessToken(),
+        publicPaths: ['/health']
+      })
+    );
+
     // 接続台数の集計 (ステータス表示・ヘルスチェック自身のアクセスは除く)
     this.app.use((req, _res, next) => {
       if (req.path !== '/status' && req.path !== '/api/status' && req.path !== '/health') {
@@ -132,7 +161,7 @@ export class NnddHttpServer {
 
     // 全リクエストをログ
     this.app.use((req, _res, next) => {
-      log.verbose(`→ ${req.method} ${req.url} from ${req.ip} [CT:${req.headers['content-type'] ?? 'none'} CL:${req.headers['content-length'] ?? 'none'}]`);
+      log.verbose(`→ ${req.method} ${maskTokenInUrl(req.url)} from ${req.ip} [CT:${req.headers['content-type'] ?? 'none'} CL:${req.headers['content-length'] ?? 'none'}]`);
       next();
     });
 
@@ -255,7 +284,7 @@ export class NnddHttpServer {
 
     log.verbose([
       `NNDDServer ${req.method} from ${req.ip}`,
-      `  URL: ${req.url}`,
+      `  URL: ${maskTokenInUrl(req.url)}`,
       `  Content-Type: ${req.headers['content-type'] ?? 'none'}`,
       `  Content-Length: ${req.headers['content-length'] ?? 'none'}`,
       `  Query: ${JSON.stringify(req.query)}`,

@@ -4,6 +4,7 @@ import { IpcChannel } from '@shared/types';
 import { getConfigStore } from '../../config/ConfigStore';
 import { NnddHttpServer } from '../../server/NnddHttpServer';
 import { LanLibraryClient } from '../../server/LanLibraryClient';
+import { SecretStore } from '../../server/SecretStore';
 import { createLogger } from '../../util/Logger';
 import { isHeadless } from '../../util/headless';
 import { startHeadlessDashboard } from '../../server/headlessDashboard';
@@ -59,11 +60,26 @@ export function registerHttpHandlers(ctx: IpcHandlerContext): void {
     return { running: false };
   });
 
-  // --- LANライブラリ (本家NNDD互換クライアント) ---
+  // アクセストークン (表示・QR 用。再生成すると旧トークンは即無効)
+  ipcMain.handle(IpcChannel.HTTPD_TOKEN_GET, () => ({ token: SecretStore.getOrCreateAccessToken() }));
+  ipcMain.handle(IpcChannel.HTTPD_TOKEN_REGENERATE, () => ({ token: SecretStore.regenerateAccessToken() }));
+
+  // --- LANライブラリ (リモートNNDD参照) ---
+  const lanClient = (cfg: { address: string; port: number }): LanLibraryClient =>
+    new LanLibraryClient(cfg.address, cfg.port, SecretStore.get('remoteNnddToken') ?? undefined);
+
+  // 接続先のアクセストークン (設定には保存せず SecretStore へ。空文字で削除)
+  ipcMain.handle(IpcChannel.LAN_TOKEN_STATUS, () => ({ hasToken: SecretStore.get('remoteNnddToken') !== null }));
+  ipcMain.handle(IpcChannel.LAN_TOKEN_SET, (_e, token: unknown) => {
+    const t = typeof token === 'string' ? token.trim() : '';
+    if (t) SecretStore.set('remoteNnddToken', t);
+    else SecretStore.delete('remoteNnddToken');
+    return { hasToken: t.length > 0 };
+  });
   ipcMain.handle(IpcChannel.LAN_STATUS, async () => {
     const cfg = getConfigStore().get('remoteNndd');
     if (!cfg.enabled || !cfg.address) return { reachable: false };
-    const client = new LanLibraryClient(cfg.address, cfg.port);
+    const client = lanClient(cfg);
     const reachable = await client.ping();
     return { reachable };
   });
@@ -71,14 +87,14 @@ export function registerHttpHandlers(ctx: IpcHandlerContext): void {
   ipcMain.handle(IpcChannel.LAN_LIBRARY_LIST, async () => {
     const cfg = getConfigStore().get('remoteNndd');
     if (!cfg.enabled || !cfg.address) return [];
-    const client = new LanLibraryClient(cfg.address, cfg.port);
+    const client = lanClient(cfg);
     return await client.getVideoIdList();
   });
 
   ipcMain.handle(IpcChannel.LAN_VIDEO_STREAM, async (_e, videoId: string) => {
     const cfg = getConfigStore().get('remoteNndd');
     if (!cfg.enabled || !cfg.address) return null;
-    const client = new LanLibraryClient(cfg.address, cfg.port);
+    const client = lanClient(cfg);
     return await client.getVideoById(videoId);
   });
 }

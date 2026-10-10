@@ -34,8 +34,27 @@ function parseAttrs(attrStr: string): Record<string, string> {
 export class LanLibraryClient {
   private base: string;
 
-  constructor(address: string, port: number) {
+  /** token: 接続先がアクセストークン認証を要求している場合のトークン (Authorization: Bearer で送る) */
+  constructor(address: string, port: number, private readonly token?: string) {
     this.base = `http://${address}:${port}`;
+  }
+
+  private xmlHeaders(): Record<string, string> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/xml' };
+    if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
+    return headers;
+  }
+
+  /** 動画URLは <video> から直接読まれ、ヘッダーを付けられないため ?token= で渡す */
+  private withToken(url: string): string {
+    if (!this.token) return url;
+    try {
+      const u = new URL(url);
+      u.searchParams.set('token', this.token);
+      return u.toString();
+    } catch {
+      return url;
+    }
   }
 
   async ping(): Promise<boolean> {
@@ -43,7 +62,7 @@ export class LanLibraryClient {
     try {
       const resp = await fetch(`${this.base}/NNDDServer`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/xml' },
+        headers: this.xmlHeaders(),
         body: '<nnddRequest type="GET_VIDEO_ID_LIST"/>',
         signal: AbortSignal.timeout(3000)
       });
@@ -59,7 +78,7 @@ export class LanLibraryClient {
     try {
       const resp = await fetch(`${this.base}/NNDDServer`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/xml' },
+        headers: this.xmlHeaders(),
         body: '<nnddRequest type="GET_VIDEO_ID_LIST"/>',
         signal: AbortSignal.timeout(5000)
       });
@@ -92,7 +111,7 @@ export class LanLibraryClient {
       const body = `<nnddRequest type="GET_VIDEO_BY_ID"><video id="${videoId}"/></nnddRequest>`;
       const resp = await fetch(`${this.base}/NNDDServer`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/xml' },
+        headers: this.xmlHeaders(),
         body,
         signal: AbortSignal.timeout(5000)
       });
@@ -104,7 +123,7 @@ export class LanLibraryClient {
       if (!attrs['id'] || !attrs['videoUrl']) return null;
       return {
         videoId: attrs['id'],
-        videoUrl: attrs['videoUrl'],
+        videoUrl: this.withToken(attrs['videoUrl']),
         extension: attrs['extension'] ?? 'mp4',
         filename: m[2].trim()
       };
@@ -118,7 +137,7 @@ export class LanLibraryClient {
     try {
       const resp = await fetch(`${this.base}/NNDDServer`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/xml' },
+        headers: this.xmlHeaders(),
         body: '<nnddRequest type="GET_MYLIST_LIST"/>',
         signal: AbortSignal.timeout(5000)
       });

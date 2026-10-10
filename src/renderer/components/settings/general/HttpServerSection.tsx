@@ -17,6 +17,11 @@ export function HttpServerSection(): JSX.Element {
   const [allowMyList, setAllowMyList] = useState(true);
   const [httpEnabled, setHttpEnabled] = useConfig<boolean>('httpServer.enabled', false);
   const [httpPort, setHttpPort] = useConfig<number>('httpServer.port', 12345);
+  const [requireToken, setRequireToken] = useConfig<boolean>('httpServer.requireToken', false);
+  const [allowedHosts, setAllowedHosts] = useConfig<string[]>('httpServer.allowedHosts', []);
+  const [allowedHostsText, setAllowedHostsText] = useState('');
+  const [token, setToken] = useState<string | null>(null);
+  const [showToken, setShowToken] = useState(false);
 
   const refreshHttpStatus = (): void => {
     window.nndd
@@ -42,6 +47,26 @@ export function HttpServerSection(): JSX.Element {
       .catch(() => {});
     refreshHttpStatus();
   }, []);
+
+  useEffect(() => { setAllowedHostsText(allowedHosts.join(', ')); }, [allowedHosts]);
+
+  // トークン認証が有効なときだけトークンを取得する (QR・表示用)
+  useEffect(() => {
+    if (!requireToken) { setToken(null); return; }
+    window.nndd
+      .invoke<{ token: string }>(window.nndd.channels.HTTPD_TOKEN_GET)
+      .then((r) => setToken(r.token))
+      .catch(() => setToken(null));
+  }, [requireToken]);
+
+  const handleRegenerateToken = async (): Promise<void> => {
+    if (!window.confirm('アクセストークンを再生成します。以前のQRコード・URLは使えなくなります。よろしいですか？')) return;
+    const r = await window.nndd.invoke<{ token: string }>(window.nndd.channels.HTTPD_TOKEN_REGENERATE);
+    setToken(r.token);
+  };
+
+  const withToken = (url: string): string =>
+    requireToken && token ? `${url}?token=${encodeURIComponent(token)}` : url;
 
   const handleHttpStart = async (): Promise<void> => {
     setHttpBusy(true);
@@ -99,7 +124,7 @@ export function HttpServerSection(): JSX.Element {
                 {showQr && (
                   <div className="mt-2 inline-block bg-white p-3">
                     <QRCodeSVG
-                      value={`http://${httpStatus.lanIp ?? 'localhost'}:${httpStatus.port}/library`}
+                      value={withToken(`http://${httpStatus.lanIp ?? 'localhost'}:${httpStatus.port}/library`)}
                       size={128}
                     />
                   </div>
@@ -109,6 +134,7 @@ export function HttpServerSection(): JSX.Element {
                     {httpStatus.lanIp
                       ? `http://${httpStatus.lanIp}:${httpStatus.port}/library`
                       : `http://localhost:${httpStatus.port}/library`}
+                    {requireToken && ' (QRコードにはアクセストークンが含まれます)'}
                   </p>
                 )}
               </div>
@@ -174,6 +200,45 @@ export function HttpServerSection(): JSX.Element {
         />
         <span className="text-xs text-nndd-subtext">(デフォルト 12345)</span>
       </div>
+      <label className="flex items-center gap-2 mt-3 cursor-pointer select-none text-sm">
+        <input
+          type="checkbox"
+          checked={requireToken}
+          onChange={(e) => setRequireToken(e.target.checked)}
+        />
+        アクセストークンを要求する (QRコード・URLのトークンが無いと開けません)
+      </label>
+      {requireToken && (
+        <div className="flex items-center gap-2 mt-2">
+          <span className="text-xs text-nndd-subtext w-12 shrink-0">トークン</span>
+          <input
+            type={showToken ? 'text' : 'password'}
+            readOnly
+            value={token ?? ''}
+            className="flex-1 min-w-0 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm font-mono"
+          />
+          <Btn onClick={() => setShowToken((v) => !v)}>{showToken ? '隠す' : '表示'}</Btn>
+          <Btn onClick={handleRegenerateToken}>再生成</Btn>
+        </div>
+      )}
+      <div className="flex items-center gap-2 mt-3">
+        <span className="text-xs text-nndd-subtext shrink-0">追加で許可するホスト名</span>
+        <input
+          type="text"
+          placeholder="example.lan, *.example.lan"
+          value={allowedHostsText}
+          onChange={(e) => setAllowedHostsText(e.target.value)}
+          onBlur={() =>
+            setAllowedHosts(
+              allowedHostsText.split(',').map((h) => h.trim()).filter((h) => h.length > 0)
+            )
+          }
+          className="flex-1 min-w-0 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
+        />
+      </div>
+      <p className="text-xs text-nndd-subtext mt-1">
+        IPアドレス・PC名・*.local・*.ts.net は自動で許可されます。独自ドメイン名でアクセスする場合だけ追加してください。
+      </p>
       <label className="flex items-center gap-2 mt-3 cursor-pointer select-none text-sm">
         <input
           type="checkbox"

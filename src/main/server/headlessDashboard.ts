@@ -35,7 +35,7 @@ export function startHeadlessDashboard(server: NnddHttpServer): void {
       lines.push(`接続台数: ${s.clients}   視聴数: ${s.viewers}`);
       for (const v of s.viewerList) lines.push(`  視聴中: ${v.ip}  ${v.videoId}`);
       lines.push('');
-      lines.push(`ステータス: ${urls[0]?.replace(/\/library$/, '/status') ?? ''}`);
+      lines.push(`ステータス: ${urls[0]?.replace(/\/library(\?.*)?$/, '/status$1') ?? ''}`);
       lines.push('');
       // QR は先頭 (本命) のURLだけ。他のNICのURLは文字だけ並べる
       if (urls[0]) {

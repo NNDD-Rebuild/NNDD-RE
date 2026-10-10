@@ -6,6 +6,8 @@ export function LanLibrarySection(): JSX.Element {
   const [remoteEnabled, setRemoteEnabled] = useState(false);
   const [remoteAddress, setRemoteAddress] = useState('');
   const [remotePort, setRemotePort] = useState(12300);
+  const [hasToken, setHasToken] = useState(false);
+  const [tokenInput, setTokenInput] = useState('');
 
   useEffect(() => {
     window.nndd
@@ -20,7 +22,17 @@ export function LanLibrarySection(): JSX.Element {
       .invoke<number>(window.nndd.channels.CONFIG_GET, 'remoteNndd.port')
       .then((v) => { if (typeof v === 'number') setRemotePort(v); })
       .catch(() => {});
+    window.nndd
+      .invoke<{ hasToken: boolean }>(window.nndd.channels.LAN_TOKEN_STATUS)
+      .then((r) => setHasToken(r.hasToken))
+      .catch(() => {});
   }, []);
+
+  const saveToken = async (value: string): Promise<void> => {
+    const r = await window.nndd.invoke<{ hasToken: boolean }>(window.nndd.channels.LAN_TOKEN_SET, value);
+    setHasToken(r.hasToken);
+    setTokenInput('');
+  };
 
   return (
     <Section title="LANライブラリ (リモートNNDD参照)">
@@ -63,6 +75,22 @@ export function LanLibrarySection(): JSX.Element {
           className="w-24 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
         />
         <span className="text-xs text-nndd-subtext">(本家NNDDデフォルト: 12300)</span>
+      </div>
+      <div className="flex items-center gap-2 mt-2">
+        <span className="text-xs text-nndd-subtext w-24 shrink-0">アクセストークン</span>
+        <input
+          type="password"
+          placeholder={hasToken ? '設定済み (変更する場合のみ入力)' : '接続先がトークンを要求する場合のみ'}
+          value={tokenInput}
+          onChange={(e) => setTokenInput(e.target.value)}
+          onBlur={() => { if (tokenInput.trim()) void saveToken(tokenInput); }}
+          className="flex-1 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
+        />
+        {hasToken && (
+          <button onClick={() => void saveToken('')} className="text-xs underline text-nndd-subtext">
+            削除
+          </button>
+        )}
       </div>
       <p className="text-xs text-nndd-subtext mt-2">
         同じLAN内の本家NNDDまたはNNDD-REのライブラリを「LANライブラリ」タブで閲覧・再生できます。

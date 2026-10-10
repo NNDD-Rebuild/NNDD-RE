@@ -38,7 +38,7 @@
 
 | フェーズ | 内容 | 状態 |
 |---|---|---|
-| 1 | アクセス制御: Host 検証(全モード)、トークン + Cookie 認証、ログのマスク | 未着手 |
+| 1 | アクセス制御: Host 検証(全モード)、トークン + Cookie 認証、ログのマスク | 実装済み(`feature/tailscale`)。§3 フェーズ 1 の実装メモ参照 |
 | 2 | 既存 Tailscale の検出と表示、bind モード `loopback / lan / tailscale` | 未着手 |
 | 3 | (任意) `tailscale serve` 連携 | 未着手 |
 | 4 | (任意) 独立端末: tsnet サイドカー | 未着手。§8 の基準で着手判断 |
@@ -70,6 +70,16 @@
 - 判定は `remoteAddress` ではなく、bind モードに基づく。
 - `/NNDDServer*` は RE 同士の LAN ライブラリ参照(`LanLibraryClient.ts`)が使う。`tailscale` モードの接続先に対して使えるよう、`LanLibraryClient.ts` に接続先のトークン設定欄を追加する。
 - Host 検証は LAN モードでも適用する。`.local`(mDNS)名など、ユーザーが LAN で使う名前を弾かないよう許可リストを設計する(要確認)。
+
+**実装メモ(フェーズ 1 実装済み)**
+- `src/main/server/accessControl.ts`: Host / Origin 検証とトークン認証(Cookie 引き換え・失敗 10 回/分で 429)。electron 非依存。
+- `src/main/server/SecretStore.ts`: トークンの保管。`userData/nndd-http-secrets.json` に `safeStorage` で暗号化。**`httpServer` / `remoteNndd` は Gist バックアップの同期対象なので、トークンを ConfigStore に置かない。**
+- 設定: `httpServer.requireToken`(既定 false)、`httpServer.allowedHosts`(既定 [])。フェーズ 2 で `tailscale` モードのとき `requireToken` を強制する。
+- Host 許可: IP リテラル、`localhost`、ドットなしの単一ラベル名、`*.local`、`*.ts.net`、PC 名、`allowedHosts`。
+- Origin ヘッダーがある場合は Host と同一オリジンのみ許可(CSRF 対策)。
+- IPC: `HTTPD_TOKEN_GET` / `HTTPD_TOKEN_REGENERATE` / `LAN_TOKEN_STATUS` / `LAN_TOKEN_SET`。`LanLibraryClient` は Bearer、動画 URL は `?token=` で渡す。
+- 検証: `tc:all`、`check:ipc`、`build` 通過。ガードの結合テスト(Host / Origin / Bearer / Cookie 引き換え / 429)は使い捨てスクリプトで確認(リポジトリにテスト基盤が無いためコミットしていない)。
+- 未実施: 実機(Win / Mac)での手動確認、`/status` ページの Cookie 引き換え経路のブラウザ確認。
 
 ### フェーズ 2: Tailscale の検出と bind モード
 

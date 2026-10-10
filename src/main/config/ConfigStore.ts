@@ -300,6 +300,10 @@ export interface NnddConfig {
     allowVideo: boolean;
     /** マイリスト情報の共有を許可 */
     allowMyList: boolean;
+    /** アクセストークン認証を要求する (トークン本体は SecretStore。ここには置かない: Gist バックアップの同期対象のため) */
+    requireToken: boolean;
+    /** Host ヘッダーとして追加で許可する名前 (`example.lan` / `*.example.lan`)。DNS リバインディング対策の例外 */
+    allowedHosts: string[];
   };
 
   /** リモートNNDDサーバー (LANライブラリ参照、本家NNDD互換) */
@@ -500,7 +504,9 @@ const DEFAULTS: NnddConfig = {
     port: 12345,
     allowExternal: false,
     allowVideo: true,
-    allowMyList: true
+    allowMyList: true,
+    requireToken: false,
+    allowedHosts: []
   },
   remoteNndd: {
     enabled: false,
