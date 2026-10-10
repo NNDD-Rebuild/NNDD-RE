@@ -139,6 +139,7 @@ export function ExternalToolsSettings(): JSX.Element {
   const [ncvEnabled, setNcvEnabled] = useConfig<boolean>('live.ncvEnabled', false);
   const [ncvPath, setNcvPath] = useConfig<string>('live.ncvPath', '');
   const [ncvInput, setNcvInput] = useState('');
+  const [ncvTimeshift, setNcvTimeshift] = useConfig<boolean>('live.ncvTimeshift', true);
   const [ncvLaunchDelaySec, setNcvLaunchDelaySec] = useConfig<number>('live.ncvLaunchDelaySec', 3);
   const [ncvDelayInput, setNcvDelayInput] = useState('3');
 
@@ -318,6 +319,15 @@ export function ExternalToolsSettings(): JSX.Element {
             onChange={(e) => void setNcvEnabled(e.target.checked)}
           />
           生放送を開くとき NCV も起動する
+        </label>
+        <label className="flex items-center gap-2 text-sm cursor-pointer select-none ml-6">
+          <input
+            type="checkbox"
+            checked={ncvTimeshift}
+            disabled={!ncvEnabled}
+            onChange={(e) => void setNcvTimeshift(e.target.checked)}
+          />
+          タイムシフト視聴時も起動する
         </label>
         <div className="flex items-center gap-2">
           <input

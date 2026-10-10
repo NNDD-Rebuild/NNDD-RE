@@ -13,6 +13,13 @@ const log = createLogger('LivePlayerManager');
 const NICO_URL_PATTERNS = ['https://*.nicovideo.jp/*'];
 
 /**
+ * プレイヤーの URL に付ける NCV 連携の状態 (コメントリストをタブ表示に固定するかの判断に使う)
+ * - linked: NCV から呼ばれた (NCV は起動済み)
+ * - pending: RE から NCV を起動する予定。起動するかは視聴開始後に決まり、LiveStartResult.ncvLaunched で返す
+ */
+type NcvLink = 'linked' | 'pending';
+
+/**
  * 生放送プレイヤーウィンドウの管理。
  *
  * ウィンドウごとにメモリ上の専用 partition を使い、HLS 取得に必要な署名Cookie
@@ -31,7 +38,17 @@ export class LivePlayerManager {
    * 開いている生放送ウィンドウ → 表示中の番組。
    * requestedId は開くときに指定された ID (co/ch の場合もある)、programId は解決後の lv ID
    */
-  private readonly windows = new Map<BrowserWindow, { requestedId: string; programId?: string }>();
+  private readonly windows = new Map<
+    BrowserWindow,
+    {
+      requestedId: string;
+      programId?: string;
+      /** NCV 連携 ON で開いた。タイムシフトかどうかは視聴開始後に分かるので、起動は startSession で決める */
+      ncvPending?: boolean;
+      /** NCV を起動済み (視聴を開始し直しても二重に起動しない) */
+      ncvLaunched?: boolean;
+    }
+  >();
   private seq = 0;
 
   static get(): LivePlayerManager {
@@ -43,7 +60,8 @@ export class LivePlayerManager {
    * 生放送プレイヤーを開く。
    * - 同じ番組を表示中のウィンドウがあれば、それを前面に出すだけ
    * - 設定 live.allowMultipleWindows が OFF なら、既存の生放送ウィンドウで番組を切り替える
-   * - 設定 live.ncvEnabled が ON なら NCV も起動する (同じ番組を開き済みの場合と fromNcv の場合を除く)
+   * - 設定 live.ncvEnabled が ON なら NCV も起動する (同じ番組を開き済みの場合と fromNcv の場合を除く)。
+   *   起動は視聴開始後 (startSession) で、タイムシフトは設定 live.ncvTimeshift が OFF なら起動しない
    *   fromNcv は NCV 側から RE が呼ばれたことを示し、NCV を再び起動する相互起動ループを防ぐ
    */
   open(programId: string, opts?: { fromNcv?: boolean }): void {
@@ -56,12 +74,13 @@ export class LivePlayerManager {
     }
     // NCV 連携で開く場合 (RE から NCV を起動した / NCV から呼ばれた) は、コメントは NCV で見るため
     // コメントリストを浮動ウィンドウにせずタブ表示に固定する
-    const ncv = opts?.fromNcv ? true : this.launchNcv(programId);
+    const ncv: NcvLink | undefined = opts?.fromNcv ? 'linked' : this.ncvWanted() ? 'pending' : undefined;
+    const ncvPending = ncv === 'pending';
     const allowMultiple = getConfigStore().get('live')?.allowMultipleWindows ?? false;
     const reuse = allowMultiple ? undefined : [...this.windows.keys()][0];
     if (reuse) {
       // 読み込み直すと renderer が LIVE_START し直し、同じ webContents の旧セッションは startSession で止まる
-      this.windows.set(reuse, { requestedId: programId });
+      this.windows.set(reuse, { requestedId: programId, ncvPending });
       this.loadPage(reuse, programId, ncv);
       this.focus(reuse);
       return;
@@ -69,14 +88,20 @@ export class LivePlayerManager {
     this.createWindow(programId, ncv);
   }
 
+  /** NCV 連携が有効で、起動できる設定か */
+  private ncvWanted(): boolean {
+    const live = getConfigStore().get('live');
+    return Boolean(live?.ncvEnabled && live.ncvPath?.trim());
+  }
+
   /**
    * NCV を起動して番組に接続させる。一枠設定 (allowMultipleWindows OFF) のときは起動済みの NCV を使い回す。
-   * 設定 live.ncvLaunchDelaySec 秒待ってから起動する (NNDD-RE の視聴接続を先に済ませるため)。起動予定なら true
+   * 設定 live.ncvLaunchDelaySec 秒待ってから起動する (NNDD-RE の視聴接続を先に済ませるため)
    */
-  private launchNcv(programId: string): boolean {
+  private launchNcv(programId: string): void {
     const live = getConfigStore().get('live');
     const ncvPath = live?.ncvPath?.trim();
-    if (!live?.ncvEnabled || !ncvPath) return false;
+    if (!live || !ncvPath) return;
     const args = [`https://live.nicovideo.jp/watch/${programId}`];
     if (!live.allowMultipleWindows) args.push('/singleinstance');
     const delayMs = Math.max(0, Number(live.ncvLaunchDelaySec ?? 3) || 0) * 1000;
@@ -91,7 +116,6 @@ export class LivePlayerManager {
     };
     if (delayMs > 0) setTimeout(spawnNcv, delayMs);
     else spawnNcv();
-    return true;
   }
 
   /**
@@ -109,8 +133,8 @@ export class LivePlayerManager {
     win.focus();
   }
 
-  private loadPage(win: BrowserWindow, programId: string, ncv = false): void {
-    const query: Record<string, string> = ncv ? { programId, ncv: '1' } : { programId };
+  private loadPage(win: BrowserWindow, programId: string, ncv?: NcvLink): void {
+    const query: Record<string, string> = ncv ? { programId, ncv } : { programId };
     if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
       void win.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/live-player.html?${new URLSearchParams(query)}`);
     } else {
@@ -118,7 +142,7 @@ export class LivePlayerManager {
     }
   }
 
-  private createWindow(programId: string, ncv: boolean): void {
+  private createWindow(programId: string, ncv: NcvLink | undefined): void {
     const bgColor = getConfigStore().get('ui').theme === 'light' ? '#f0f0f0' : '#000000';
     const win = new BrowserWindow({
       width: 1280,
@@ -151,7 +175,7 @@ export class LivePlayerManager {
       else if (level === 2) log.warn(text);
     });
     win.on('ready-to-show', () => win.show());
-    this.windows.set(win, { requestedId: programId });
+    this.windows.set(win, { requestedId: programId, ncvPending: ncv === 'pending' });
     // closed 後は webContents に触れないので、ID は先に控えておく
     const webContentsId = win.webContents.id;
     win.on('closed', () => {
@@ -182,7 +206,14 @@ export class LivePlayerManager {
       const win = BrowserWindow.fromWebContents(sender);
       const entry = win ? this.windows.get(win) : undefined;
       if (entry) entry.programId = result.program.programId;
-      return result;
+      if (!entry?.ncvPending) return result;
+      // タイムシフトは視聴開始後でないと分からない。再度 LIVE_START されても起動は 1 回だけ
+      const ncvLaunched = !result.isTimeshift || (getConfigStore().get('live')?.ncvTimeshift ?? true);
+      if (ncvLaunched && !entry.ncvLaunched) {
+        entry.ncvLaunched = true;
+        this.launchNcv(result.program.programId);
+      }
+      return { ...result, ncvLaunched };
     } catch (e) {
       this.stopSession(id);
       throw e;

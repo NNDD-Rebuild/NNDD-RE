@@ -381,6 +381,8 @@ export interface NnddConfig {
     ncvEnabled: boolean;
     /** NCV 実行ファイルのパス */
     ncvPath: string;
+    /** タイムシフト視聴のときも NCV を起動するか */
+    ncvTimeshift: boolean;
     /** 生放送を開いてから NCV を起動するまでの待ち時間 (秒、0 で待たない) */
     ncvLaunchDelaySec: number;
     /** コメントウィンドウの位置・サイズ (前回閉じたとき) */
@@ -550,6 +552,7 @@ const DEFAULTS: NnddConfig = {
     followNotifyIntervalMin: 5,
     ncvEnabled: false,
     ncvPath: '',
+    ncvTimeshift: true,
     ncvLaunchDelaySec: 3
   },
   liveRecordReservations: [],

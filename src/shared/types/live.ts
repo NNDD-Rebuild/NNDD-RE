@@ -221,6 +221,11 @@ export interface LiveStartResult {
   commentFetchMode: 'all' | 'seek';
   /** ニコ生ゲーム (クルーズの行き先投票など) の実行に必要な情報 */
   akashic: LiveAkashicInfo;
+  /**
+   * NCV を起動した (起動予定の) か。NCV 連携 ON で開いた場合だけ入る。
+   * タイムシフトでは設定 live.ncvTimeshift が OFF なら起動しない
+   */
+  ncvLaunched?: boolean;
 }
 
 /** LIVE_FETCH_COMMENTS_AROUND の戻り値: 取得できた範囲 (番組の vpos 基準、ms) */

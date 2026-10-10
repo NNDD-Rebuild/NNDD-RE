@@ -57,8 +57,13 @@ const TIMESHIFT_ACTIVATION_REQUIRED = '[TIMESHIFT_ACTIVATION_REQUIRED]';
  */
 export default function LivePlayerApp(): JSX.Element {
   const programId = new URLSearchParams(location.search).get('programId') ?? '';
-  /** NCV 連携で開かれた (コメントリストはタブ表示に固定する) */
-  const ncvLinked = new URLSearchParams(location.search).get('ncv') === '1';
+  const ncvParam = new URLSearchParams(location.search).get('ncv');
+  /**
+   * NCV 連携で開かれた (コメントリストはタブ表示に固定する)。
+   * linked は最初から、pending (RE から NCV を起動する予定) は視聴開始後に起動したかが分かる。null は未確定
+   */
+  const [ncvResolved, setNcvResolved] = useState<boolean | null>(ncvParam === 'pending' ? null : ncvParam === 'linked');
+  const ncvLinked = ncvResolved === true;
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -329,6 +334,7 @@ export default function LivePlayerApp(): JSX.Element {
         if (cancelled) return;
         programRef.current = r.program;
         isTimeshiftRef.current = r.isTimeshift;
+        if (r.ncvLaunched !== undefined) setNcvResolved(r.ncvLaunched);
         chasePlayRef.current = r.chasePlay;
         chasePlayAvailableRef.current = r.chasePlayAvailable;
         setIsTimeshift(r.isTimeshift);
@@ -454,7 +460,7 @@ export default function LivePlayerApp(): JSX.Element {
     sendSnapshotRef,
     seekToVposRef,
     defaultCommentDisplay: ncvLinked ? 'side' : defaultCommentDisplay,
-    commentDisplayLoading: ncvLinked ? false : commentDisplayLoading
+    commentDisplayLoading: ncvResolved === null ? true : ncvLinked ? false : commentDisplayLoading
   });
 
   /**
