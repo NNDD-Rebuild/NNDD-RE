@@ -161,7 +161,8 @@ export function createTokenGuard(opts: AccessControlOptions): RequestHandler {
       next();
       return;
     }
-    const ip = req.socket.remoteAddress ?? '';
+    // プロキシ (サイドカー / Tailscale Serve) 経由は socket が常に 127.0.0.1 になる。接続元ごとに数えるため転送元IPを使う
+    const ip = clientIpOf(req);
     const now = Date.now();
     // 期限切れのエントリを掃除する (Map が増え続けないように)
     if (failures.size > 1000) {

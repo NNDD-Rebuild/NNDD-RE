@@ -24,6 +24,7 @@ export function TailscaleSidecarSection(): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [pct, setPct] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [authKey, setAuthKey] = useState('');
 
   const refresh = (): void => {
@@ -42,7 +43,7 @@ export function TailscaleSidecarSection(): JSX.Element {
   }, []);
 
   const run = async (fn: () => Promise<unknown>): Promise<void> => {
-    setBusy(true); setError(null); setPct(0);
+    setBusy(true); setError(null); setInfo(null); setPct(0);
     try {
       await fn();
     } catch (e) {
@@ -62,7 +63,14 @@ export function TailscaleSidecarSection(): JSX.Element {
     if (!window.confirm('この端末を tailnet から削除してログアウトします。再度使うにはログインし直しが必要です。よろしいですか？')) {
       return Promise.resolve();
     }
-    return run(() => window.nndd.invoke(IpcChannel.TAILSCALE_LOGOUT));
+    return run(async () => {
+      const r = await window.nndd.invoke<{ loggedOut: boolean }>(IpcChannel.TAILSCALE_LOGOUT);
+      setInfo(
+        r.loggedOut
+          ? 'ログアウトしました。内蔵HTTPサーバーを再起動すると、再度ログインが必要になります。'
+          : 'この端末のログイン状態を消しました。サイドカーが動いていなかったため、tailnet 側の端末は残っています。Tailscale の管理画面 (Machines) から削除してください。'
+      );
+    });
   };
   const saveAuthKey = (): Promise<void> =>
     run(async () => {
@@ -162,6 +170,7 @@ export function TailscaleSidecarSection(): JSX.Element {
         </p>
       </div>
 
+      {info && <p className="text-xs text-nndd-subtext">{info}</p>}
       {error && <p className="text-xs text-red-500 dark:text-red-400">{error}</p>}
     </section>
   );

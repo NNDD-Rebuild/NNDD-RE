@@ -6,6 +6,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils';
 import { LibraryManager } from './db/LibraryManager';
 import { getConfigStore } from './config/ConfigStore';
 import { registerIpcHandlers } from './ipc/registerIpc';
+import { shutdownHttpServer } from './ipc/handlers/http';
 import { createLogger, setLogLevel } from './util/Logger';
 import { isHeadless } from './util/headless';
 import { NicoContext } from './nicovideo/NicoContext';
@@ -317,6 +318,8 @@ app.on('before-quit', (event) => {
   void (async () => {
     stopStreamServer();
     PlayerManager.get().closeAll();
+    // 内蔵HTTPサーバーと Tailscale への公開 (serve の設定・サイドカー) を止める。応答しなくても終了を妨げない
+    await Promise.race([shutdownHttpServer().catch(() => {}), new Promise<void>((r) => setTimeout(r, 5000))]);
     // ストリーミングキャッシュ (userData/cache/movie) は次回シーク再生のため保持する
     if (trayManager) {
       trayManager.destroy();

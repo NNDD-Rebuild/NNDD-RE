@@ -97,12 +97,14 @@ export class NnddHttpServer {
     const configured = resolveBindMode(httpCfg);
     this.bindMode = forceAllowExternal && configured === 'loopback' ? 'lan' : configured;
     if (this.bindMode === 'tailscale-serve') {
-      this.exposure = new TailscaleServe(httpCfg.serveHttpsPort ?? 8443);
+      // 設定は Gist バックアップ等でも入りうるので、main 側でも検証する (不正値は既定値)
+      const sp = httpCfg.serveHttpsPort;
+      this.exposure = new TailscaleServe(Number.isInteger(sp) && sp >= 1 && sp <= 65535 ? sp : 8443);
       // Tailscale Serve 経由のリクエストは 127.0.0.1 から届くため、X-Forwarded-For を信頼して接続元を集計する
       this.app.set('trust proxy', 'loopback');
     } else if (this.bindMode === 'tailscale-node') {
       this.exposure = new TailscaleSidecar({
-        hostname: httpCfg.nodeHostname || 'nndd-re',
+        hostname: /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(httpCfg.nodeHostname ?? '') ? httpCfg.nodeHostname : 'nndd-re',
         https: httpCfg.nodeHttps === true,
         ephemeral: httpCfg.nodeEphemeral === true
       });
@@ -125,7 +127,11 @@ export class NnddHttpServer {
       throw e;
     }
     // 以降の await 中に stop() された場合は何も始めない
-    if (this.running && this.exposure) await this.exposure.start(this.port);
+    // CLI の探索・serve の設定・サイドカーの起動には時間がかかる。待たずに進めて、状態は getExposureStatus で見せる
+    // (待つと HTTPD_START の IPC が長く返らず、その間は起動中のサーバーとして扱われない)
+    if (this.running && this.exposure) {
+      void this.exposure.start(this.port).catch((e) => log.warn('Tailscale exposure start failed:', e));
+    }
     if (this.running && (this.bindMode === 'tailscale' || this.exposure)) {
       this.watchTimer = setInterval(() => {
         this.syncBinding().catch((e) => log.warn('Tailscale rebind failed (will retry):', e));

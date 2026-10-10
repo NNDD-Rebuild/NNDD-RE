@@ -54,6 +54,8 @@ export class TailscaleSidecar implements Exposure {
   constructor(private readonly opts: SidecarOptions) {}
 
   async start(port: number): Promise<void> {
+    // 二重起動すると旧プロセスを見失って孤児になり、同じ state-dir を取り合う
+    if (this.child) return;
     this.port = port;
     this.wanted = true;
     this.restarts = 0;
@@ -166,6 +168,13 @@ export class TailscaleSidecar implements Exposure {
             authUrl: this.status.authUrl,
             urls: []
           };
+        } else if (ev.state === 'needs_approval') {
+          // ログインは済んでいて、tailnet 管理者による端末の承認待ち
+          this.status = {
+            state: 'needs_login',
+            message: 'tailnet の管理者による端末の承認待ちです。Tailscale の管理画面 (Machines) で承認してください。',
+            urls: []
+          };
         } else if (ev.state === 'starting' && this.status.state !== 'needs_login') {
           this.status = { state: 'starting', urls: [] };
         }
@@ -196,15 +205,28 @@ export class TailscaleSidecar implements Exposure {
     }
   }
 
-  /** 子プロセスの終了を待つ */
+  /**
+   * 子プロセスの終了を待つ。stdout を読み切った後 ('close') まで待つので、終了直前に出た行 (logged_out など) も処理済みになる。
+   * 時間内に終わらなければ kill し、それでも終わらない場合は少しだけ待って諦める。
+   */
   private waitExit(child: ChildProcessWithoutNullStreams, ms: number): Promise<void> {
     return new Promise((resolve) => {
       if (child.exitCode !== null || child.signalCode !== null) {
-        resolve();
+        // 既に終了済み。残りの出力の処理を 1 tick 待つ
+        setImmediate(resolve);
         return;
       }
-      const timer = setTimeout(() => { child.kill(); resolve(); }, ms);
-      child.once('exit', () => { clearTimeout(timer); resolve(); });
+      let killTimer: NodeJS.Timeout | null = null;
+      const timer = setTimeout(() => {
+        child.kill();
+        // kill 後も終了を待つ (旧プロセスが生きたまま次の起動が同じ state-dir を取り合わないように)
+        killTimer = setTimeout(resolve, 2000);
+      }, ms);
+      child.once('close', () => {
+        clearTimeout(timer);
+        if (killTimer) clearTimeout(killTimer);
+        resolve();
+      });
     });
   }
 
@@ -227,8 +249,11 @@ export class TailscaleSidecar implements Exposure {
     const child = this.child;
     let loggedOut = false;
     if (child) {
+      // spawnChild の onLine より前にイベントを見ないよう、logged_out は専用のリスナーで拾う
       const onLine = readline.createInterface({ input: child.stdout });
-      onLine.on('line', (l) => { if (l.includes('"logged_out"')) loggedOut = true; });
+      onLine.on('line', (l) => {
+        try { if ((JSON.parse(l) as SidecarEvent).event === 'logged_out') loggedOut = true; } catch { /* 無視 */ }
+      });
       try { child.stdin.write(JSON.stringify({ cmd: 'logout' }) + '\n'); } catch { /* 終了済み */ }
       await this.waitExit(child, 15_000);
     }

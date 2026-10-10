@@ -17,11 +17,23 @@ const log = createLogger('IPC');
  * 内蔵 HTTP サーバー (HTTPD_*。設定で有効なら登録時に自動起動)・
  * LAN ライブラリ (LAN_*、本家NNDD互換クライアント)。
  */
+/** 内蔵HTTPサーバー (起動中なら)。アプリ終了時に止められるようモジュール内で保持する */
+let runtimeHttpServer: NnddHttpServer | null = null;
+
+/**
+ * アプリ終了時に内蔵HTTPサーバーと Tailscale への公開 (serve の設定・サイドカー) を止める。
+ * 止めないと tailscale serve の設定が残り、次回起動で「別の用途で使用中」と誤判定されうる。
+ */
+export async function shutdownHttpServer(): Promise<void> {
+  const server = runtimeHttpServer;
+  runtimeHttpServer = null;
+  if (server) await server.stop();
+}
+
 export function registerHttpHandlers(ctx: IpcHandlerContext): void {
   const { library } = ctx;
 
   // --- HTTPサーバー制御 ---
-  let runtimeHttpServer: NnddHttpServer | null = null;
 
   // 自動起動 (ヘッドレス時は設定を書き換えず enabled を強制 true 扱い)
   if (isHeadless || getConfigStore().get('httpServer').enabled) {
@@ -85,10 +97,18 @@ export function registerHttpHandlers(ctx: IpcHandlerContext): void {
     hasLogin: fs.existsSync(SidecarInstaller.stateDir()),
     exposure: nodeRunning() ? runtimeHttpServer?.getExposureStatus() ?? null : null
   }));
+  let sidecarInstalling = false;
   ipcMain.handle(IpcChannel.TAILSCALE_INSTALL, async (event) => {
-    await SidecarInstaller.install((pct) => {
-      event.sender.send(IpcChannel.BINARY_INSTALL_PROGRESS, { tool: 'tailscale', pct });
-    });
+    if (nodeRunning()) throw new Error('内蔵HTTPサーバーを停止してから取得・更新してください');
+    if (sidecarInstalling) throw new Error('取得中です');
+    sidecarInstalling = true;
+    try {
+      await SidecarInstaller.install((pct) => {
+        event.sender.send(IpcChannel.BINARY_INSTALL_PROGRESS, { tool: 'tailscale', pct });
+      });
+    } finally {
+      sidecarInstalling = false;
+    }
     return SidecarInstaller.status();
   });
   ipcMain.handle(IpcChannel.TAILSCALE_UNINSTALL, () => {

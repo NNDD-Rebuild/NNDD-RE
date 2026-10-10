@@ -344,13 +344,22 @@ export function downloadFile(
 
     const doRequest = (reqUrl: string, redirectCount = 0): void => {
       if (redirectCount > 10) { reject(new Error('Too many redirects')); return; }
+      // https 以外へのリダイレクトは拒否する (https.get が同期例外を投げて Promise が解決しなくなるのも防ぐ)
+      let target: URL;
+      try {
+        target = new URL(reqUrl);
+      } catch {
+        reject(new Error(`Invalid URL: ${reqUrl}`));
+        return;
+      }
+      if (target.protocol !== 'https:') { reject(new Error(`Refusing non-https URL: ${reqUrl}`)); return; }
 
-      const req = https.get(reqUrl, (res) => {
+      const req = https.get(target, (res) => {
         if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307 || res.statusCode === 308) {
           const location = res.headers['location'];
           if (!location) { reject(new Error('Redirect without location')); return; }
           res.resume();
-          doRequest(location, redirectCount + 1);
+          doRequest(new URL(location, target).toString(), redirectCount + 1);
           return;
         }
         if (res.statusCode !== 200) {

@@ -38,6 +38,7 @@ export function HttpServerSection(): JSX.Element {
   const [nodeHostnameInput, setNodeHostnameInput] = useState('nndd-re');
   const [nodeHttps, setNodeHttps] = useConfig<boolean>('httpServer.nodeHttps', false);
   const [nodeEphemeral, setNodeEphemeral] = useConfig<boolean>('httpServer.nodeEphemeral', false);
+  const [servePortInput, setServePortInput] = useState('8443');
   const [token, setToken] = useState<string | null>(null);
   const [showToken, setShowToken] = useState(false);
 
@@ -83,6 +84,7 @@ export function HttpServerSection(): JSX.Element {
 
   useEffect(() => { setAllowedHostsText(allowedHosts.join(', ')); }, [allowedHosts]);
   useEffect(() => { setNodeHostnameInput(nodeHostname); }, [nodeHostname]);
+  useEffect(() => { setServePortInput(String(serveHttpsPort)); }, [serveHttpsPort]);
 
   // 起動中は Tailscale の接続状態の変化 (待機 → 接続) を反映する
   useEffect(() => {
@@ -145,7 +147,7 @@ export function HttpServerSection(): JSX.Element {
             <>
               <div>
                 <span className="text-green-600 dark:text-green-400">● 起動中</span>
-                {httpStatus.bindMode !== 'tailscale' && httpStatus.bindMode !== 'tailscale-serve' && (
+                {!httpStatus.bindMode?.startsWith('tailscale') && (
                   <span className="ml-2 text-xs text-nndd-subtext">
                     <a
                       href="#"
@@ -293,8 +295,13 @@ export function HttpServerSection(): JSX.Element {
               type="number"
               min={1}
               max={65535}
-              value={serveHttpsPort}
-              onChange={(e) => setServeHttpsPort(Number(e.target.value))}
+              value={servePortInput}
+              onChange={(e) => setServePortInput(e.target.value)}
+              onBlur={() => {
+                const n = Number(servePortInput);
+                if (Number.isInteger(n) && n >= 1 && n <= 65535) void setServeHttpsPort(n);
+                else setServePortInput(String(serveHttpsPort));
+              }}
               className="w-24 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
             />
             <span className="text-xs text-nndd-subtext">(デフォルト 8443。443 は他の用途と衝突しやすいため非推奨)</span>

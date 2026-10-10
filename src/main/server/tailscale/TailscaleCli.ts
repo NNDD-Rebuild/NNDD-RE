@@ -102,18 +102,22 @@ export async function getTailscaleStatus(bin: string): Promise<TailscaleStatus> 
 }
 
 export interface ServeEntry {
-  /** 公開している HTTPS ポート */
-  httpsPort: number;
-  /** プロキシ先 (例 http://127.0.0.1:12345) */
+  /** serve の待受ポート (HTTPS / HTTP / TCP 転送のいずれでも) */
+  port: number;
+  /** HTTPS で公開している */
+  https: boolean;
+  /** `/` のプロキシ先 (例 http://127.0.0.1:12345) */
   proxy: string | null;
+  /** ハンドラが `/` の 1 つだけ (他のパスのハンドラや TCP 転送が無い) */
+  onlyRoot: boolean;
 }
 
 interface ServeStatusJson {
-  TCP?: Record<string, { HTTPS?: boolean; HTTP?: boolean }>;
+  TCP?: Record<string, { HTTPS?: boolean; HTTP?: boolean; TCPForward?: string }>;
   Web?: Record<string, { Handlers?: Record<string, { Proxy?: string; Path?: string; Text?: string }> }>;
 }
 
-/** 現在の `tailscale serve` 設定のうち HTTPS で公開されているポートの一覧 */
+/** 現在の `tailscale serve` で使われているポートの一覧 (HTTPS / HTTP / TCP 転送のすべて。衝突の判定に使う) */
 export async function getServeEntries(bin: string): Promise<ServeEntry[]> {
   let raw: string;
   try {
@@ -128,13 +132,20 @@ export async function getServeEntries(bin: string): Promise<ServeEntry[]> {
   const j = JSON.parse(trimmed) as ServeStatusJson;
   const entries: ServeEntry[] = [];
   for (const [port, cfg] of Object.entries(j.TCP ?? {})) {
-    if (!cfg.HTTPS) continue;
     let proxy: string | null = null;
+    let handlerPaths: string[] = [];
     for (const [hostPort, web] of Object.entries(j.Web ?? {})) {
       if (!hostPort.endsWith(`:${port}`)) continue;
       proxy = web.Handlers?.['/']?.Proxy ?? null;
+      handlerPaths = Object.keys(web.Handlers ?? {});
     }
-    entries.push({ httpsPort: Number(port), proxy });
+    entries.push({
+      port: Number(port),
+      https: cfg.HTTPS === true,
+      proxy,
+      // TCP 転送 (--tcp) のポートは Web ハンドラを持たない。ハンドラが / だけで TCP 転送でもない場合だけ「単純なプロキシ」
+      onlyRoot: !cfg.TCPForward && handlerPaths.length === 1 && handlerPaths[0] === '/'
+    });
   }
   return entries;
 }
@@ -149,8 +160,17 @@ export async function serveOff(bin: string, httpsPort: number): Promise<void> {
   await run(bin, ['serve', `--https=${httpsPort}`, 'off']);
 }
 
+/** CLI の標準エラー出力だけを見る (message には実行したコマンド全体が入り、https など無関係な語に一致してしまうため) */
+function stderrOf(e: unknown): string {
+  return e instanceof TailscaleCliError ? e.stderr : '';
+}
+
 /** 権限不足 (Linux で operator 未設定) らしいエラーか */
 export function isPermissionError(e: unknown): boolean {
-  const text = e instanceof TailscaleCliError ? `${e.message} ${e.stderr}` : String(e);
-  return /access denied|permission denied|operator|sudo/i.test(text);
+  return /access denied|permission denied|must be root|use sudo|operator/i.test(stderrOf(e));
+}
+
+/** HTTPS 証明書 (管理画面の HTTPS Certificates) が無効なことが原因らしいエラーか */
+export function isCertError(e: unknown): boolean {
+  return /https (is )?not enabled|enable https|certificates? (are )?not|HTTPS cert/i.test(stderrOf(e));
 }

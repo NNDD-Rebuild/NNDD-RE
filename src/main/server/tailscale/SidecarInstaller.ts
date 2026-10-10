@@ -38,6 +38,18 @@ function sha256File(file: string): string {
   return createHash('sha256').update(fs.readFileSync(file)).digest('hex');
 }
 
+/** 状態表示 (数秒ごとに呼ばれる) で毎回 20MB を読まないよう、サイズ・更新時刻が同じなら前回のハッシュを使う */
+let hashCache: { file: string; size: number; mtimeMs: number; sha: string } | null = null;
+function sha256FileCached(file: string): string {
+  const st = fs.statSync(file);
+  if (hashCache && hashCache.file === file && hashCache.size === st.size && hashCache.mtimeMs === st.mtimeMs) {
+    return hashCache.sha;
+  }
+  const sha = sha256File(file);
+  hashCache = { file, size: st.size, mtimeMs: st.mtimeMs, sha };
+  return sha;
+}
+
 /** Tailscale サイドカーの取得・検証・削除。取得したバイナリは実行前に毎回ハッシュを照合する */
 export class SidecarInstaller {
   /** テストで差し替えられるようにする */
@@ -79,13 +91,18 @@ export class SidecarInstaller {
     const canInstall = !!asset && !!this.pin.version && !!expected;
     const installed = fs.existsSync(this.localPath());
     const version = installed ? this.installedVersion() : null;
+    // ファイルの改ざん・破損も「最新」と表示しないよう、ハッシュまで確認する
+    let hashOk = false;
+    if (installed && expected) {
+      try { hashOk = sha256FileCached(this.localPath()) === expected; } catch { hashOk = false; }
+    }
     return {
       supported: asset !== null,
       canInstall,
       installed,
       version,
       pinnedVersion: this.pin.version || null,
-      upToDate: installed && version === (this.pin.version || null) && canInstall,
+      upToDate: installed && version === (this.pin.version || null) && canInstall && hashOk,
       path: this.localPath()
     };
   }
@@ -126,7 +143,7 @@ export class SidecarInstaller {
     if (this.installedVersion() !== this.pin.version) {
       throw new Error(`Tailscale サイドカーが古い (または不明な) バージョンです。設定 → 外部ツール で更新してください (必要: ${this.pin.version})`);
     }
-    if (sha256File(file) !== expected) {
+    if (sha256File(file) !== expected) { // 実行直前なのでキャッシュは使わない
       throw new Error('Tailscale サイドカーのファイルが想定と一致しません (改ざん・破損の可能性)。設定 → 外部ツール で取得し直してください');
     }
     return file;
