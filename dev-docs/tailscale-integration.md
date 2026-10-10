@@ -171,6 +171,14 @@
 3. 本体で `node scripts/update-sidecar-pin.mjs v0.1.0`。各バイナリを取得して自前でハッシュを計算し、SHA256SUMS と突き合わせたうえで `sidecarPin.ts` を書き換える。差分をレビューしてコミットする。
 4. 実機(Windows / macOS / Linux)で、取得 → ログイン → 閲覧端末からの再生 → ログアウトを確認する。
 
+**追従の自動化(実装済み。PR を作るところまで。マージは人)**
+- サイドカー側 `update-tailscale.yml`: 毎週月曜 日本時間 5:00(`0 20 * * 0` UTC)に `tailscale.com@latest` を確認し、更新があれば gofmt / vet / test / 4 ターゲットのビルドを通して `chore/update-tailscale-<ver>` の PR を作る。マージ後は Actions → release を手動実行(タグ名を入力。`workflow_dispatch` を追加した。タグ push が使えない環境でもリリースできる)。
+- 本体側 `update-sidecar-pin.yml`: 毎週月曜 日本時間 6:00(`0 21 * * 0` UTC)にサイドカーの最新リリース(prerelease なので一覧の先頭を取る)を確認し、ピンと違えば `scripts/update-sidecar-pin.mjs` で更新して tc:all / check:ipc を通し、`chore/update-sidecar-<tag>` の PR を作る。
+- **自動マージはしない**: ピンは利用者の PC で実行されるバイナリを決める。CI ではログイン・接続の動作確認ができない。
+- リポジトリ設定が必要: Settings → Actions → General → 「Allow GitHub Actions to create and approve pull requests」を両リポジトリで有効にする。`GITHUB_TOKEN` が作った PR では他の workflow(`ci.yml`)が動かないため、検証は各 workflow の中で実施している。
+- Actions が作るコミットの作者は `github-actions[bot]`(署名なし)。GitHub の Web で squash マージすれば、マージコミットは GitHub が署名する。
+- プロトコルを非互換に変えるリリースは自動更新の対象外にする運用: `protocolVersion` を上げる変更は人が本体の `SIDECAR_PROTOCOL` と同時に行う。
+
 ## 4. 検証
 
 CI(`.github/workflows/ci.yml`)と同じ確認をローカルで通してから push する。
