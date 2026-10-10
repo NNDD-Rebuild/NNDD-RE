@@ -131,7 +131,8 @@ export function detectTailscaleIps(): string[] {
  *  - tailscale: Tailscale の IP のみ (未接続なら空)
  */
 export function getAccessUrls(port: number, mode: HttpBindMode): string[] {
-  if (mode === 'loopback') return [`http://127.0.0.1:${port}/library`];
+  // tailscale-serve は待受が 127.0.0.1。公開URLは NnddHttpServer が TailscaleServe から取得する
+  if (mode === 'loopback' || mode === 'tailscale-serve') return [`http://127.0.0.1:${port}/library`];
   if (mode === 'tailscale') return detectTailscaleIps().map((ip) => `http://${ip}:${port}/library`);
   const found: { ip: string; virtual: boolean }[] = [];
   for (const [name, nets] of Object.entries(os.networkInterfaces())) {

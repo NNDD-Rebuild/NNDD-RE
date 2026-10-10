@@ -62,7 +62,8 @@ export function registerHttpHandlers(ctx: IpcHandlerContext): void {
         lanIp,
         bindMode,
         tailscaleIp,
-        waitingForTailscale: runtimeHttpServer.isWaitingForTailscale()
+        waitingForTailscale: runtimeHttpServer.isWaitingForTailscale(),
+        exposure: runtimeHttpServer.getExposureStatus() ?? undefined
       };
     }
     return { running: false };

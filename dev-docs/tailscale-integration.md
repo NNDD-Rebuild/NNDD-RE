@@ -40,7 +40,7 @@
 |---|---|---|
 | 1 | アクセス制御: Host 検証(全モード)、トークン + Cookie 認証、ログのマスク | 実装済み(`feature/tailscale`)。§3 フェーズ 1 の実装メモ参照 |
 | 2 | 既存 Tailscale の検出と表示、bind モード `loopback / lan / tailscale` | 実装済み(`feature/tailscale`)。§3 フェーズ 2 の実装メモ参照 |
-| 3 | (任意) `tailscale serve` 連携 | 未着手 |
+| 3 | (任意) `tailscale serve` 連携 | 実装済み(`feature/tailscale`)。§3 フェーズ 3 の実装メモ参照 |
 | 4 | (任意) 独立端末: tsnet サイドカー | 未着手。§8 の基準で着手判断 |
 
 ### フェーズ 1: アクセス制御
@@ -120,6 +120,14 @@
 - プロキシ経由だと全リクエストが loopback に見える。`app.set('trust proxy')` は未設定なので `req.ip` が潰れ、接続台数集計(`NnddHttpServer.ts` L128)が 1 台になる。信頼する範囲を限定して `X-Forwarded-*` を扱う(安易に有効化すると IP 偽装が可能)。
 - `Tailscale-User-Login` ヘッダーを使う場合は、フェーズ 4 と同じ共有シークレット方式で信頼を担保する。
 - `buildNNDDREVideoByIdXml` の `req.socket.localAddress` ベースの URL 生成を見直す。
+
+**実装メモ(フェーズ 3 実装済み)**
+- `bindMode: 'tailscale-serve'` を追加。127.0.0.1 で待受し、`src/main/server/tailscale/TailscaleServe.ts` が CLI(`TailscaleCli.ts`)で `tailscale serve --bg --https=<port> http://127.0.0.1:<port>` を設定する。トークン必須。
+- 共通インターフェース `Exposure`(`exposure.ts`)。フェーズ 4 のサイドカーも同じ形で実装する。
+- 既存設定の保護: 専用ポート(`httpServer.serveHttpsPort`、既定 8443)。そのポートが別のプロキシ先で使われていたら変更せずエラー。停止時は「同じポート・同じプロキシ先」のエントリだけ `serve --https=<port> off`。`serve reset` は使わない。
+- 状態: Tailscale 未導入(CLI なし)/未接続(NeedsLogin 等)/MagicDNS 無効/権限不足(Linux の operator)/HTTPS 証明書無効を、利用者向けの文言で `HTTPD_STATUS.exposure` に出す。15 秒ごとに再確認し、serve 設定が消えていれば作り直す。
+- `trust proxy` は loopback のみ(接続元の集計用)。旧 XML API の `videoUrl` は `req.socket.localAddress` ではなく検証済みの Host ヘッダー + https で作る。
+- 検証: 偽の `tailscale` CLI(bash)で、未接続・新規作成・既存と同一・他用途との衝突・他ポートの既存設定・権限エラー・CLI 無しを確認(使い捨てスクリプト)。実機の Tailscale は未確認。
 
 ### フェーズ 4: 独立端末(サイドカー)
 

@@ -20,6 +20,8 @@ import { generateLibraryPage } from './libraryPage';
 import { registerWebPlayerRoutes } from './webPlayerBridge';
 import { createHostGuard, createTokenGuard, maskTokenInUrl } from './accessControl';
 import { SecretStore } from './SecretStore';
+import type { Exposure, ExposureStatus } from './tailscale/exposure';
+import { TailscaleServe } from './tailscale/TailscaleServe';
 
 const log = createLogger('HTTPServer');
 
@@ -58,6 +60,8 @@ export class NnddHttpServer {
   private boundAddr: string | null = null;
   private running = false;
   private syncing = false;
+  /** tailscale-serve など、127.0.0.1 待受をさらに Tailscale へ公開する仕組み */
+  private exposure: Exposure | null = null;
   private watchTimer: NodeJS.Timeout | null = null;
   private allowMyList: boolean;
   private readonly stats = new ServerStats();
@@ -89,6 +93,11 @@ export class NnddHttpServer {
     // --allow-external は「このPCのみ」を LAN 公開に引き上げる。tailscale 設定はそのまま (トークン必須を外さない)
     const configured = resolveBindMode(httpCfg);
     this.bindMode = forceAllowExternal && configured === 'loopback' ? 'lan' : configured;
+    if (this.bindMode === 'tailscale-serve') {
+      this.exposure = new TailscaleServe(httpCfg.serveHttpsPort ?? 8443);
+      // Tailscale Serve 経由のリクエストは 127.0.0.1 から届くため、X-Forwarded-For を信頼して接続元を集計する
+      this.app.set('trust proxy', 'loopback');
+    }
     this.allowMyList = httpCfg.allowMyList ?? true;
   }
 
@@ -106,10 +115,12 @@ export class NnddHttpServer {
       this.running = false;
       throw e;
     }
-    // syncBinding の await 中に stop() された場合は監視を始めない
-    if (this.running && this.bindMode === 'tailscale') {
+    // 以降の await 中に stop() された場合は何も始めない
+    if (this.running && this.exposure) await this.exposure.start(this.port);
+    if (this.running && (this.bindMode === 'tailscale' || this.exposure)) {
       this.watchTimer = setInterval(() => {
         this.syncBinding().catch((e) => log.warn('Tailscale rebind failed (will retry):', e));
+        this.exposure?.refresh().catch((e) => log.warn('Tailscale exposure refresh failed:', e));
       }, TAILSCALE_WATCH_INTERVAL_MS);
       this.watchTimer.unref();
     }
@@ -134,6 +145,7 @@ export class NnddHttpServer {
     if (this.bindMode === 'tailscale') {
       addr = detectTailscaleIps()[0] ?? null;
     } else {
+      // loopback / tailscale-serve は 127.0.0.1 (後者は Tailscale Serve が転送してくる)
       addr = this.bindMode === 'lan' ? '0.0.0.0' : '127.0.0.1';
     }
     if (addr === this.boundAddr) return;
@@ -190,6 +202,7 @@ export class NnddHttpServer {
       this.watchTimer = null;
     }
     this.running = false;
+    await this.exposure?.stop();
     await this.closeServer();
     log.info('HTTP server stopped');
   }
@@ -201,6 +214,11 @@ export class NnddHttpServer {
 
   getBindMode(): HttpBindMode {
     return this.bindMode;
+  }
+
+  /** Tailscale への公開状態 (tailscale-serve など。無ければ null) */
+  getExposureStatus(): ExposureStatus | null {
+    return this.exposure ? this.exposure.getStatus() : null;
   }
 
   setAllowVideo(allow: boolean): void {
@@ -218,7 +236,7 @@ export class NnddHttpServer {
 
   /** アクセス用URL一覧 (LAN公開時は各NICのIPv4)。トークン認証が有効なら ?token= を付ける */
   getAccessUrls(): string[] {
-    const urls = getAccessUrls(this.port, this.bindMode);
+    const urls = this.baseAccessUrls();
     if (!this.isTokenRequired()) return urls;
     const token = encodeURIComponent(SecretStore.getOrCreateAccessToken());
     return urls.map((u) => `${u}?token=${token}`);
@@ -226,13 +244,19 @@ export class NnddHttpServer {
 
   /** 現在の待受範囲で到達できるホスト (トークンなし。設定画面の表示用。getAccessUrls と同じ優先順位) */
   getAccessHosts(): string[] {
-    return getAccessUrls(this.port, this.bindMode).map((u) => new URL(u).hostname);
+    return this.baseAccessUrls().map((u) => new URL(u).hostname);
+  }
+
+  /** トークンなしのアクセスURL。Tailscale への公開 (serve など) は公開が成立しているときだけ返す */
+  private baseAccessUrls(): string[] {
+    if (this.exposure) return this.exposure.getStatus().urls;
+    return getAccessUrls(this.port, this.bindMode);
   }
 
   /** トークン認証が有効か (設定の変更を再起動なしで反映する) */
   isTokenRequired(): boolean {
     // tailscale モードは tailnet の他端末にも届くため、設定に関わらずトークン必須
-    return this.bindMode === 'tailscale' || getConfigStore().get('httpServer').requireToken === true;
+    return this.bindMode.startsWith('tailscale') || getConfigStore().get('httpServer').requireToken === true;
   }
 
   private getAllowedHosts(): string[] {
@@ -527,7 +551,7 @@ export class NnddHttpServer {
   }
 
   private async buildStatus(): Promise<
-    ServerStatsSnapshot & { urls: { url: string; qrSvg: string }[]; allowExternal: boolean; bindMode: HttpBindMode; waitingForTailscale: boolean }
+    ServerStatsSnapshot & { urls: { url: string; qrSvg: string }[]; allowExternal: boolean; bindMode: HttpBindMode; waitingForTailscale: boolean; exposure: ExposureStatus | null }
   > {
     // QR は先頭 (本命) のURLだけ。複数NICでもQRが並ばないようにする
     const urls = await Promise.all(
@@ -541,7 +565,8 @@ export class NnddHttpServer {
       urls,
       allowExternal: this.bindMode === 'lan',
       bindMode: this.bindMode,
-      waitingForTailscale: this.isWaitingForTailscale()
+      waitingForTailscale: this.isWaitingForTailscale(),
+      exposure: this.getExposureStatus()
     };
   }
 
@@ -711,8 +736,14 @@ export class NnddHttpServer {
     const vid = this.extractVideoId(v.uri) ?? '';
     const filename = path.basename(v.uri);
     const ext = path.extname(v.uri).slice(1);
-    const localAddr = (req.socket.localAddress ?? '').replace(/^::ffff:/, '');
-    const videoUrl = `http://${localAddr}:${this.port}/NNDDServer/${esc(vid)}`;
+    // 接続先が実際に使ったホスト名で URL を作る (Host は hostGuard で検証済み。プロキシ経由 (Tailscale Serve) でも正しくなる)
+    const hostHeader = req.headers.host;
+    // (Tailscale Serve は TLS を終端するので https。X-Forwarded-Proto の有無に依存しない)
+    const proto = this.bindMode === 'tailscale-serve' ? 'https' : req.protocol;
+    const base = hostHeader
+      ? `${proto}://${hostHeader}`
+      : `http://${(req.socket.localAddress ?? '').replace(/^::ffff:/, '')}:${this.port}`;
+    const videoUrl = `${base}/NNDDServer/${esc(vid)}`;
     const lines = [
       '<?xml version="1.0" encoding="UTF-8"?>',
       '<nnddResponse>',

@@ -7,11 +7,18 @@ import { COMMENT_FONT_FAMILY } from '@shared/constants';
  * 元: src/org/mineap/util/config/ConfigManager.as
  */
 /** 内蔵HTTPサーバーの待受範囲 */
-export type HttpBindMode = 'loopback' | 'lan' | 'tailscale';
+export type HttpBindMode = 'loopback' | 'lan' | 'tailscale' | 'tailscale-serve';
 
 /** 設定から待受範囲を決める。bindMode が無ければ従来の allowExternal から導出する */
 export function resolveBindMode(cfg: { bindMode?: HttpBindMode; allowExternal?: boolean }): HttpBindMode {
-  if (cfg.bindMode === 'loopback' || cfg.bindMode === 'lan' || cfg.bindMode === 'tailscale') return cfg.bindMode;
+  if (
+    cfg.bindMode === 'loopback' ||
+    cfg.bindMode === 'lan' ||
+    cfg.bindMode === 'tailscale' ||
+    cfg.bindMode === 'tailscale-serve'
+  ) {
+    return cfg.bindMode;
+  }
   return cfg.allowExternal ? 'lan' : 'loopback';
 }
 
@@ -310,6 +317,7 @@ export interface NnddConfig {
      * - loopback: このPCのみ (127.0.0.1)
      * - lan: LAN内の他端末にも公開 (0.0.0.0)
      * - tailscale: Tailscale の IP にだけバインド (アクセストークン必須)
+     * - tailscale-serve: 127.0.0.1 で待受し、導入済みの Tailscale の `tailscale serve` で HTTPS 公開 (アクセストークン必須)
      */
     bindMode?: HttpBindMode;
     /** 動画ファイルのストリーミング配信を許可 */
@@ -318,6 +326,8 @@ export interface NnddConfig {
     allowMyList: boolean;
     /** アクセストークン認証を要求する (トークン本体は SecretStore。ここには置かない: Gist バックアップの同期対象のため) */
     requireToken: boolean;
+    /** tailscale-serve モードで使う HTTPS ポート (他の用途と衝突しにくい 8443 が既定) */
+    serveHttpsPort: number;
     /** Host ヘッダーとして追加で許可する名前 (`example.lan` / `*.example.lan`)。DNS リバインディング対策の例外 */
     allowedHosts: string[];
   };
@@ -525,6 +535,7 @@ const DEFAULTS: NnddConfig = {
     allowVideo: true,
     allowMyList: true,
     requireToken: false,
+    serveHttpsPort: 8443,
     allowedHosts: []
   },
   remoteNndd: {

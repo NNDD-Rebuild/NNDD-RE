@@ -3,7 +3,14 @@ import { QRCodeSVG } from 'qrcode.react';
 import { useConfig } from '@renderer/hooks/useConfig';
 import { Section, Btn } from '../common';
 
-type BindMode = 'loopback' | 'lan' | 'tailscale';
+type BindMode = 'loopback' | 'lan' | 'tailscale' | 'tailscale-serve';
+
+interface ExposureInfo {
+  state: 'idle' | 'starting' | 'needs_login' | 'running' | 'error';
+  message?: string;
+  authUrl?: string;
+  urls: string[];
+}
 
 /** 設定 > 全般 > 内蔵HTTPサーバー */
 export function HttpServerSection(): JSX.Element {
@@ -14,6 +21,7 @@ export function HttpServerSection(): JSX.Element {
     bindMode?: BindMode;
     tailscaleIp?: string;
     waitingForTailscale?: boolean;
+    exposure?: ExposureInfo;
   }>({ running: false });
   const [httpBusy, setHttpBusy] = useState(false);
   const [showQr, setShowQr] = useState(false);
@@ -25,6 +33,7 @@ export function HttpServerSection(): JSX.Element {
   const [requireToken, setRequireToken] = useConfig<boolean>('httpServer.requireToken', false);
   const [allowedHosts, setAllowedHosts] = useConfig<string[]>('httpServer.allowedHosts', []);
   const [allowedHostsText, setAllowedHostsText] = useState('');
+  const [serveHttpsPort, setServeHttpsPort] = useConfig<number>('httpServer.serveHttpsPort', 8443);
   const [token, setToken] = useState<string | null>(null);
   const [showToken, setShowToken] = useState(false);
 
@@ -37,6 +46,7 @@ export function HttpServerSection(): JSX.Element {
         bindMode?: BindMode;
         tailscaleIp?: string;
         waitingForTailscale?: boolean;
+        exposure?: ExposureInfo;
       }>(window.nndd.channels.HTTPD_STATUS)
       .then(setHttpStatus)
       .catch(() => setHttpStatus({ running: false }));
@@ -50,7 +60,9 @@ export function HttpServerSection(): JSX.Element {
       .then(([mode, ext]) => {
         // bindMode が無い設定 (旧バージョン) は allowExternal から導出する
         setBindMode(
-          mode === 'loopback' || mode === 'lan' || mode === 'tailscale' ? mode : ext === true ? 'lan' : 'loopback'
+          mode === 'loopback' || mode === 'lan' || mode === 'tailscale' || mode === 'tailscale-serve'
+            ? mode
+            : ext === true ? 'lan' : 'loopback'
         );
       })
       .catch(() => {});
@@ -75,7 +87,7 @@ export function HttpServerSection(): JSX.Element {
   }, [httpStatus.running]);
 
   // tailscale モードはトークン必須
-  const tokenActive = requireToken || bindMode === 'tailscale';
+  const tokenActive = requireToken || bindMode.startsWith('tailscale');
 
   // トークン認証が有効なときだけトークンを取得する (QR・表示用)
   useEffect(() => {
@@ -91,6 +103,11 @@ export function HttpServerSection(): JSX.Element {
     const r = await window.nndd.invoke<{ token: string }>(window.nndd.channels.HTTPD_TOKEN_REGENERATE);
     setToken(r.token);
   };
+
+  // QR・共有用のURL (トークンなし)。Tailscale への公開 (serve) があればその URL を使う
+  const shareUrl =
+    httpStatus.exposure?.urls[0] ??
+    `http://${httpStatus.tailscaleIp ?? httpStatus.lanIp ?? 'localhost'}:${httpStatus.port}/library`;
 
   const withToken = (url: string): string =>
     tokenActive && token ? `${url}?token=${encodeURIComponent(token)}` : url;
@@ -123,7 +140,7 @@ export function HttpServerSection(): JSX.Element {
             <>
               <div>
                 <span className="text-green-600 dark:text-green-400">● 起動中</span>
-                {httpStatus.bindMode !== 'tailscale' && (
+                {httpStatus.bindMode !== 'tailscale' && httpStatus.bindMode !== 'tailscale-serve' && (
                   <span className="ml-2 text-xs text-nndd-subtext">
                     <a
                       href="#"
@@ -137,6 +154,36 @@ export function HttpServerSection(): JSX.Element {
                 {httpStatus.waitingForTailscale && (
                   <div className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
                     Tailscale の接続を待っています (Tailscale を起動してログインすると自動で待受を開始します)
+                  </div>
+                )}
+                {httpStatus.exposure && (
+                  <div className="text-xs mt-1">
+                    {httpStatus.exposure.state === 'running' && httpStatus.exposure.urls.map((u) => (
+                      <div key={u} className="text-nndd-subtext">
+                        Tailscale:{' '}
+                        <span className="text-green-600 dark:text-green-300">{u}</span>
+                      </div>
+                    ))}
+                    {httpStatus.exposure.state === 'starting' && (
+                      <div className="text-nndd-subtext">Tailscale の公開を設定しています…</div>
+                    )}
+                    {(httpStatus.exposure.state === 'needs_login' || httpStatus.exposure.state === 'error') && (
+                      <div className="text-yellow-600 dark:text-yellow-400">
+                        {httpStatus.exposure.message}
+                        {httpStatus.exposure.authUrl && (
+                          <>
+                            {' '}
+                            <a
+                              href="#"
+                              onClick={(e) => { e.preventDefault(); window.open(httpStatus.exposure?.authUrl); }}
+                              className="underline"
+                            >
+                              ログイン用ページを開く
+                            </a>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
                 {httpStatus.tailscaleIp && (
@@ -163,17 +210,17 @@ export function HttpServerSection(): JSX.Element {
                 >
                   {showQr ? 'QRコードを隠す' : 'QRコードを表示'}
                 </button>
-                {showQr && !httpStatus.waitingForTailscale && (
+                {showQr && !httpStatus.waitingForTailscale && !(httpStatus.exposure && httpStatus.exposure.state !== 'running') && (
                   <div className="mt-2 inline-block bg-white p-3">
                     <QRCodeSVG
-                      value={withToken(`http://${httpStatus.tailscaleIp ?? httpStatus.lanIp ?? 'localhost'}:${httpStatus.port}/library`)}
+                      value={withToken(shareUrl)}
                       size={128}
                     />
                   </div>
                 )}
-                {showQr && !httpStatus.waitingForTailscale && (
+                {showQr && !httpStatus.waitingForTailscale && !(httpStatus.exposure && httpStatus.exposure.state !== 'running') && (
                   <p className="text-xs text-nndd-subtext mt-1">
-                    {`http://${httpStatus.tailscaleIp ?? httpStatus.lanIp ?? 'localhost'}:${httpStatus.port}/library`}
+                    {shareUrl}
                     {tokenActive && ' (QRコードにはアクセストークンが含まれます)'}
                   </p>
                 )}
@@ -198,7 +245,8 @@ export function HttpServerSection(): JSX.Element {
         {([
           ['loopback', 'このPCのみ (127.0.0.1)'],
           ['lan', 'LAN内の他端末からのアクセスを許可 (スマホ等から閲覧できます)'],
-          ['tailscale', 'Tailscale 経由のみ許可 (外出先から。アクセストークン必須)']
+          ['tailscale', 'Tailscale 経由のみ許可 (外出先から。アクセストークン必須)'],
+          ['tailscale-serve', 'Tailscale Serve で HTTPS 公開 (導入済みの Tailscale を使用。アクセストークン必須)']
         ] as [BindMode, string][]).map(([mode, label]) => (
           <label key={mode} className="flex items-center gap-2 cursor-pointer select-none py-0.5">
             <input
@@ -226,6 +274,26 @@ export function HttpServerSection(): JSX.Element {
         <p className="text-xs text-nndd-subtext mt-1">
           スマホからアクセスできない場合は Windows ファイアウォールでポート {httpStatus.port ?? 12345} (TCP) の受信規則を許可してください。
         </p>
+      )}
+      {bindMode === 'tailscale-serve' && (
+        <div className="mt-1">
+          <p className="text-xs text-nndd-subtext">
+            導入済みの Tailscale の `tailscale serve` で HTTPS 公開します (127.0.0.1 で待受し、LAN内には公開されません)。
+            Tailscale の管理画面で MagicDNS と HTTPS 証明書を有効にしてください。既存の serve 設定は変更せず、ここで作った設定だけを停止時に外します。
+          </p>
+          <div className="flex items-center gap-2 mt-1">
+            <span className="text-xs text-nndd-subtext shrink-0">HTTPSポート</span>
+            <input
+              type="number"
+              min={1}
+              max={65535}
+              value={serveHttpsPort}
+              onChange={(e) => setServeHttpsPort(Number(e.target.value))}
+              className="w-24 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
+            />
+            <span className="text-xs text-nndd-subtext">(デフォルト 8443。443 は他の用途と衝突しやすいため非推奨)</span>
+          </div>
+        </div>
       )}
       {bindMode === 'tailscale' && (
         <p className="text-xs text-nndd-subtext mt-1">
@@ -257,10 +325,10 @@ export function HttpServerSection(): JSX.Element {
         <input
           type="checkbox"
           checked={tokenActive}
-          disabled={bindMode === 'tailscale'}
+          disabled={bindMode.startsWith('tailscale')}
           onChange={(e) => setRequireToken(e.target.checked)}
         />
-        アクセストークンを要求する (QRコード・URLのトークンが無いと開けません){bindMode === 'tailscale' && ' — Tailscale モードでは常に有効'}
+        アクセストークンを要求する (QRコード・URLのトークンが無いと開けません){bindMode.startsWith('tailscale') && ' — Tailscale モードでは常に有効'}
       </label>
       {tokenActive && (
         <div className="flex items-center gap-2 mt-2">
