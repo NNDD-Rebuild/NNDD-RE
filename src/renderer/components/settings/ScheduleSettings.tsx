@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Schedule, MyList } from '@shared/types';
 import { ScheduleTargetType } from '@shared/types';
+import { Btn, Card, CheckRow, Hint, Row, Select, SettingsPage, TextInput } from './common';
 
 interface FollowUserOption {
   id: string;
@@ -82,21 +83,18 @@ export function ScheduleSettings(): JSX.Element {
   };
 
   return (
-    <div className="p-4 max-w-3xl">
-      <div className="flex items-center justify-between mb-3">
+    <SettingsPage>
+      <div className="flex items-center justify-between mb-4">
         <h2 className="text-base font-bold">自動ダウンロードスケジュール</h2>
-        <button
-          onClick={startNew}
-          className="text-xs px-3 py-1 bg-nndd-accent text-white rounded hover:opacity-80 disabled:opacity-50"
-        >
+        <Btn variant="primary" onClick={startNew}>
           新規スケジュール
-        </button>
+        </Btn>
       </div>
 
       {mylists.length === 0 && (
-        <div className="text-xs text-nndd-subtext mb-3">
+        <Hint className="mb-3">
           マイリストが登録されていません。先にマイリストタブで登録してください。
-        </div>
+        </Hint>
       )}
 
       {/* 一覧 */}
@@ -110,7 +108,7 @@ export function ScheduleSettings(): JSX.Element {
             <th className="w-32">曜日</th>
             <th className="w-20">時刻</th>
             <th className="w-32">最終実行</th>
-            <th className="w-20">操作</th>
+            <th className="w-28">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -137,18 +135,12 @@ export function ScheduleSettings(): JSX.Element {
                   : '-'}
               </td>
               <td>
-                <button
-                  onClick={() => setEditing(s)}
-                  className="text-xs px-2 py-0.5 bg-nndd-border rounded mr-1"
-                >
-                  編集
-                </button>
-                <button
-                  onClick={() => remove(s.id)}
-                  className="text-xs px-2 py-0.5 bg-nndd-border hover:bg-red-700 hover:text-white rounded"
-                >
-                  削除
-                </button>
+                <span className="flex gap-1">
+                  <Btn onClick={() => setEditing(s)}>編集</Btn>
+                  <Btn variant="danger" onClick={() => remove(s.id)}>
+                    削除
+                  </Btn>
+                </span>
               </td>
             </tr>
           ))}
@@ -157,19 +149,16 @@ export function ScheduleSettings(): JSX.Element {
 
       {/* 編集フォーム */}
       {editing && (
-        <div className="border border-nndd-border p-3 bg-nndd-panel rounded">
-          <div className="text-sm font-bold mb-2">スケジュール編集</div>
+        <Card title="スケジュール編集">
           <Row label="名前">
-            <input
+            <TextInput
               value={editing.name}
-              onChange={(e) =>
-                setEditing({ ...editing, name: e.target.value })
-              }
-              className="w-full bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
+              onChange={(e) => setEditing({ ...editing, name: e.target.value })}
+              className="w-full"
             />
           </Row>
           <Row label="対象種別">
-            <select
+            <Select
               value={editing.targetType}
               onChange={(e) =>
                 setEditing({
@@ -179,43 +168,37 @@ export function ScheduleSettings(): JSX.Element {
                   targetId: ''
                 })
               }
-              className="w-full bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
+              className="w-full"
             >
               <option value={ScheduleTargetType.MYLIST}>マイリスト</option>
               <option value={ScheduleTargetType.SERIES}>シリーズ</option>
               <option value={ScheduleTargetType.FOLLOW_USER}>フォロー中の投稿者</option>
-            </select>
+            </Select>
           </Row>
 
           {editing.targetType === ScheduleTargetType.SERIES ? (
             <Row label="シリーズID/URL">
-              <input
+              <TextInput
                 value={editing.targetId}
-                onChange={(e) =>
-                  setEditing({ ...editing, targetId: e.target.value })
-                }
+                onChange={(e) => setEditing({ ...editing, targetId: e.target.value })}
                 placeholder="例: 12345 または https://www.nicovideo.jp/series/12345"
-                className="w-full bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
+                className="w-full"
               />
             </Row>
           ) : editing.targetType === ScheduleTargetType.FOLLOW_USER ? (
             <Row label="対象投稿者">
               {followUsers.length === 0 ? (
-                <input
+                <TextInput
                   value={editing.targetId}
-                  onChange={(e) =>
-                    setEditing({ ...editing, targetId: e.target.value })
-                  }
+                  onChange={(e) => setEditing({ ...editing, targetId: e.target.value })}
                   placeholder="ユーザーID"
-                  className="w-full bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
+                  className="w-full"
                 />
               ) : (
-                <select
+                <Select
                   value={editing.targetId}
-                  onChange={(e) =>
-                    setEditing({ ...editing, targetId: e.target.value })
-                  }
-                  className="w-full bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
+                  onChange={(e) => setEditing({ ...editing, targetId: e.target.value })}
+                  className="w-full"
                 >
                   <option value="">選択してください</option>
                   {followUsers.map((u) => (
@@ -223,44 +206,35 @@ export function ScheduleSettings(): JSX.Element {
                       {u.nickname}
                     </option>
                   ))}
-                </select>
+                </Select>
               )}
             </Row>
           ) : (
             <Row label="対象マイリスト">
-              <select
+              <Select
                 value={editing.targetMyListUrl}
-                onChange={(e) =>
-                  setEditing({
-                    ...editing,
-                    targetMyListUrl: e.target.value
-                  })
-                }
-                className="w-full bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
+                onChange={(e) => setEditing({ ...editing, targetMyListUrl: e.target.value })}
+                className="w-full"
               >
                 {mylists.map((ml) => (
                   <option key={ml.myListUrl} value={ml.myListUrl}>
                     {ml.myListName}
                   </option>
                 ))}
-              </select>
+              </Select>
             </Row>
           )}
           <Row label="曜日">
             <div className="flex gap-1">
               {['日', '月', '火', '水', '木', '金', '土'].map((label, d) => (
-                <button
+                <Btn
                   key={d}
+                  variant={editing.daysOfWeek.includes(d) ? 'primary' : 'default'}
                   onClick={() => toggleDay(d)}
-                  className={[
-                    'text-xs px-2 py-1 rounded w-8',
-                    editing.daysOfWeek.includes(d)
-                      ? 'bg-nndd-accent text-white'
-                      : 'bg-nndd-border'
-                  ].join(' ')}
+                  className="w-8 px-0"
                 >
                   {label}
-                </button>
+                </Btn>
               ))}
             </div>
           </Row>
@@ -268,38 +242,24 @@ export function ScheduleSettings(): JSX.Element {
             <input
               type="time"
               value={editing.time}
-              onChange={(e) =>
-                setEditing({ ...editing, time: e.target.value })
-              }
-              className="bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
+              onChange={(e) => setEditing({ ...editing, time: e.target.value })}
+              className="bg-nndd-bg border border-nndd-border rounded px-2 py-1 text-sm"
             />
           </Row>
-          <Row label="有効">
-            <input
-              type="checkbox"
-              checked={editing.enabled}
-              onChange={(e) =>
-                setEditing({ ...editing, enabled: e.target.checked })
-              }
-            />
-          </Row>
-          <div className="flex gap-2 mt-3">
-            <button
-              onClick={save}
-              className="text-xs px-3 py-1 bg-nndd-accent text-white rounded hover:opacity-80"
-            >
+          <CheckRow
+            checked={editing.enabled}
+            onChange={(v) => setEditing({ ...editing, enabled: v })}
+            label="有効"
+          />
+          <div className="flex gap-2">
+            <Btn variant="primary" onClick={save}>
               保存
-            </button>
-            <button
-              onClick={() => setEditing(null)}
-              className="text-xs px-3 py-1 bg-nndd-border rounded"
-            >
-              キャンセル
-            </button>
+            </Btn>
+            <Btn onClick={() => setEditing(null)}>キャンセル</Btn>
           </div>
-        </div>
+        </Card>
       )}
-    </div>
+    </SettingsPage>
   );
 }
 
@@ -336,21 +296,6 @@ function targetLabel(
         s.targetMyListUrl
       );
   }
-}
-
-function Row({
-  label,
-  children
-}: {
-  label: string;
-  children: React.ReactNode;
-}): JSX.Element {
-  return (
-    <div className="flex items-center gap-2 mb-2">
-      <div className="w-32 text-xs text-nndd-subtext shrink-0">{label}</div>
-      <div className="flex-1">{children}</div>
-    </div>
-  );
 }
 
 function daysToStr(days: number[]): string {

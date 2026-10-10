@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Section } from "./common";
+import { Btn, Hint, Section, Select, StatusText, TextInput } from "./common";
 import { useAppStore } from "../../store/useAppStore";
 import {
   HonkeImportCategory,
@@ -219,21 +219,17 @@ export function HonkeImportSettings(): JSX.Element {
   return (
     <Section title="本家NNDDからインポート">
       <div className="space-y-6">
-        <p className="text-xs text-nndd-subtext">
+        <Hint>
           本家NNDDの設定・NGリスト・マイリスト・保存検索・履歴・プレイリスト・ライブラリ情報を取り込みます。
           本家のファイルは読み取るだけで、変更しません。ログイン情報は取り込めません。
-        </p>
+        </Hint>
 
         <section className="space-y-2">
-          <h3 className="text-sm font-bold text-nndd-text">1. 取り込み元</h3>
+          <h3 className="text-sm font-bold">1. 取り込み元</h3>
           {detecting ? (
-            <p className="text-xs text-nndd-subtext">
-              本家NNDDのデータを検索中…
-            </p>
+            <Hint>本家NNDDのデータを検索中…</Hint>
           ) : candidates.length === 0 ? (
-            <p className="text-xs text-nndd-subtext">
-              自動検出できませんでした。フォルダを手動で選択してください。
-            </p>
+            <Hint>自動検出できませんでした。フォルダを手動で選択してください。</Hint>
           ) : (
             <div className="border border-nndd-border rounded divide-y divide-nndd-border">
               {candidates.map((c) => (
@@ -249,7 +245,7 @@ export function HonkeImportSettings(): JSX.Element {
                     className="mt-0.5"
                   />
                   <span className="min-w-0 break-all">
-                    <span className="text-nndd-text">{c.label}</span>
+                    <span>{c.label}</span>
                     <span className="block text-nndd-subtext">
                       {c.configPath
                         ? `設定: ${c.configPath}`
@@ -265,30 +261,25 @@ export function HonkeImportSettings(): JSX.Element {
             </div>
           )}
           <div className="flex gap-2">
-            <button
-              onClick={handlePick}
-              className="text-xs px-3 py-1.5 bg-nndd-border hover:bg-nndd-accent hover:text-white rounded"
-            >
-              フォルダを選択…
-            </button>
-            <button
+            <Btn onClick={handlePick}>フォルダを選択…</Btn>
+            <Btn
+              variant="primary"
               onClick={handlePreview}
               disabled={!selected || previewing || applying}
-              className="text-xs px-3 py-1.5 bg-nndd-accent text-white rounded hover:opacity-80 disabled:opacity-50"
             >
               {previewing ? "読み込み中…" : "内容を確認"}
-            </button>
+            </Btn>
           </div>
-          <p className="text-xs text-nndd-subtext">
+          <Hint>
             フォルダは、本家の設定フォルダ (%APPDATA%\&lt;アプリID&gt;\Local
             Store) または system フォルダを選択できます。
-          </p>
-          {sourceError && <p className="text-xs text-red-500">{sourceError}</p>}
+          </Hint>
+          {sourceError && <StatusText kind="error">{sourceError}</StatusText>}
         </section>
 
         {preview && (
           <section className="space-y-2">
-            <h3 className="text-sm font-bold text-nndd-text">
+            <h3 className="text-sm font-bold">
               2. 取り込む内容
             </h3>
             <div className="border border-nndd-border rounded divide-y divide-nndd-border">
@@ -299,7 +290,7 @@ export function HonkeImportSettings(): JSX.Element {
                 return (
                   <div key={c.category} className="px-3 py-2 text-xs space-y-1">
                     <div className="flex items-center gap-3">
-                      <span className="w-28 shrink-0 font-bold text-nndd-text">
+                      <span className="w-28 shrink-0 font-bold">
                         {info.label}
                       </span>
                       <span className="flex-1 text-nndd-subtext">
@@ -307,7 +298,7 @@ export function HonkeImportSettings(): JSX.Element {
                           ? c.error
                           : `${c.total} 件中 ${c.importable} 件が対象 (うち登録済み ${c.duplicate} 件)`}
                       </span>
-                      <select
+                      <Select
                         value={state?.policy ?? "skip"}
                         disabled={unavailable || applying}
                         onChange={(e) =>
@@ -316,7 +307,6 @@ export function HonkeImportSettings(): JSX.Element {
                             e.target.value as HonkeImportPolicy,
                           )
                         }
-                        className="px-2 py-1 bg-nndd-bg border border-nndd-border rounded disabled:opacity-50"
                       >
                         {(["merge", "replace", "skip"] as HonkeImportPolicy[])
                           .filter(
@@ -329,11 +319,9 @@ export function HonkeImportSettings(): JSX.Element {
                               {POLICY_LABELS[p]}
                             </option>
                           ))}
-                      </select>
+                      </Select>
                     </div>
-                    {info.hint && (
-                      <p className="text-nndd-subtext">{info.hint}</p>
-                    )}
+                    {info.hint && <Hint>{info.hint}</Hint>}
                     {c.skipped.length > 0 && (
                       <details className="text-nndd-subtext">
                         <summary className="cursor-pointer">
@@ -353,61 +341,55 @@ export function HonkeImportSettings(): JSX.Element {
 
             {libraryState && libraryState.policy !== "skip" && (
               <div className="border border-nndd-border rounded px-3 py-2 text-xs space-y-1">
-                <p className="text-nndd-subtext">
+                <Hint>
                   ライブラリ情報:
                   本家と動画の保存場所が違う場合は、フォルダの付け替えを指定してください
                   (空欄なら変換しません)。
-                </p>
+                </Hint>
                 <div className="flex items-center gap-2">
-                  <input
-                    type="text"
+                  <TextInput
                     value={pathFrom}
                     onChange={(e) => setPathFrom(e.target.value)}
                     placeholder="本家のライブラリルート (例: H:\NNDD)"
-                    className="flex-1 px-2 py-1.5 bg-nndd-bg border border-nndd-border rounded min-w-0"
+                    className="flex-1 min-w-0"
                   />
                   <span className="text-nndd-subtext">→</span>
-                  <input
-                    type="text"
+                  <TextInput
                     value={pathTo}
                     onChange={(e) => setPathTo(e.target.value)}
                     placeholder="REでの保存先"
-                    className="flex-1 px-2 py-1.5 bg-nndd-bg border border-nndd-border rounded min-w-0"
+                    className="flex-1 min-w-0"
                   />
                 </div>
-                <p className="text-nndd-subtext">
-                  付け替えは「内容を確認」の結果に反映されません。実行時のみ適用されます。
-                </p>
+                <Hint>付け替えは「内容を確認」の結果に反映されません。実行時のみ適用されます。</Hint>
               </div>
             )}
 
             <div className="flex items-center gap-3">
-              <button
+              <Btn
+                variant="primary"
                 onClick={handleApply}
                 disabled={activeCount === 0 || applying}
-                className="text-xs px-4 py-1.5 bg-nndd-accent text-white rounded hover:opacity-80 disabled:opacity-50"
               >
                 {applying ? "インポート中…" : "インポート実行"}
-              </button>
-              {progress && (
-                <span className="text-xs text-nndd-subtext">{progress}</span>
-              )}
+              </Btn>
+              {progress && <Hint>{progress}</Hint>}
             </div>
           </section>
         )}
 
         {report && (
           <section className="space-y-2">
-            <h3 className="text-sm font-bold text-nndd-text">3. 結果</h3>
+            <h3 className="text-sm font-bold">3. 結果</h3>
             <div className="border border-nndd-border rounded divide-y divide-nndd-border">
               {report.results.map((r) => (
                 <div key={r.category} className="px-3 py-2 text-xs space-y-1">
                   <div className="flex gap-3">
-                    <span className="w-28 shrink-0 font-bold text-nndd-text">
+                    <span className="w-28 shrink-0 font-bold">
                       {CATEGORY_LABELS[r.category].label}
                     </span>
                     {r.error ? (
-                      <span className="text-red-500">失敗: {r.error}</span>
+                      <StatusText kind="error">失敗: {r.error}</StatusText>
                     ) : (
                       <span className="text-nndd-subtext">
                         追加 {r.added} / 更新 {r.updated} / スキップ {r.skipped}
@@ -430,9 +412,7 @@ export function HonkeImportSettings(): JSX.Element {
               ))}
             </div>
             {report.backupDir && (
-              <p className="text-xs text-nndd-subtext break-all">
-                取り込み前のバックアップ: {report.backupDir}
-              </p>
+              <Hint className="break-all">取り込み前のバックアップ: {report.backupDir}</Hint>
             )}
           </section>
         )}

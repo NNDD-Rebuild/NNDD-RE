@@ -1,7 +1,7 @@
 import { IpcChannel, type IpcChannelValue } from '@shared/types';
 import { useConfig } from '@renderer/hooks/useConfig';
 import { useAppStore } from '@renderer/store/useAppStore';
-import { Section } from './common';
+import { Btn, CheckRow, Hint, PageTitle, RadioGroup, Row, Section, Select, SettingsPage } from './common';
 
 /**
  * 設定 > ランキング・検索・マイリスト。
@@ -44,122 +44,60 @@ export function NicoSettings(): JSX.Element {
   };
 
   return (
-    <div className="p-4 max-w-3xl">
-      <h2 className="text-base font-bold mb-3">
-        ランキング・検索・マイリスト
-      </h2>
-      <p className="text-xs text-nndd-subtext mb-4">
+    <SettingsPage>
+      <PageTitle title="ランキング・検索・マイリスト">
         ランキング・検索・マイリストの主要動作は実装済みです。
         起動時動作・UI・通信に関する詳細設定を以下で調整できます。
-      </p>
+      </PageTitle>
 
       <Section title="ランキング・検索・マイリスト 表示形式">
         <Row label="デフォルト表示">
-          <div className="flex gap-4 text-sm">
-            {(
-              [
-                { value: 'grid', label: '⊞ グリッド', desc: 'サムネイル大きく表示' },
-                { value: 'list', label: '☰ リスト', desc: 'コンパクトに一覧表示' }
-              ] as { value: 'grid' | 'list'; label: string; desc: string }[]
-            ).map(({ value, label, desc }) => (
-              <label key={value} className="flex items-start gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="contentViewMode"
-                  value={value}
-                  checked={contentViewMode === value}
-                  onChange={() => setContentViewMode(value)}
-                  className="mt-0.5"
-                />
-                <span>
-                  <span className="font-medium">{label}</span>
-                  <br />
-                  <span className="text-xs text-nndd-subtext">{desc}</span>
-                </span>
-              </label>
-            ))}
+          <div>
+            <RadioGroup
+              name="contentViewMode"
+              value={contentViewMode}
+              onChange={setContentViewMode}
+              options={[
+                { value: 'grid', label: '⊞ グリッド', hint: 'サムネイル大きく表示' },
+                { value: 'list', label: '☰ リスト', hint: 'コンパクトに一覧表示' }
+              ]}
+            />
+            <Hint className="mt-1">ライブラリの表示形式は「DLリスト・ライブラリ」タブで設定できます。</Hint>
           </div>
-          <p className="text-xs text-nndd-subtext mt-1">
-            ライブラリの表示形式は「DLリスト・ライブラリ」タブで設定できます。
-          </p>
         </Row>
-        <Row label="センシティブな動画を隠す">
-          <input
-            type="checkbox"
-            checked={hideSensitiveContents}
-            onChange={(e) => setHideSensitiveContents(e.target.checked)}
-          />
-          <span className="text-xs text-nndd-subtext ml-2">
-            (OFFでランキングにR18等の閲覧注意動画も表示)
-          </span>
+        <Row label="センシティブな動画を隠す" hint="OFFでランキングにR18等の閲覧注意動画も表示">
+          <CheckRow checked={hideSensitiveContents} onChange={setHideSensitiveContents} label="隠す" />
         </Row>
         <Row label="検索API">
-          <div className="flex gap-4 text-sm">
-            {(
-              [
-                { value: 'snapshot', label: 'スナップショット', desc: '日次更新。新着動画の反映に最大1日程度かかる' },
-                { value: 'nvapi', label: 'nvapi (即時反映)', desc: '投稿直後の動画も検索できる。検索結果にタグ情報は出ない' }
-              ] as { value: 'snapshot' | 'nvapi'; label: string; desc: string }[]
-            ).map(({ value, label, desc }) => (
-              <label key={value} className="flex items-start gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="searchApi"
-                  value={value}
-                  checked={searchApi === value}
-                  onChange={() => setSearchApi(value)}
-                  className="mt-0.5"
-                />
-                <span>
-                  <span className="font-medium">{label}</span>
-                  <br />
-                  <span className="text-xs text-nndd-subtext">{desc}</span>
-                </span>
-              </label>
-            ))}
-          </div>
+          <RadioGroup
+            name="searchApi"
+            value={searchApi}
+            onChange={setSearchApi}
+            options={[
+              { value: 'snapshot', label: 'スナップショット', hint: '日次更新。新着動画の反映に最大1日程度かかる' },
+              { value: 'nvapi', label: 'nvapi (即時反映)', hint: '投稿直後の動画も検索できる。検索結果にタグ情報は出ない' }
+            ]}
+          />
         </Row>
       </Section>
 
       <Section title="入力履歴">
         <Row label="検索履歴を保存する">
-          <input
-            type="checkbox"
-            checked={saveSearchHistory}
-            onChange={(e) => setSaveSearchHistory(e.target.checked)}
-          />
-          <button
-            onClick={() => clearHistory(IpcChannel.INPUT_HISTORY_SEARCH_CLEAR, '検索履歴')}
-            className="ml-3 text-xs px-2 py-0.5 bg-nndd-border text-nndd-text rounded hover:bg-nndd-accent hover:text-white"
-          >
-            履歴を消去
-          </button>
+          <CheckRow checked={saveSearchHistory} onChange={setSaveSearchHistory} label="保存する" />
+          <Btn onClick={() => clearHistory(IpcChannel.INPUT_HISTORY_SEARCH_CLEAR, '検索履歴')}>履歴を消去</Btn>
         </Row>
         <Row label="マイリストの閲覧履歴を保存する">
-          <input
-            type="checkbox"
-            checked={saveMyListHistory}
-            onChange={(e) => setSaveMyListHistory(e.target.checked)}
-          />
-          <button
-            onClick={() => clearHistory(IpcChannel.INPUT_HISTORY_MYLIST_CLEAR, 'マイリストの閲覧履歴')}
-            className="ml-3 text-xs px-2 py-0.5 bg-nndd-border text-nndd-text rounded hover:bg-nndd-accent hover:text-white"
-          >
+          <CheckRow checked={saveMyListHistory} onChange={setSaveMyListHistory} label="保存する" />
+          <Btn onClick={() => clearHistory(IpcChannel.INPUT_HISTORY_MYLIST_CLEAR, 'マイリストの閲覧履歴')}>
             履歴を消去
-          </button>
+          </Btn>
         </Row>
-        <p className="text-xs text-nndd-subtext">
-          検索タブの検索ワード欄とマイリストタブのURL欄に、直近10件が候補として表示されます。
-        </p>
+        <Hint>検索タブの検索ワード欄とマイリストタブのURL欄に、直近10件が候補として表示されます。</Hint>
       </Section>
 
       <Section title="アプリ起動・UI">
         <Row label="起動時のタブ">
-          <select
-            value={initialTab}
-            onChange={(e) => setInitialTab(Number(e.target.value))}
-            className="bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
-          >
+          <Select value={initialTab} onChange={(e) => setInitialTab(Number(e.target.value))}>
             <option value={0}>ランキング</option>
             <option value={1}>検索</option>
             <option value={2}>マイリスト</option>
@@ -167,34 +105,15 @@ export function NicoSettings(): JSX.Element {
             <option value={4}>ライブラリ</option>
             <option value={5}>履歴</option>
             <option value={6}>設定</option>
-          </select>
+          </Select>
         </Row>
         <Row label="テーマ">
-          <select
-            value={theme}
-            onChange={(e) => setTheme(e.target.value as 'dark' | 'light')}
-            className="bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
-          >
+          <Select value={theme} onChange={(e) => setTheme(e.target.value as 'dark' | 'light')}>
             <option value="dark">ダーク</option>
             <option value="light">ライト</option>
-          </select>
+          </Select>
         </Row>
       </Section>
-    </div>
-  );
-}
-
-function Row({
-  label,
-  children
-}: {
-  label: string;
-  children: React.ReactNode;
-}): JSX.Element {
-  return (
-    <div className="flex items-center mb-2">
-      <div className="w-56 text-xs text-nndd-subtext shrink-0">{label}</div>
-      <div className="flex-1 flex items-center">{children}</div>
-    </div>
+    </SettingsPage>
   );
 }

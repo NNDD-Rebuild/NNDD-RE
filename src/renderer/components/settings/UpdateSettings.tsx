@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useConfig } from '@renderer/hooks/useConfig';
-import { Section } from './common';
+import { Btn, Hint, PageTitle, RadioGroup, Section, SettingsPage } from './common';
 
 type UpdateEvent =
   | { event: 'checking' }
@@ -59,19 +59,19 @@ export function UpdateSettings(): JSX.Element {
   };
 
   return (
-    <div className="p-4 max-w-3xl">
-      <h2 className="text-base font-bold mb-3">情報</h2>
+    <SettingsPage>
+      <PageTitle title="情報" />
 
       <Section title="バージョン">
         <div className="text-sm">NNDD-RE v{info?.version ?? '?'}</div>
-        <div className="text-xs text-nndd-subtext mt-1">
+        <Hint className="mt-1">
           オリジナル NNDD V4.4.9 (Adobe AIR) を Electron + TypeScript + React に
           移植したバージョンです。
-        </div>
+        </Hint>
       </Section>
 
       <Section title="パス情報">
-        <div className="text-xs text-nndd-subtext mb-2">クリックでクリップボードにコピー</div>
+        <Hint className="mb-2">クリックでクリップボードにコピー</Hint>
         {info ? (
           <>
             <CopyRow label="userData" value={info.userData} />
@@ -82,61 +82,41 @@ export function UpdateSettings(): JSX.Element {
             <CopyRow label="ライブラリ" value={info.libraryRoot} />
           </>
         ) : (
-          <div className="text-xs text-nndd-subtext">読み込み中…</div>
+          <Hint>読み込み中…</Hint>
         )}
       </Section>
 
       <Section title="アップデート">
-        <div className="text-xs text-nndd-subtext mb-1">アップデートチャンネル</div>
-        <div className="flex flex-col gap-1 mb-3">
-          {(
-            [
-              { value: 'stable', label: '安定版', desc: '正式リリース版のみを対象にする' },
+        <Hint className="mb-1">アップデートチャンネル</Hint>
+        <div className="mb-3">
+          <RadioGroup
+            name="update-channel"
+            direction="column"
+            value={updateChannel}
+            onChange={setUpdateChannel}
+            options={[
+              { value: 'stable', label: '安定版', hint: '正式リリース版のみを対象にする' },
               {
                 value: 'beta',
                 label: 'ベータ版',
-                desc: '正式リリース前のベータ版も対象にする (不具合が含まれる可能性があります)'
+                hint: '正式リリース前のベータ版も対象にする (不具合が含まれる可能性があります)'
               }
-            ] as const
-          ).map(({ value, label, desc }) => (
-            <label key={value} className="flex items-start gap-2 text-sm cursor-pointer">
-              <input
-                type="radio"
-                name="update-channel"
-                className="mt-0.5"
-                checked={updateChannel === value}
-                onChange={() => setUpdateChannel(value)}
-              />
-              <span>
-                {label}
-                <span className="block text-xs text-nndd-subtext">{desc}</span>
-              </span>
-            </label>
-          ))}
+            ]}
+          />
         </div>
-        <div className="text-xs text-nndd-subtext mb-1">起動時のアップデート確認</div>
-        <div className="flex flex-col gap-1 mb-3">
-          {(
-            [
-              { value: 'ask', label: '確認する', desc: 'ダウンロード・インストール前にダイアログで尋ねる' },
-              { value: 'silent', label: '自動更新', desc: '自動でダウンロードし、次回終了時に自動インストール (通知のみ)' },
-              { value: 'off', label: '確認しない', desc: '起動時のチェックを行わない' }
-            ] as const
-          ).map(({ value, label, desc }) => (
-            <label key={value} className="flex items-start gap-2 text-sm cursor-pointer">
-              <input
-                type="radio"
-                name="update-mode"
-                className="mt-0.5"
-                checked={updateMode === value}
-                onChange={() => setUpdateMode(value)}
-              />
-              <span>
-                {label}
-                <span className="block text-xs text-nndd-subtext">{desc}</span>
-              </span>
-            </label>
-          ))}
+        <Hint className="mb-1">起動時のアップデート確認</Hint>
+        <div className="mb-3">
+          <RadioGroup
+            name="update-mode"
+            direction="column"
+            value={updateMode}
+            onChange={setUpdateMode}
+            options={[
+              { value: 'ask', label: '確認する', hint: 'ダウンロード・インストール前にダイアログで尋ねる' },
+              { value: 'silent', label: '自動更新', hint: '自動でダウンロードし、次回終了時に自動インストール (通知のみ)' },
+              { value: 'off', label: '確認しない', hint: '起動時のチェックを行わない' }
+            ]}
+          />
         </div>
         <div className="flex gap-2 mb-2">
           <Btn onClick={check}>更新を確認</Btn>
@@ -147,9 +127,9 @@ export function UpdateSettings(): JSX.Element {
             </Btn>
           )}
         </div>
-        <div className="text-xs text-nndd-subtext">{describe(status)}</div>
+        <Hint>{describe(status)}</Hint>
       </Section>
-    </div>
+    </SettingsPage>
   );
 }
 
@@ -171,19 +151,6 @@ function describe(s: UpdateEvent | null): string {
     default:
       return '';
   }
-}
-
-// disabled 時の半透明化がない点で ./common の Btn と異なるため個別定義
-function Btn(props: React.ButtonHTMLAttributes<HTMLButtonElement>): JSX.Element {
-  return (
-    <button
-      {...props}
-      className={[
-        'text-xs px-3 py-1 bg-nndd-border hover:bg-nndd-accent rounded',
-        props.className ?? ''
-      ].join(' ')}
-    />
-  );
 }
 
 function CopyRow({ label, value }: { label: string; value: string }): JSX.Element {

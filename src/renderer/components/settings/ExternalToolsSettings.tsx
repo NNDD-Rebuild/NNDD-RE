@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useConfig } from '@renderer/hooks/useConfig';
 import { IpcChannel } from '@shared/types';
+import { Btn, Card, CheckRow, CommitInput, Hint, NumberCommitInput, PageTitle, SettingsPage, StatusText } from './common';
 
 export interface BinaryStatus {
   found: boolean;
@@ -28,8 +29,7 @@ interface BinaryRowProps {
   status: BinaryStatus | null;
   localPath: string;
   pathValue: string;
-  onPathChange: (v: string) => void;
-  onPathBlur: () => void;
+  onPathCommit: (v: string) => void;
   onBrowse: () => void;
   canAutoInstall: boolean;
   installing: boolean;
@@ -42,42 +42,33 @@ interface BinaryRowProps {
 }
 
 function BinaryRow({
-  label, status, localPath, pathValue, onPathChange, onPathBlur, onBrowse,
+  label, status, localPath, pathValue, onPathCommit, onBrowse,
   canAutoInstall, installing, installPct, installError, onInstall,
   installLabel, noInstallNote, platform = ''
 }: BinaryRowProps): JSX.Element {
   return (
-    <section className="bg-nndd-panel border border-nndd-border rounded p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-medium text-nndd-text">{label}</span>
-        {status ? (
+    <Card
+      title={label}
+      right={
+        status ? (
           status.found ? (
-            <span className="text-xs text-green-600 dark:text-green-400">
-              ✓ {status.version ?? '検出済み'}
-            </span>
+            <StatusText kind="ok">✓ {status.version ?? '検出済み'}</StatusText>
           ) : (
-            <span className="text-xs text-red-500 dark:text-red-400">✗ 未検出</span>
+            <StatusText kind="error">✗ 未検出</StatusText>
           )
         ) : (
-          <span className="text-xs text-nndd-subtext">確認中…</span>
-        )}
-      </div>
-
+          <Hint>確認中…</Hint>
+        )
+      }
+    >
       <div className="flex gap-2">
-        <input
-          type="text"
+        <CommitInput
           value={pathValue}
-          onChange={(e) => onPathChange(e.target.value)}
-          onBlur={onPathBlur}
+          onCommit={onPathCommit}
           placeholder={localPath || '空欄 = 自動探索 (PATH + userData/bin)'}
-          className="flex-1 bg-nndd-bg border border-nndd-border rounded px-2 py-1 text-xs text-nndd-text placeholder-nndd-subtext focus:outline-none focus:border-nndd-accent"
+          className="flex-1"
         />
-        <button
-          onClick={onBrowse}
-          className="px-2 py-1 text-xs bg-nndd-border text-nndd-text rounded hover:bg-nndd-accent hover:text-white"
-        >
-          参照
-        </button>
+        <Btn onClick={onBrowse}>参照</Btn>
       </div>
 
       {canAutoInstall ? (
@@ -89,32 +80,24 @@ function BinaryRow({
                 style={{ width: installPct > 0 ? `${installPct}%` : '15%' }}
               />
             </div>
-            <p className="text-xs text-nndd-subtext">
-              {installPct > 0 ? `${installPct}% ` : ''}処理中…
-            </p>
+            <Hint>{installPct > 0 ? `${installPct}% ` : ''}処理中…</Hint>
           </div>
         ) : (
-          <button
-            onClick={onInstall}
-            disabled={installing}
-            className="px-3 py-1 text-xs bg-nndd-accent text-white rounded hover:opacity-80 disabled:opacity-40"
-          >
+          <Btn variant="primary" onClick={onInstall} disabled={installing}>
             {installLabel}
-          </button>
+          </Btn>
         )
       ) : noInstallNote ? (
-        <div className="text-xs text-nndd-subtext space-y-1">
-          <p>{noInstallNote}</p>
-          <code className="block bg-nndd-bg px-2 py-1 rounded font-mono">
+        <div className="space-y-1">
+          <Hint>{noInstallNote}</Hint>
+          <code className="block text-xs bg-nndd-bg px-2 py-1 rounded font-mono">
             {ffmpegInstallHint(platform)}
           </code>
         </div>
       ) : null}
 
-      {installError && (
-        <p className="text-xs text-red-500 dark:text-red-400">{installError}</p>
-      )}
-    </section>
+      {installError && <StatusText kind="error">{installError}</StatusText>}
+    </Card>
   );
 }
 
@@ -134,29 +117,17 @@ export function ExternalToolsSettings(): JSX.Element {
 
   const [externalEnabled, setExternalEnabled] = useConfig<boolean>('externalPlayer.enabled', false);
   const [externalPath, setExternalPath] = useConfig<string>('externalPlayer.path', '');
-  const [externalInput, setExternalInput] = useState('');
 
   const [ncvEnabled, setNcvEnabled] = useConfig<boolean>('live.ncvEnabled', false);
   const [ncvPath, setNcvPath] = useConfig<string>('live.ncvPath', '');
-  const [ncvInput, setNcvInput] = useState('');
   const [ncvTimeshift, setNcvTimeshift] = useConfig<boolean>('live.ncvTimeshift', true);
   const [ncvLaunchDelaySec, setNcvLaunchDelaySec] = useConfig<number>('live.ncvLaunchDelaySec', 3);
-  const [ncvDelayInput, setNcvDelayInput] = useState('3');
-
-  const [ytDlpInput, setYtDlpInput] = useState('');
-  const [ffmpegInput, setFfmpegInput] = useState('');
 
   const refreshStatus = (): void => {
     window.nndd.invoke<BinaryStatuses>(IpcChannel.BINARY_STATUS).then(setStatus).catch(() => {});
   };
 
   useEffect(() => { refreshStatus(); }, []);
-  useEffect(() => { setYtDlpInput(ytDlpPath ?? ''); }, [ytDlpPath]);
-  useEffect(() => { setFfmpegInput(ffmpegPath ?? ''); }, [ffmpegPath]);
-  useEffect(() => { setExternalInput(externalPath ?? ''); }, [externalPath]);
-  useEffect(() => { setNcvInput(ncvPath ?? ''); }, [ncvPath]);
-  useEffect(() => { setNcvDelayInput(String(ncvLaunchDelaySec ?? 3)); }, [ncvLaunchDelaySec]);
-
   useEffect(() => {
     const off = window.nndd.on(IpcChannel.BINARY_INSTALL_PROGRESS, (...args: unknown[]) => {
       const data = args[0] as { tool: string; pct: number };
@@ -166,45 +137,22 @@ export function ExternalToolsSettings(): JSX.Element {
     return off;
   }, []);
 
-  const browse = async (
-    onSelect: (p: string) => Promise<void>,
-    setInput: (v: string) => void
-  ): Promise<void> => {
+  const pickExecutable = async (): Promise<string | null> => {
     const filters = status?.platform === 'win32'
       ? [{ name: '実行ファイル', extensions: ['exe'] }]
       : [{ name: 'すべてのファイル', extensions: ['*'] }];
-    const selected = await window.nndd.invoke<string | null>(IpcChannel.SYS_CHOOSE_FILE, filters);
-    if (selected) {
-      setInput(selected);
-      await onSelect(selected);
-      refreshStatus();
-    }
+    return window.nndd.invoke<string | null>(IpcChannel.SYS_CHOOSE_FILE, filters);
   };
 
-  const browseExternal = async (): Promise<void> => {
-    const filters = status?.platform === 'win32'
-      ? [{ name: '実行ファイル', extensions: ['exe'] }]
-      : [{ name: 'すべてのファイル', extensions: ['*'] }];
-    const selected = await window.nndd.invoke<string | null>(IpcChannel.SYS_CHOOSE_FILE, filters);
-    if (selected) {
-      setExternalInput(selected);
-      await setExternalPath(selected);
-    }
-  };
-
-  const browseNcv = async (): Promise<void> => {
-    const filters = status?.platform === 'win32'
-      ? [{ name: '実行ファイル', extensions: ['exe'] }]
-      : [{ name: 'すべてのファイル', extensions: ['*'] }];
-    const selected = await window.nndd.invoke<string | null>(IpcChannel.SYS_CHOOSE_FILE, filters);
-    if (selected) {
-      setNcvInput(selected);
-      await setNcvPath(selected);
-    }
+  const browseAndSave = async (save: (v: string) => Promise<void>, refresh = false): Promise<void> => {
+    const selected = await pickExecutable();
+    if (!selected) return;
+    await save(selected);
+    if (refresh) refreshStatus();
   };
 
   const saveAndRefresh = async (save: (v: string) => Promise<void>, val: string): Promise<void> => {
-    await save(val);
+    await save(val.trim());
     refreshStatus();
   };
 
@@ -241,17 +189,16 @@ export function ExternalToolsSettings(): JSX.Element {
     : (status?.ffmpeg.found ? '再ダウンロード' : 'ダウンロード');
 
   return (
-    <div className="p-6 max-w-2xl space-y-6">
-      <h2 className="text-base font-semibold text-nndd-text">外部ツール</h2>
+    <SettingsPage>
+      <PageTitle title="外部ツール" />
 
       <BinaryRow
         label="yt-dlp"
         status={status?.ytDlp ?? null}
         localPath={status?.localPaths.ytDlp ?? ''}
-        pathValue={ytDlpInput}
-        onPathChange={setYtDlpInput}
-        onPathBlur={() => saveAndRefresh(setYtDlpPath, ytDlpInput)}
-        onBrowse={() => browse(setYtDlpPath, setYtDlpInput)}
+        pathValue={ytDlpPath ?? ''}
+        onPathCommit={(v) => void saveAndRefresh(setYtDlpPath, v)}
+        onBrowse={() => void browseAndSave(setYtDlpPath, true)}
         canAutoInstall={true}
         installing={installingYtDlp}
         installPct={ytDlpPct}
@@ -264,10 +211,9 @@ export function ExternalToolsSettings(): JSX.Element {
         label="ffmpeg"
         status={status?.ffmpeg ?? null}
         localPath={status?.localPaths.ffmpeg ?? ''}
-        pathValue={ffmpegInput}
-        onPathChange={setFfmpegInput}
-        onPathBlur={() => saveAndRefresh(setFfmpegPath, ffmpegInput)}
-        onBrowse={() => browse(setFfmpegPath, setFfmpegInput)}
+        pathValue={ffmpegPath ?? ''}
+        onPathCommit={(v) => void saveAndRefresh(setFfmpegPath, v)}
+        onBrowse={() => void browseAndSave(setFfmpegPath, true)}
         canAutoInstall={canAutoFfmpeg}
         installing={installingFfmpeg}
         installPct={ffmpegPct}
@@ -278,100 +224,71 @@ export function ExternalToolsSettings(): JSX.Element {
         platform={platform}
       />
 
-      <section className="bg-nndd-panel border border-nndd-border rounded p-4 space-y-3">
-        <h3 className="text-sm font-medium text-nndd-text">外部プレイヤー</h3>
-        <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={externalEnabled}
-            onChange={(e) => void setExternalEnabled(e.target.checked)}
-          />
-          動画を外部のプレイヤーで再生する
-        </label>
+      <Card title="外部プレイヤー">
+        <CheckRow
+          checked={externalEnabled}
+          onChange={(v) => void setExternalEnabled(v)}
+          label="動画を外部のプレイヤーで再生する"
+        />
         <div className="flex gap-2">
-          <input
-            type="text"
-            value={externalInput}
-            onChange={(e) => setExternalInput(e.target.value)}
-            onBlur={() => void setExternalPath(externalInput.trim())}
+          <CommitInput
+            value={externalPath ?? ''}
+            onCommit={(v) => void setExternalPath(v.trim())}
             placeholder="VLC や mpv などの実行ファイル"
-            className="flex-1 bg-nndd-bg border border-nndd-border rounded px-2 py-1 text-xs text-nndd-text placeholder-nndd-subtext focus:outline-none focus:border-nndd-accent"
+            className="flex-1"
           />
-          <button
-            onClick={() => void browseExternal()}
-            className="px-2 py-1 text-xs bg-nndd-border text-nndd-text rounded hover:bg-nndd-accent hover:text-white"
-          >
-            参照
-          </button>
+          <Btn onClick={() => void browseAndSave(setExternalPath)}>参照</Btn>
         </div>
-        <p className="text-xs text-nndd-subtext">
+        <Hint>
           ライブラリにある動画はファイルのパスを渡します。ライブラリに無い動画はニコニコの視聴ページURLを渡すので、
           プレイヤーによっては再生できません (mpv は yt-dlp があれば再生できます)。
           連続再生では、選択した動画以降のファイルをまとめて渡します (最大100件)。macOS は .app も指定できます。
-        </p>
-      </section>
+        </Hint>
+      </Card>
 
-      <section className="bg-nndd-panel border border-nndd-border rounded p-4 space-y-3">
-        <h3 className="text-sm font-medium text-nndd-text">NCV (ニコ生コメントビューア)</h3>
-        <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={ncvEnabled}
-            onChange={(e) => void setNcvEnabled(e.target.checked)}
-          />
-          生放送を開くとき NCV も起動する
-        </label>
-        <label className="flex items-center gap-2 text-sm cursor-pointer select-none ml-6">
-          <input
-            type="checkbox"
+      <Card title="NCV (ニコ生コメントビューア)">
+        <CheckRow
+          checked={ncvEnabled}
+          onChange={(v) => void setNcvEnabled(v)}
+          label="生放送を開くとき NCV も起動する"
+        />
+        <div className="ml-6">
+          <CheckRow
             checked={ncvTimeshift}
             disabled={!ncvEnabled}
-            onChange={(e) => void setNcvTimeshift(e.target.checked)}
+            onChange={(v) => void setNcvTimeshift(v)}
+            label="タイムシフト視聴時も起動する"
           />
-          タイムシフト視聴時も起動する
-        </label>
+        </div>
         <div className="flex gap-2">
-          <input
-            type="text"
-            value={ncvInput}
-            onChange={(e) => setNcvInput(e.target.value)}
-            onBlur={() => void setNcvPath(ncvInput.trim())}
+          <CommitInput
+            value={ncvPath ?? ''}
+            onCommit={(v) => void setNcvPath(v.trim())}
             placeholder="NiconamaCommentViewer.exe のパス"
-            className="flex-1 bg-nndd-bg border border-nndd-border rounded px-2 py-1 text-xs text-nndd-text placeholder-nndd-subtext focus:outline-none focus:border-nndd-accent"
+            className="flex-1"
           />
-          <button
-            onClick={() => void browseNcv()}
-            className="px-2 py-1 text-xs bg-nndd-border text-nndd-text rounded hover:bg-nndd-accent hover:text-white"
-          >
-            参照
-          </button>
+          <Btn onClick={() => void browseAndSave(setNcvPath)}>参照</Btn>
         </div>
         <div className="flex items-center gap-2 text-sm ml-6">
           生放送を開いてから
-          <input
-            type="number"
+          <NumberCommitInput
             min={0}
             max={60}
             step={0.5}
-            value={ncvDelayInput}
+            className="w-16"
+            value={ncvLaunchDelaySec ?? 3}
             disabled={!ncvEnabled}
-            onChange={(e) => setNcvDelayInput(e.target.value)}
-            onBlur={() => {
-              const n = Number(ncvDelayInput);
-              if (ncvDelayInput.trim() !== '' && n >= 0 && n <= 60) void setNcvLaunchDelaySec(n);
-              else setNcvDelayInput(String(ncvLaunchDelaySec ?? 3));
-            }}
-            className="w-16 bg-nndd-bg border border-nndd-border px-1 py-0.5 text-sm"
+            onCommit={(v) => void setNcvLaunchDelaySec(v)}
           />
           秒待ってから NCV を起動 (0 で待たない)
         </div>
-        <p className="text-xs text-nndd-subtext">
+        <Hint>
           生放送プレイヤーのコメントリストはタブ表示になります。
           設定 &gt; 生放送の「別の番組を新しいウィンドウで開く」が OFF の場合は /singleinstance を付けて起動し、
           起動済みの NCV を使い回して新しい放送に接続します。
           NCV から開いた番組では NCV を起動しません。
-        </p>
-      </section>
-    </div>
+        </Hint>
+      </Card>
+    </SettingsPage>
   );
 }

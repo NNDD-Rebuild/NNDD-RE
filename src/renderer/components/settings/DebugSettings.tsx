@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
-import { Section, Btn } from './common';
+import { useState } from 'react';
+import { useConfig } from '@renderer/hooks/useConfig';
+import { Btn, CheckRow, Hint, PageTitle, Section, SettingsPage, TextInput } from './common';
 
 /**
  * 設定 > デバッグ (開発者モード有効時のみ表示)
@@ -10,10 +11,15 @@ import { Section, Btn } from './common';
  */
 type ApiDumpTarget = 'watch' | 'session' | 'comment';
 
+const DUMP_TARGETS: { key: ApiDumpTarget; label: string; note: string }[] = [
+  { key: 'watch', label: 'Watch v3/v3_guest API', note: '動画情報・セッション' },
+  { key: 'session', label: 'セッション確立 API', note: 'DMS/DMC' },
+  { key: 'comment', label: 'コメント取得 API', note: 'nvComment v1/threads' }
+];
+
 export function DebugSettings(): JSX.Element {
-  const [apiDumpPath, setApiDumpPath] = useState('');
-  const [apiDumpTargets, setApiDumpTargets] = useState<ApiDumpTarget[]>(['watch']);
-  const [saving, setSaving] = useState(false);
+  const [apiDumpPath, setApiDumpPath] = useConfig<string>('developer.apiDumpPath', '');
+  const [apiDumpTargets, setApiDumpTargets] = useConfig<ApiDumpTarget[]>('developer.apiDumpTargets', ['watch']);
   const [liveId, setLiveId] = useState('');
   const [liveRunning, setLiveRunning] = useState(false);
   const [liveResult, setLiveResult] = useState<string[]>([]);
@@ -35,41 +41,12 @@ export function DebugSettings(): JSX.Element {
     }
   };
 
-  useEffect(() => {
-    window.nndd
-      .invoke<string | undefined>(
-        window.nndd.channels.CONFIG_GET,
-        'developer.apiDumpPath'
-      )
-      .then((v) => setApiDumpPath(v ?? ''))
-      .catch(() => {});
-    window.nndd
-      .invoke<ApiDumpTarget[] | undefined>(
-        window.nndd.channels.CONFIG_GET,
-        'developer.apiDumpTargets'
-      )
-      .then((v) => setApiDumpTargets(v ?? ['watch']))
-      .catch(() => {});
-  }, []);
-
   const chooseDir = async (): Promise<void> => {
     const dir = await window.nndd.invoke<string | null>(
       window.nndd.channels.SYS_CHOOSE_DIRECTORY,
       apiDumpPath
     );
-    if (dir) {
-      setApiDumpPath(dir);
-      setSaving(true);
-      try {
-        await window.nndd.invoke(
-          window.nndd.channels.CONFIG_SET,
-          'developer.apiDumpPath',
-          dir
-        );
-      } finally {
-        setSaving(false);
-      }
-    }
+    if (dir) await setApiDumpPath(dir);
   };
 
   const openPath = async (): Promise<void> => {
@@ -81,45 +58,34 @@ export function DebugSettings(): JSX.Element {
     }
   };
 
-  const toggleTarget = async (target: ApiDumpTarget): Promise<void> => {
-    const newTargets = apiDumpTargets.includes(target)
-      ? apiDumpTargets.filter((t) => t !== target)
-      : [...apiDumpTargets, target];
-    setApiDumpTargets(newTargets);
-    setSaving(true);
-    try {
-      await window.nndd.invoke(
-        window.nndd.channels.CONFIG_SET,
-        'developer.apiDumpTargets',
-        newTargets
-      );
-    } finally {
-      setSaving(false);
-    }
+  const toggleTarget = (target: ApiDumpTarget): void => {
+    void setApiDumpTargets(
+      apiDumpTargets.includes(target)
+        ? apiDumpTargets.filter((t) => t !== target)
+        : [...apiDumpTargets, target]
+    );
   };
 
   return (
-    <div className="p-4 max-w-3xl">
-      <h2 className="text-base font-bold mb-3">🔧 デバッグ</h2>
+    <SettingsPage>
+      <PageTitle title="🔧 デバッグ" />
 
       <Section title="API ダンプ">
-        <p className="text-xs text-nndd-subtext mb-3">
+        <Hint className="mb-3">
           動画ストリーミング時に取得するAPIの生データをJSONファイルに保存します。
           開発・デバッグ目的でのみ使用してください。
-        </p>
+        </Hint>
 
         <div className="mb-3">
-          <div className="text-xs text-nndd-subtext mb-1">保存先:</div>
+          <Hint className="mb-1">保存先:</Hint>
           <div className="flex items-center gap-2">
-            <input
-              value={apiDumpPath}
+            <TextInput
+              value={apiDumpPath ?? ''}
               readOnly
-              className="flex-1 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
+              className="flex-1"
               placeholder="(未設定の場合、プロジェクトルート直下の apitest フォルダ)"
             />
-            <Btn onClick={chooseDir} disabled={saving}>
-              参照...
-            </Btn>
+            <Btn onClick={chooseDir}>参照...</Btn>
             <Btn onClick={openPath} disabled={!apiDumpPath}>
               開く
             </Btn>
@@ -127,57 +93,39 @@ export function DebugSettings(): JSX.Element {
         </div>
 
         <div className="mb-3">
-          <div className="text-xs text-nndd-subtext mb-2">ダンプ対象:</div>
-          <div className="space-y-1 pl-3">
-            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={apiDumpTargets.includes('watch')}
-                onChange={() => toggleTarget('watch')}
-                disabled={saving}
+          <Hint className="mb-2">ダンプ対象:</Hint>
+          <div className="pl-3">
+            {DUMP_TARGETS.map((t) => (
+              <CheckRow
+                key={t.key}
+                checked={apiDumpTargets.includes(t.key)}
+                onChange={() => toggleTarget(t.key)}
+                label={
+                  <>
+                    {t.label}
+                    <span className="text-xs text-nndd-subtext ml-2">({t.note})</span>
+                  </>
+                }
               />
-              <span>Watch v3/v3_guest API</span>
-              <span className="text-xs text-nndd-subtext">(動画情報・セッション)</span>
-            </label>
-            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={apiDumpTargets.includes('session')}
-                onChange={() => toggleTarget('session')}
-                disabled={saving}
-              />
-              <span>セッション確立 API</span>
-              <span className="text-xs text-nndd-subtext">(DMS/DMC)</span>
-            </label>
-            <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-              <input
-                type="checkbox"
-                checked={apiDumpTargets.includes('comment')}
-                onChange={() => toggleTarget('comment')}
-                disabled={saving}
-              />
-              <span>コメント取得 API</span>
-              <span className="text-xs text-nndd-subtext">(nvComment v1/threads)</span>
-            </label>
+            ))}
           </div>
         </div>
 
-        <p className="text-xs text-nndd-subtext bg-nndd-border/30 p-2 rounded">
+        <Hint className="bg-nndd-border/30 p-2 rounded">
           💡 設定を変更すると、次回の動画再生から新しい設定で記録されます。
-          環境変数 <code className="bg-nndd-bg px-1 rounded">DEBUG_API_DUMP</code> での設定は不要になります。
-        </p>
+        </Hint>
       </Section>
 
       <Section title="生放送 視聴フロー調査 (PoC)">
-        <p className="text-xs text-nndd-subtext mb-2">
+        <Hint className="mb-2">
           番組ID (lv...) を指定して watchページ・視聴WebSocket・HLS・コメントサーバーへ1回ずつ接続し、
           結果をログに出力します。トークン等はマスクされます。
-        </p>
+        </Hint>
         <div className="flex items-center gap-2 mb-2">
-          <input
+          <TextInput
             value={liveId}
             onChange={(e) => setLiveId(e.target.value)}
-            className="flex-1 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
+            className="flex-1"
             placeholder="lv123456789"
           />
           <Btn onClick={() => void runLivePoc()} disabled={liveRunning || !liveId.trim()}>
@@ -192,30 +140,30 @@ export function DebugSettings(): JSX.Element {
       </Section>
 
       <Section title="トラブルシューティング">
-        <div className="text-xs text-nndd-subtext space-y-2">
+        <div className="space-y-2">
           <div>
-            <strong className="text-white">Q: ファイルが生成されない</strong>
-            <div className="ml-2 mt-1">
+            <strong className="text-xs">Q: ファイルが生成されない</strong>
+            <Hint className="ml-2 mt-1">
               A: 保存先フォルダが存在するか確認してください。存在しない場合は自動作成されます。
               ダンプ対象が1つ以上チェックされているか確認してください。
-            </div>
+            </Hint>
           </div>
           <div>
-            <strong className="text-white">Q: ファイルサイズが大きい</strong>
-            <div className="ml-2 mt-1">
+            <strong className="text-xs">Q: ファイルサイズが大きい</strong>
+            <Hint className="ml-2 mt-1">
               A: Watch v3 APIのレスポンスは数MBになることがあります。
               複数の動画を再生するとフォルダが大きくなるため、不要なファイルは削除してください。
-            </div>
+            </Hint>
           </div>
           <div>
-            <strong className="text-white">Q: パフォーマンス低下を感じる</strong>
-            <div className="ml-2 mt-1">
+            <strong className="text-xs">Q: パフォーマンス低下を感じる</strong>
+            <Hint className="ml-2 mt-1">
               A: ダンプ機能が無効な場合は、開発者モードをオフにしてください。
               設定タブの「開発者オプション」でオフにできます。
-            </div>
+            </Hint>
           </div>
         </div>
       </Section>
-    </div>
+    </SettingsPage>
   );
 }
