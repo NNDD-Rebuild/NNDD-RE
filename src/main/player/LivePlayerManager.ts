@@ -69,22 +69,29 @@ export class LivePlayerManager {
     this.createWindow(programId, ncv);
   }
 
-  /** NCV を起動して番組に接続させる。一枠設定 (allowMultipleWindows OFF) のときは起動済みの NCV を使い回す */
+  /**
+   * NCV を起動して番組に接続させる。一枠設定 (allowMultipleWindows OFF) のときは起動済みの NCV を使い回す。
+   * 設定 live.ncvLaunchDelaySec 秒待ってから起動する (NNDD-RE の視聴接続を先に済ませるため)。起動予定なら true
+   */
   private launchNcv(programId: string): boolean {
     const live = getConfigStore().get('live');
     const ncvPath = live?.ncvPath?.trim();
     if (!live?.ncvEnabled || !ncvPath) return false;
     const args = [`https://live.nicovideo.jp/watch/${programId}`];
     if (!live.allowMultipleWindows) args.push('/singleinstance');
-    try {
-      const child = spawn(ncvPath, args, { detached: true, stdio: 'ignore' });
-      child.on('error', (e) => log.error('NCV launch failed:', e));
-      child.unref();
-      return true;
-    } catch (e) {
-      log.error('NCV launch failed:', e);
-      return false;
-    }
+    const delayMs = Math.max(0, Number(live.ncvLaunchDelaySec ?? 3) || 0) * 1000;
+    const spawnNcv = (): void => {
+      try {
+        const child = spawn(ncvPath, args, { detached: true, stdio: 'ignore' });
+        child.on('error', (e) => log.error('NCV launch failed:', e));
+        child.unref();
+      } catch (e) {
+        log.error('NCV launch failed:', e);
+      }
+    };
+    if (delayMs > 0) setTimeout(spawnNcv, delayMs);
+    else spawnNcv();
+    return true;
   }
 
   /**

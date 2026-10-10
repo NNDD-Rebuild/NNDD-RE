@@ -139,6 +139,8 @@ export function ExternalToolsSettings(): JSX.Element {
   const [ncvEnabled, setNcvEnabled] = useConfig<boolean>('live.ncvEnabled', false);
   const [ncvPath, setNcvPath] = useConfig<string>('live.ncvPath', '');
   const [ncvInput, setNcvInput] = useState('');
+  const [ncvLaunchDelaySec, setNcvLaunchDelaySec] = useConfig<number>('live.ncvLaunchDelaySec', 3);
+  const [ncvDelayInput, setNcvDelayInput] = useState('3');
 
   const [ytDlpInput, setYtDlpInput] = useState('');
   const [ffmpegInput, setFfmpegInput] = useState('');
@@ -152,6 +154,7 @@ export function ExternalToolsSettings(): JSX.Element {
   useEffect(() => { setFfmpegInput(ffmpegPath ?? ''); }, [ffmpegPath]);
   useEffect(() => { setExternalInput(externalPath ?? ''); }, [externalPath]);
   useEffect(() => { setNcvInput(ncvPath ?? ''); }, [ncvPath]);
+  useEffect(() => { setNcvDelayInput(String(ncvLaunchDelaySec ?? 3)); }, [ncvLaunchDelaySec]);
 
   useEffect(() => {
     const off = window.nndd.on(IpcChannel.BINARY_INSTALL_PROGRESS, (...args: unknown[]) => {
@@ -330,6 +333,25 @@ export function ExternalToolsSettings(): JSX.Element {
           >
             参照...
           </button>
+        </div>
+        <div className="flex items-center gap-2 text-sm ml-6">
+          生放送を開いてから
+          <input
+            type="number"
+            min={0}
+            max={60}
+            step={0.5}
+            value={ncvDelayInput}
+            disabled={!ncvEnabled}
+            onChange={(e) => setNcvDelayInput(e.target.value)}
+            onBlur={() => {
+              const n = Number(ncvDelayInput);
+              if (ncvDelayInput.trim() !== '' && n >= 0 && n <= 60) void setNcvLaunchDelaySec(n);
+              else setNcvDelayInput(String(ncvLaunchDelaySec ?? 3));
+            }}
+            className="w-16 bg-nndd-bg border border-nndd-border px-1 py-0.5 text-sm"
+          />
+          秒待ってから NCV を起動 (0 で待たない)
         </div>
         <p className="text-xs text-nndd-subtext">
           生放送プレイヤーのコメントリストはタブ表示になります。

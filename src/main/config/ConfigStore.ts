@@ -381,6 +381,8 @@ export interface NnddConfig {
     ncvEnabled: boolean;
     /** NCV 実行ファイルのパス */
     ncvPath: string;
+    /** 生放送を開いてから NCV を起動するまでの待ち時間 (秒、0 で待たない) */
+    ncvLaunchDelaySec: number;
     /** コメントウィンドウの位置・サイズ (前回閉じたとき) */
     commentWindowBounds?: { x: number; y: number; width: number; height: number };
   };
@@ -547,7 +549,8 @@ const DEFAULTS: NnddConfig = {
     followNotify: false,
     followNotifyIntervalMin: 5,
     ncvEnabled: false,
-    ncvPath: ''
+    ncvPath: '',
+    ncvLaunchDelaySec: 3
   },
   liveRecordReservations: [],
   channelWatch: {
