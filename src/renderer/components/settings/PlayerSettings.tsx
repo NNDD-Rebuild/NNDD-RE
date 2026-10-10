@@ -1,6 +1,18 @@
 import { useConfig } from '@renderer/hooks/useConfig';
 import { COMMENT_FONT_FAMILY } from '@shared/constants';
-import { Section } from './common';
+import {
+  ButtonGroup,
+  CheckRow,
+  CommitInput,
+  Hint,
+  NumberCommitInput,
+  PageTitle,
+  RadioGroup,
+  Row,
+  Section,
+  SettingsPage,
+  Slider
+} from './common';
 
 /**
  * 設定 > プレイヤー。
@@ -104,462 +116,221 @@ export function PlayerSettings(): JSX.Element {
   );
 
   return (
-    <div className="p-4 max-w-3xl">
-      <h2 className="text-base font-bold mb-3">プレイヤー</h2>
+    <SettingsPage>
+      <PageTitle title="プレイヤー" />
 
       <Section title="コメント表示">
-        <Row label="コメントを表示する">
-          <input
-            type="checkbox"
-            checked={showComments}
-            onChange={(e) => setShowComments(e.target.checked)}
-          />
-        </Row>
-        <Row label={`不透明度: ${Math.round(opacity * 100)}%`}>
-          <input
-            type="range"
+        <CheckRow checked={showComments} onChange={setShowComments} label="コメントを表示する" />
+        <Row label="不透明度">
+          <Slider
             min={0.1}
             max={1}
             step={0.05}
             value={opacity}
-            onChange={(e) => setOpacity(Number(e.target.value))}
-            className="w-64"
+            onCommit={setOpacity}
+            format={(v) => `${Math.round(v * 100)}%`}
           />
         </Row>
-        <Row label={`サイズ倍率: ${sizeScale.toFixed(2)}x`}>
-          <div className="flex items-center gap-2">
-            <input
-              type="range"
-              min={0.5}
-              max={2.0}
-              step={0.05}
-              value={sizeScale}
-              onChange={(e) => setSizeScale(Number(e.target.value))}
-              className="w-64"
-            />
-            <div className="flex gap-1">
-              {[0.75, 1.0, 1.25, 1.5].map((s) => (
-                <button
-                  key={s}
-                  onClick={() => setSizeScale(s)}
-                  className={[
-                    'text-xs px-2 py-1 rounded',
-                    Math.abs(sizeScale - s) < 0.01
-                      ? 'bg-nndd-accent text-white'
-                      : 'bg-nndd-border hover:bg-nndd-accent/70'
-                  ].join(' ')}
-                >
-                  {s.toFixed(2)}x
-                </button>
-              ))}
-            </div>
-          </div>
-        </Row>
-        <Row label={`流れるコメント表示秒数: ${showSec}秒`}>
-          <input
-            type="range"
-            min={1}
-            max={8}
-            step={0.5}
-            value={showSec}
-            onChange={(e) => setShowSec(Number(e.target.value))}
-            className="w-64"
+        <Row label="サイズ倍率">
+          <Slider
+            min={0.5}
+            max={2.0}
+            step={0.05}
+            value={sizeScale}
+            onCommit={setSizeScale}
+            format={(v) => `${v.toFixed(2)}x`}
           />
+          <ButtonGroup
+            value={[0.75, 1.0, 1.25, 1.5].find((s) => Math.abs(sizeScale - s) < 0.01) ?? -1}
+            onChange={setSizeScale}
+            options={[0.75, 1.0, 1.25, 1.5].map((s) => ({ value: s, label: `${s.toFixed(2)}x` }))}
+          />
+        </Row>
+        <Row label="流れるコメント表示秒数">
+          <Slider min={1} max={8} step={0.5} value={showSec} onCommit={setShowSec} format={(v) => `${v}秒`} />
         </Row>
         <Row label="フォント">
-          <input
-            value={fontFamily}
-            onChange={(e) => setFontFamily(e.target.value)}
-            className="w-full bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
-          />
+          <CommitInput value={fontFamily} onCommit={setFontFamily} className="w-full" />
         </Row>
-        <Row label="ボールド">
-          <input
-            type="checkbox"
-            checked={bold}
-            onChange={(e) => setBold(e.target.checked)}
-          />
-        </Row>
-        <Row label="文字の縁取り">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={dropShadow}
-              onChange={(e) => setDropShadow(e.target.checked)}
-            />
-            <span className="text-xs text-nndd-subtext">縁取りを表示</span>
-          </label>
-        </Row>
+        <CheckRow checked={bold} onChange={setBold} label="ボールド" />
+        <CheckRow checked={dropShadow} onChange={setDropShadow} label="文字の縁取りを表示" />
         {dropShadow && (
           <Row label="縁の濃さ">
-            <div className="flex gap-3 text-xs">
-              {(['light', 'normal'] as const).map((v) => (
-                <label key={v} className="flex items-center gap-1 cursor-pointer">
-                  <input
-                    type="radio"
-                    name="outlineIntensity"
-                    checked={outlineIntensity === v}
-                    onChange={() => setOutlineIntensity(v)}
-                  />
-                  <span>{v === 'light' ? '薄い' : '普通'}</span>
-                </label>
-              ))}
-            </div>
+            <RadioGroup
+              name="outlineIntensity"
+              value={outlineIntensity}
+              onChange={setOutlineIntensity}
+              options={[
+                { value: 'light', label: '薄い' },
+                { value: 'normal', label: '普通' }
+              ]}
+            />
           </Row>
         )}
-        <Row label="アンチエイリアス">
-          <input
-            type="checkbox"
-            checked={antiAlias}
-            onChange={(e) => setAntiAlias(e.target.checked)}
-          />
-        </Row>
-        <Row label="コメントアート (CA) 保護">
-          <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={keepCA}
-              onChange={(e) => setKeepCA(e.target.checked)}
-            />
-            <span className="text-xs text-nndd-subtext">
-              ONにすると歌詞・AA等のコメントアートが崩れにくくなります
-            </span>
-          </label>
-        </Row>
+        <CheckRow checked={antiAlias} onChange={setAntiAlias} label="アンチエイリアス" />
+        <CheckRow
+          checked={keepCA}
+          onChange={setKeepCA}
+          label="コメントアート (CA) 保護"
+          hint="ONにすると歌詞・AA等のコメントアートが崩れにくくなります"
+        />
       </Section>
 
       <Section title="ストリーミング再生">
         <Row label="再生方式">
-          <div className="flex flex-col gap-2 text-xs">
-
-            {/* ── ストリーミング ── */}
-            <label className="flex items-start gap-2">
-              <input
-                type="radio"
-                name="streamingTop"
-                checked={streamingMode !== 'niconico'}
-                onChange={() => setStreamingMode('native')}
-                className="mt-0.5"
-              />
-              <span>
-                ストリーミング (NNDD-RE内蔵プレイヤー)
-                <span className="block text-nndd-subtext">
-                  コメント描画・シークバーあり
-                </span>
-              </span>
-            </label>
-
-            {/* ストリーミング選択時のサブオプション */}
-            {streamingMode !== 'niconico' && (
-              <div className="ml-6 flex flex-col gap-2 border-l border-nndd-border pl-3">
-                <label className="flex items-start gap-2">
-                  <input
-                    type="radio"
-                    name="streamingMode"
-                    checked={streamingMode === 'native'}
-                    onChange={() => setStreamingMode('native')}
-                    className="mt-0.5"
-                  />
-                  <span>
-                    HLS即時再生（ネイティブ）
-                    <span className="block text-nndd-subtext">
-                      即時再生・シーク可能。コメント描画あり。
-                    </span>
-                  </span>
-                </label>
-                <label className="flex items-start gap-2">
-                  <input
-                    type="radio"
-                    name="streamingMode"
-                    checked={streamingMode === 'hls'}
-                    onChange={() => setStreamingMode('hls')}
-                    className="mt-0.5"
-                  />
-                  <span>
-                    HLS即時再生（プロキシ）
-                    <span className="block text-nndd-subtext">
-                      HLS proxy 経由でニコニコCDNにアクセス。
-                    </span>
-                  </span>
-                </label>
-              </div>
-            )}
-
-            {/* ── ニコニコ公式 ── */}
-            <label className="flex items-start gap-2">
-              <input
-                type="radio"
-                name="streamingTop"
-                checked={streamingMode === 'niconico'}
-                onChange={() => setStreamingMode('niconico')}
-                className="mt-0.5"
-              />
-              <span>
-                ニコニコ公式プレイヤー埋め込み (webview)
-                <span className="block text-nndd-subtext">
-                  ニコニコ動画の視聴ページで再生
-                </span>
-              </span>
-            </label>
-            {streamingMode === 'niconico' && (
-              <div className="ml-6 border-l border-nndd-border pl-3">
-                <label className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    id="niconicoInheritLogin"
-                    checked={niconicoInheritLogin ?? true}
-                    onChange={(e) => setNiconicoInheritLogin(e.target.checked)}
-                  />
-                  <span>
-                    NNDD-REのログイン情報を引き継ぐ
-                    <span className="block text-nndd-subtext">
-                      ONにすると nicovideo.jp Cookie を埋め込みプレイヤーに注入します
-                    </span>
-                  </span>
-                </label>
-              </div>
-            )}
-          </div>
+          <RadioGroup
+            name="streamingTop"
+            direction="column"
+            value={streamingMode === 'niconico' ? 'niconico' : 'builtin'}
+            onChange={(v) => setStreamingMode(v === 'niconico' ? 'niconico' : 'native')}
+            options={[
+              {
+                value: 'builtin',
+                label: 'ストリーミング (NNDD-RE内蔵プレイヤー)',
+                hint: 'コメント描画・シークバーあり',
+                children:
+                  streamingMode !== 'niconico' && (
+                    <RadioGroup
+                      name="streamingMode"
+                      direction="column"
+                      value={streamingMode}
+                      onChange={setStreamingMode}
+                      options={[
+                        { value: 'native', label: 'HLS即時再生（ネイティブ）', hint: '即時再生・シーク可能。コメント描画あり。' },
+                        { value: 'hls', label: 'HLS即時再生（プロキシ）', hint: 'HLS proxy 経由でニコニコCDNにアクセス。' }
+                      ]}
+                    />
+                  )
+              },
+              {
+                value: 'niconico',
+                label: 'ニコニコ公式プレイヤー埋め込み (webview)',
+                hint: 'ニコニコ動画の視聴ページで再生',
+                children:
+                  streamingMode === 'niconico' && (
+                    <CheckRow
+                      checked={niconicoInheritLogin ?? true}
+                      onChange={setNiconicoInheritLogin}
+                      label="NNDD-REのログイン情報を引き継ぐ"
+                      hint="ONにすると nicovideo.jp Cookie を埋め込みプレイヤーに注入します"
+                    />
+                  )
+              }
+            ]}
+          />
         </Row>
       </Section>
 
       <Section title="コメント一覧">
-        <Row label="過去ログ同時描画制限">
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              min={0}
-              max={99999}
-              step={100}
-              value={pastCommentMaxCount}
-              onChange={(e) => setPastCommentMaxCount(Math.max(0, Number(e.target.value)))}
-              className="w-24 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm text-right"
-            />
-            <span className="text-xs text-nndd-subtext">
-              {pastCommentMaxCount === 0 ? '無制限' : `最大 ${pastCommentMaxCount.toLocaleString()} 件`}
-            </span>
-          </div>
-          <p className="text-xs text-nndd-subtext mt-0.5">
-            過去コメント表示時に描画するコメントの上限。0 = 無制限
-          </p>
+        <Row
+          label="過去ログ同時描画制限"
+          hint="過去コメント表示時に描画するコメントの上限。0 = 無制限"
+        >
+          <NumberCommitInput
+            min={0}
+            max={99999}
+            step={100}
+            value={pastCommentMaxCount}
+            onCommit={setPastCommentMaxCount}
+            className="w-24 text-right"
+          />
+          <Hint>{pastCommentMaxCount === 0 ? '無制限' : `最大 ${pastCommentMaxCount.toLocaleString()} 件`}</Hint>
         </Row>
         <Row label="表示方式">
-          <div className="flex flex-col gap-2 text-xs">
-            <label className="flex items-start gap-2">
-              <input
-                type="radio"
-                name="commentListDisplay"
-                checked={commentListDisplay === 'tab'}
-                onChange={() => setCommentListDisplay('tab')}
-                className="mt-0.5"
-              />
-              <span>
-                タブ表示
-                <span className="block text-nndd-subtext">
-                  サイドパネル内のタブとして表示
-                </span>
-              </span>
-            </label>
-            <label className="flex items-start gap-2">
-              <input
-                type="radio"
-                name="commentListDisplay"
-                checked={commentListDisplay === 'window'}
-                onChange={() => setCommentListDisplay('window')}
-                className="mt-0.5"
-              />
-              <span>
-                浮動ウィンドウ
-                <span className="block text-nndd-subtext">
-                  ビデオ上に重ねて表示。ドラッグで移動可能
-                </span>
-              </span>
-            </label>
-          </div>
+          <RadioGroup
+            name="commentListDisplay"
+            direction="column"
+            value={commentListDisplay}
+            onChange={setCommentListDisplay}
+            options={[
+              { value: 'tab', label: 'タブ表示', hint: 'サイドパネル内のタブとして表示' },
+              { value: 'window', label: '浮動ウィンドウ', hint: 'ビデオ上に重ねて表示。ドラッグで移動可能' }
+            ]}
+          />
         </Row>
       </Section>
 
       <Section title="再生">
-        <Row label={`デフォルト音量: ${Math.round(volume * 100)}%`}>
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.05}
-            value={volume}
-            onChange={(e) => setVolume(Number(e.target.value))}
-            className="w-64"
-          />
+        <Row label="デフォルト音量">
+          <Slider min={0} max={1} step={0.05} value={volume} onCommit={setVolume} format={(v) => `${Math.round(v * 100)}%`} />
         </Row>
-        <Row label="音量ノーマライズ">
-          <input
-            type="checkbox"
-            checked={volumeNormalize}
-            onChange={(e) => setVolumeNormalize(e.target.checked)}
-          />
-          <p className="text-xs text-nndd-subtext mt-0.5">
-            動画間の音量差を自動で平滑化します (静かな動画は持ち上げ、大音量はピークを抑える)
-          </p>
-        </Row>
+        <CheckRow
+          checked={volumeNormalize}
+          onChange={setVolumeNormalize}
+          label="音量ノーマライズ"
+          hint="動画間の音量差を自動で平滑化します (静かな動画は持ち上げ、大音量はピークを抑える)"
+        />
         <Row label="デフォルト再生速度">
-          <div className="flex gap-1">
-            {[0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0].map((r) => (
-              <button
-                key={r}
-                onClick={() => setRate(r)}
-                className={[
-                  'text-xs px-2 py-1 rounded',
-                  rate === r
-                    ? 'bg-nndd-accent text-white'
-                    : 'bg-nndd-border hover:bg-nndd-accent/70'
-                ].join(' ')}
-              >
-                {r.toFixed(2)}x
-              </button>
-            ))}
-          </div>
+          <ButtonGroup
+            value={rate}
+            onChange={setRate}
+            options={[0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0].map((r) => ({ value: r, label: `${r.toFixed(2)}x` }))}
+          />
         </Row>
-        <Row label="デフォルト画質">
-          <div className="flex gap-1 flex-wrap">
-            {([
-              { value: 'highest' as const, label: '自動 (最高画質)' },
+        <Row label="デフォルト画質" hint="指定画質が無い動画では自動的に最高画質にフォールバックします">
+          <ButtonGroup<'highest' | number>
+            value={defaultQuality}
+            onChange={setDefaultQuality}
+            options={[
+              { value: 'highest', label: '自動 (最高画質)' },
               { value: 1080, label: '1080p以下' },
               { value: 720, label: '720p以下' },
               { value: 480, label: '480p以下' },
               { value: 360, label: '360p以下' }
-            ]).map((opt) => (
-              <button
-                key={opt.label}
-                onClick={() => setDefaultQuality(opt.value)}
-                className={[
-                  'text-xs px-2 py-1 rounded',
-                  defaultQuality === opt.value
-                    ? 'bg-nndd-accent text-white'
-                    : 'bg-nndd-border hover:bg-nndd-accent/70'
-                ].join(' ')}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-          <p className="text-xs text-nndd-subtext mt-0.5">
-            指定画質が無い動画では自動的に最高画質にフォールバックします
-          </p>
-        </Row>
-        <Row label="再生速度を次の動画に引き継ぐ">
-          <input
-            type="checkbox"
-            checked={keepPlaybackRate}
-            onChange={(e) => setKeepPlaybackRate(e.target.checked)}
-          />
-          <p className="text-xs text-nndd-subtext mt-0.5">
-            プレイヤーで変更した再生速度を次の動画にも適用 (OFF時は毎回デフォルト再生速度)
-          </p>
-        </Row>
-        <Row label="リピート再生">
-          <input
-            type="checkbox"
-            checked={repeat}
-            onChange={(e) => setRepeat(e.target.checked)}
+            ]}
           />
         </Row>
-        <Row label="動画リンクをプレイヤーで開く">
-          <input
-            type="checkbox"
-            checked={openVideoLinkInPlayer}
-            onChange={(e) => setOpenVideoLinkInPlayer(e.target.checked)}
-          />
-          <p className="text-xs text-nndd-subtext mt-0.5">
-            動画説明文の sm/nm/so 等のリンクをNNDD-REでストリーミング再生
-          </p>
-        </Row>
-        <Row label="続きから再生する">
-          <input
-            type="checkbox"
-            checked={resumePlayback}
-            onChange={(e) => setResumePlayback(e.target.checked)}
-          />
-          <p className="text-xs text-nndd-subtext mt-0.5">
-            前回の再生位置を記憶し、次回開いた時に続きから再生 (OFF時は常に最初から)
-          </p>
-        </Row>
-        <Row label="＠ジャンプ">
-          <div className="flex gap-1">
-            {([
+        <CheckRow
+          checked={keepPlaybackRate}
+          onChange={setKeepPlaybackRate}
+          label="再生速度を次の動画に引き継ぐ"
+          hint="プレイヤーで変更した再生速度を次の動画にも適用 (OFF時は毎回デフォルト再生速度)"
+        />
+        <CheckRow checked={repeat} onChange={setRepeat} label="リピート再生" />
+        <CheckRow
+          checked={openVideoLinkInPlayer}
+          onChange={setOpenVideoLinkInPlayer}
+          label="動画リンクをプレイヤーで開く"
+          hint="動画説明文の sm/nm/so 等のリンクをNNDD-REでストリーミング再生"
+        />
+        <CheckRow
+          checked={resumePlayback}
+          onChange={setResumePlayback}
+          label="続きから再生する"
+          hint="前回の再生位置を記憶し、次回開いた時に続きから再生 (OFF時は常に最初から)"
+        />
+        <Row
+          label="＠ジャンプ"
+          hint="投稿者コメントのニコスクリプト。別動画へ移るときだけ確認します (動画内の移動は常に即時)。「無効」では動画内の移動・ラベルも動きません"
+        >
+          <ButtonGroup
+            value={jumpCommand}
+            onChange={setJumpCommand}
+            options={[
               { value: 'ask', label: '確認して移動' },
               { value: 'auto', label: '確認せず移動' },
-              { value: 'off', label: '無効' },
-            ] as const).map(({ value, label }) => (
-              <button
-                key={value}
-                onClick={() => setJumpCommand(value)}
-                className={[
-                  'text-xs px-3 py-1 rounded',
-                  jumpCommand === value
-                    ? 'bg-nndd-accent text-white'
-                    : 'bg-nndd-border hover:bg-nndd-accent/70'
-                ].join(' ')}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <p className="text-xs text-nndd-subtext mt-0.5 ml-2">
-            投稿者コメントのニコスクリプト。別動画へ移るときだけ確認します (動画内の移動は常に即時)。「無効」では動画内の移動・ラベルも動きません
-          </p>
-        </Row>
-        <Row label="コントロールUIサイズ">
-          <div className="flex gap-1">
-            {([
-              { value: 'small', label: '小'},
-              { value: 'normal', label: '標準'},
-              { value: 'large', label: '大'},
-            ] as const).map(({ value, label}) => (
-              <button
-                key={value}
-                onClick={() => setControlUiSize(value)}
-                
-                className={[
-                  'text-xs px-3 py-1 rounded',
-                  controlUiSize === value
-                    ? 'bg-nndd-accent text-white'
-                    : 'bg-nndd-border hover:bg-nndd-accent/70'
-                ].join(' ')}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <p className="text-xs text-nndd-subtext mt-0.5">
-            シークバー・ボタン等のコントロールバー全体のサイズ
-          </p>
-        </Row>
-        <Row label="コントロールバーを常時表示">
-          <input
-            type="checkbox"
-            checked={controlsAlwaysVisible}
-            onChange={(e) => setControlsAlwaysVisible(e.target.checked)}
+              { value: 'off', label: '無効' }
+            ]}
           />
-          <p className="text-xs text-nndd-subtext mt-0.5">
-            ウィンドウ表示時、下部コントロールバーを自動で隠さず常に表示する (フルスクリーン時は従来通り自動で隠れます)
-          </p>
         </Row>
+        <Row label="コントロールUIサイズ" hint="シークバー・ボタン等のコントロールバー全体のサイズ">
+          <ButtonGroup
+            value={controlUiSize}
+            onChange={setControlUiSize}
+            options={[
+              { value: 'small', label: '小' },
+              { value: 'normal', label: '標準' },
+              { value: 'large', label: '大' }
+            ]}
+          />
+        </Row>
+        <CheckRow
+          checked={controlsAlwaysVisible}
+          onChange={setControlsAlwaysVisible}
+          label="コントロールバーを常時表示"
+          hint="ウィンドウ表示時、下部コントロールバーを自動で隠さず常に表示する (フルスクリーン時は従来通り自動で隠れます)"
+        />
       </Section>
-    </div>
-  );
-}
-
-function Row({
-  label,
-  children
-}: {
-  label: string;
-  children: React.ReactNode;
-}): JSX.Element {
-  return (
-    <div className="flex items-center gap-2 mb-2">
-      <div className="w-56 text-xs text-nndd-subtext shrink-0">{label}</div>
-      <div className="flex-1">{children}</div>
-    </div>
+    </SettingsPage>
   );
 }

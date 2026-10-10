@@ -31,7 +31,7 @@ export class RankingClient {
     const params = new URLSearchParams({ term, responseType: 'json' });
     if (tag) params.set('tag', tag);
     const url = NicoEndpoint.rankingGenre(featuredKey, params);
-    log.debug('fetch ranking (bff):', url);
+    log.verbose('fetch ranking (bff):', url);
     const res = await NicoContext.get().http.getJson<NicoBffRankingResponse>(url);
     const rankingData = res?.data?.response?.$getTeibanRanking?.data;
     const rawItems = rankingData?.items ?? [];
@@ -69,7 +69,7 @@ export class RankingClient {
    */
   static async fetchGenres(): Promise<RankingGenreInfo[]> {
     const url = NicoEndpoint.rankingGenre('e9uj2uks', 'responseType=json');
-    log.debug('fetch ranking genres (bff):', url);
+    log.verbose('fetch ranking genres (bff):', url);
     const res = await NicoContext.get().http.getJson<NicoBffRankingResponse>(url);
     const items = res?.data?.response?.$getTeibanRankingFeaturedKeys?.data?.items ?? [];
     return items

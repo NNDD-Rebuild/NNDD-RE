@@ -1,4 +1,5 @@
 import type { GitHubStatus } from '@shared/types';
+import { Btn, Hint } from '../common';
 
 export function GitHubLoginArea({
   status,
@@ -17,28 +18,17 @@ export function GitHubLoginArea({
         <span className="text-sm text-nndd-text">
           GitHub: <span className="font-bold">{status.username}</span> でログイン中
         </span>
-        <button
-          onClick={onLogout}
-          className="text-xs px-3 py-1 bg-nndd-border hover:bg-nndd-accent rounded"
-        >
-          ログアウト
-        </button>
+        <Btn onClick={onLogout}>ログアウト</Btn>
       </div>
     );
   }
 
   return (
     <div className="flex items-center gap-3">
-      <button
-        onClick={onLogin}
-        disabled={loading}
-        className="text-xs px-3 py-1.5 bg-nndd-accent text-white rounded hover:opacity-80 disabled:opacity-50"
-      >
+      <Btn variant="primary" onClick={onLogin} disabled={loading}>
         {loading ? '接続中…' : 'GitHubでログイン'}
-      </button>
-      <span className="text-xs text-nndd-subtext">
-        Device Flow でブラウザ経由の認可を行います
-      </span>
+      </Btn>
+      <Hint>Device Flow でブラウザ経由の認可を行います</Hint>
     </div>
   );
 }

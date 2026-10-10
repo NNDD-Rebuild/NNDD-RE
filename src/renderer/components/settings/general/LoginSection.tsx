@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { LoginModal } from '../../common/LoginModal';
 import { useAppStore } from '@renderer/store/useAppStore';
-import { Section, Btn } from '../common';
+import { Btn, Hint, Section, StatusText } from '../common';
 
 /** 設定 > 全般 > ニコニコ動画 ログイン (メール/ブラウザ ログイン、ログアウト、保存済み ID・PASS の削除) */
 export function LoginSection(): JSX.Element {
@@ -61,7 +61,7 @@ export function LoginSection(): JSX.Element {
         <div className="flex items-center gap-2">
           <div className="flex-1 text-sm">
             {isLoggedIn ? (
-              <span className="text-green-600 dark:text-green-400">● ログイン中</span>
+              <StatusText kind="ok">● ログイン中</StatusText>
             ) : (
               <span className="text-nndd-subtext">○ 未ログイン</span>
             )}
@@ -92,11 +92,11 @@ export function LoginSection(): JSX.Element {
             </>
           )}
         </div>
-        <p className="text-xs text-nndd-subtext mt-2">
+        <Hint className="mt-2">
           「メールでログイン」はアプリ内でメール+パスワード+2段階認証コードを入力します。
           「ブラウザでログイン」は別ウィンドウで公式ログインページを開きます。
           「パスワードを保存」をチェックすると次回から自動ログインします。
-        </p>
+        </Hint>
       </Section>
       {showLoginModal && (
         <LoginModal

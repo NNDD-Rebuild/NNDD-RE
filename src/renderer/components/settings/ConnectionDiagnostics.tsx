@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { IpcChannel } from '@shared/types';
+import { Btn, Hint, PageTitle, SettingsPage, StatusText } from './common';
 
 interface DiagResult {
   name: string;
@@ -65,31 +66,24 @@ export function ConnectionDiagnostics(): JSX.Element {
   };
 
   return (
-    <div className="p-4 max-w-3xl">
-      <h2 className="text-base font-bold mb-3">接続診断</h2>
-      <p className="text-xs text-nndd-subtext mb-3">
+    <SettingsPage>
+      <PageTitle title="接続診断">
         ニコニコ動画各エンドポイントへの疎通確認と、ログイン状態の検査を行います。
-      </p>
-      <button
-        onClick={run}
-        disabled={running}
-        className="text-xs px-3 py-1 bg-nndd-accent text-white rounded hover:opacity-80 disabled:opacity-50 mb-4"
-      >
+      </PageTitle>
+      <Btn variant="primary" onClick={run} disabled={running} className="mb-4">
         {running ? '実行中…' : '診断を実行'}
-      </button>
+      </Btn>
 
-      {error && (
-        <div className="text-red-500 dark:text-red-400 text-sm mb-3">エラー: {error}</div>
-      )}
+      {error && <div className="mb-3"><StatusText kind="error">エラー: {error}</StatusText></div>}
 
       {data && (
         <>
           <div className="mb-3 text-sm">
             ログイン状態:{' '}
             {data.loggedIn ? (
-              <span className="text-green-600 dark:text-green-400">● ログイン中</span>
+              <StatusText kind="ok">● ログイン中</StatusText>
             ) : (
-              <span className="text-yellow-600 dark:text-yellow-400">○ 未ログイン</span>
+              <StatusText kind="warn">○ 未ログイン</StatusText>
             )}
           </div>
           <table className="nndd-datagrid mb-6">
@@ -107,9 +101,9 @@ export function ConnectionDiagnostics(): JSX.Element {
                 <tr key={r.url}>
                   <td>
                     {r.ok ? (
-                      <span className="text-green-600 dark:text-green-400">OK</span>
+                      <StatusText kind="ok">OK</StatusText>
                     ) : (
-                      <span className="text-red-500 dark:text-red-400">NG</span>
+                      <StatusText kind="error">NG</StatusText>
                     )}
                   </td>
                   <td>
@@ -134,33 +128,26 @@ export function ConnectionDiagnostics(): JSX.Element {
       {/* フォロー新着API診断 */}
       <hr className="border-nndd-border mb-4" />
       <h3 className="text-sm font-bold mb-2">フォロー新着API診断</h3>
-      <p className="text-xs text-nndd-subtext mb-3">
-        フォロー中タブで使用するAPIエンドポイントの動作確認を行います。
-      </p>
-      <button
-        onClick={runProbe}
-        disabled={probing}
-        className="text-xs px-3 py-1 bg-nndd-accent text-white rounded hover:opacity-80 disabled:opacity-50 mb-4"
-      >
+      <Hint className="mb-3">フォロー中タブで使用するAPIエンドポイントの動作確認を行います。</Hint>
+      <Btn variant="primary" onClick={runProbe} disabled={probing} className="mb-4">
         {probing ? '診断中…' : 'フォローAPI診断'}
-      </button>
+      </Btn>
 
-      {probeError && (
-        <div className="text-red-500 dark:text-red-400 text-sm mb-3">エラー: {probeError}</div>
-      )}
+      {probeError && <div className="mb-3"><StatusText kind="error">エラー: {probeError}</StatusText></div>}
 
       {probeResults && (
         <div className="p-2 bg-nndd-panel border border-nndd-border rounded text-xs font-mono">
           <div className="font-bold mb-2 flex items-center gap-2">
             診断結果
-            <button
+            <Btn
               onClick={() => {
                 const text = probeResults.map(r => `[${r.status || '-'}] ${r.ok ? 'OK' : 'NG'} ${r.url}\n${r.preview}`).join('\n\n');
                 navigator.clipboard.writeText(text);
               }}
-              className="text-nndd-subtext hover:text-nndd-text text-[10px] px-1.5 py-0.5 border border-nndd-border rounded"
-            >コピー</button>
-            <button onClick={() => setProbeResults(null)} className="text-nndd-subtext hover:text-red-500 dark:hover:text-red-400">×</button>
+            >
+              コピー
+            </Btn>
+            <Btn onClick={() => setProbeResults(null)}>×</Btn>
           </div>
           {probeResults.map((r, i) => (
             <div key={i} className={`mb-3 ${r.ok ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}>
@@ -175,6 +162,6 @@ export function ConnectionDiagnostics(): JSX.Element {
           ))}
         </div>
       )}
-    </div>
+    </SettingsPage>
   );
 }

@@ -61,7 +61,7 @@ async function getFollowingUsers(maxCount = 30): Promise<FollowingUser[]> {
     try {
       const res = await http.fetch(url, { timeoutMs: 10000 });
       if (!res.ok) {
-        log.debug(`following users: ${url} → ${res.status}`);
+        log.verbose(`following users: ${url} → ${res.status}`);
         break;
       }
       const json = await res.json() as NicoNvapiFollowingResponse;
@@ -81,7 +81,7 @@ async function getFollowingUsers(maxCount = 30): Promise<FollowingUser[]> {
       if (!summary?.hasNext || !summary.cursor || users.length >= maxCount) break;
       cursor = summary.cursor;
     } catch (e) {
-      log.debug(`following users error ${url}:`, e);
+      log.verbose(`following users error ${url}:`, e);
       break;
     }
   }
@@ -127,7 +127,7 @@ async function getUserRecentVideos(
     if (!res.ok) {
       // 起動直後などネットワーク接続確立直後は一時的に失敗しやすいため1回だけリトライ
       if (!retried) {
-        log.debug(`user videos fetch ${res.status}, retrying: ${url}`);
+        log.verbose(`user videos fetch ${res.status}, retrying: ${url}`);
         await new Promise((r) => setTimeout(r, 500));
         return getUserRecentVideos(user, pageSize, page, true);
       }
@@ -167,7 +167,7 @@ async function getUserRecentVideos(
     return { videos, totalCount };
   } catch (e) {
     if (!retried) {
-      log.debug(`user videos fetch error, retrying: ${url}`, e);
+      log.verbose(`user videos fetch error, retrying: ${url}`, e);
       await new Promise((r) => setTimeout(r, 500));
       return getUserRecentVideos(user, pageSize, page, true);
     }
@@ -228,7 +228,7 @@ async function enrichVideoInfo(items: SearchResultItem[]): Promise<SearchResultI
   const url = NicoEndpoint.videosByIds(ids);
   try {
     const res = await http.fetch(url, { timeoutMs: 8000 });
-    if (!res.ok) { log.debug(`enrichVideoInfo: ${res.status}`); return items; }
+    if (!res.ok) { log.verbose(`enrichVideoInfo: ${res.status}`); return items; }
     const json = await res.json() as NicoNvapiVideoBulkResponse;
     const map = new Map<string, NicoNvapiVideoBulkItem>();
     for (const v of json.data?.videos ?? []) { if (v.id) map.set(v.id, v); }
@@ -254,7 +254,7 @@ async function enrichVideoInfo(items: SearchResultItem[]): Promise<SearchResultI
     log.info(`enrichVideoInfo: ${map.size}/${items.length}件補完`);
     return enriched;
   } catch (e) {
-    log.debug('enrichVideoInfo error:', e);
+    log.verbose('enrichVideoInfo error:', e);
     return items;
   }
 }
@@ -267,9 +267,9 @@ async function tryFeedApi(limit: number, cursor?: string): Promise<FeedResult | 
   const url = NicoEndpoint.feedFollowingVideos(params);
   try {
     const res = await http.fetch(url, { timeoutMs: 10000, headers: { 'Accept': 'application/json', 'Origin': NicoApi.WWW_BASE } });
-    if (!res.ok) { log.debug(`feed API: ${url} → ${res.status}`); return null; }
+    if (!res.ok) { log.verbose(`feed API: ${url} → ${res.status}`); return null; }
     const json = await res.json() as NicoFeedActivitiesResponse;
-    if (json.code !== 'ok') { log.debug(`feed API: code=${json.code}`); return null; }
+    if (json.code !== 'ok') { log.verbose(`feed API: code=${json.code}`); return null; }
 
     let items = (json.activities ?? [])
       .filter(a => a.content?.type === 'video' && a.content.id)
@@ -300,7 +300,7 @@ async function tryFeedApi(limit: number, cursor?: string): Promise<FeedResult | 
     log.info(`feed API: ${items.length}件 hasNext=${hasNext}`);
     return { items, hasNext, nextCursor };
   } catch (e) {
-    log.debug('feed API error:', e);
+    log.verbose('feed API error:', e);
     return null;
   }
 }
@@ -324,7 +324,7 @@ async function getFeedActors(): Promise<FollowingUser[]> {
     }
     return users;
   } catch (e) {
-    log.debug('getFeedActors error:', e);
+    log.verbose('getFeedActors error:', e);
     return [];
   }
 }
@@ -355,7 +355,7 @@ async function tryNicorepoFeed(limit: number, cursor?: string): Promise<FeedResu
   for (const url of candidateUrls) {
     try {
       const res = await http.fetch(url, { timeoutMs: 10000 });
-      if (!res.ok) { log.debug(`nicorepo: ${url} → ${res.status}`); continue; }
+      if (!res.ok) { log.verbose(`nicorepo: ${url} → ${res.status}`); continue; }
       const json = await res.json() as NicoNicorepoResponse;
       const rawItems = parseNicorepoToItems(json.data ?? []);
       const items = await enrichVideoInfo(rawItems);
@@ -364,7 +364,7 @@ async function tryNicorepoFeed(limit: number, cursor?: string): Promise<FeedResu
       log.info(`nicorepo: ${url} → ${items.length}件 hasNext=${hasNext}`);
       return { items, hasNext, nextCursor };
     } catch (e) {
-      log.debug(`nicorepo: ${url} error:`, e);
+      log.verbose(`nicorepo: ${url} error:`, e);
     }
   }
   return null;

@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
+import { useConfig } from '@renderer/hooks/useConfig';
+import { Btn, ButtonGroup, NumberCommitInput } from './common';
 
 type LogLevel = 'standard' | 'verbose';
 type LogRotation = { maxSizeMb: number; maxFiles: number };
@@ -7,8 +9,8 @@ export function LogViewer(): JSX.Element {
   const [text, setText] = useState('');
   const [logPath, setLogPath] = useState<string | null>(null);
   const [autoReload, setAutoReload] = useState(true);
-  const [logLevel, setLogLevel] = useState<LogLevel>('standard');
-  const [logRotation, setLogRotation] = useState<LogRotation>({ maxSizeMb: 1, maxFiles: 3 });
+  const [logLevel, setLogLevel] = useConfig<LogLevel>('logLevel', 'standard');
+  const [logRotation, setLogRotation] = useConfig<LogRotation>('logRotation', { maxSizeMb: 1, maxFiles: 3 });
   const ref = useRef<HTMLPreElement>(null);
 
   const load = (): void => {
@@ -23,12 +25,6 @@ export function LogViewer(): JSX.Element {
     window.nndd
       .invoke<string | null>(window.nndd.channels.LOG_GET_PATH)
       .then(setLogPath);
-    window.nndd
-      .invoke<LogLevel>(window.nndd.channels.CONFIG_GET, 'logLevel')
-      .then((v) => setLogLevel(v ?? 'standard'));
-    window.nndd
-      .invoke<LogRotation>(window.nndd.channels.CONFIG_GET, 'logRotation')
-      .then((v) => v && setLogRotation(v));
   }, []);
 
   useEffect(() => {
@@ -54,15 +50,8 @@ export function LogViewer(): JSX.Element {
     }
   };
 
-  const handleLogLevelChange = (level: LogLevel): void => {
-    setLogLevel(level);
-    window.nndd.invoke(window.nndd.channels.CONFIG_SET, 'logLevel', level);
-  };
-
   const handleRotationChange = (patch: Partial<LogRotation>): void => {
-    const next = { ...logRotation, ...patch };
-    setLogRotation(next);
-    window.nndd.invoke(window.nndd.channels.CONFIG_SET, 'logRotation', next);
+    void setLogRotation({ ...logRotation, ...patch });
   };
 
   return (
@@ -76,27 +65,15 @@ export function LogViewer(): JSX.Element {
           {logPath}
         </span>
 
-        <div className="ml-2 flex rounded overflow-hidden border border-nndd-border">
-          <button
-            onClick={() => handleLogLevelChange('standard')}
-            className={`text-xs px-3 py-1 ${
-              logLevel === 'standard'
-                ? 'bg-nndd-accent text-white'
-                : 'bg-nndd-panel hover:bg-nndd-border'
-            }`}
-          >
-            標準
-          </button>
-          <button
-            onClick={() => handleLogLevelChange('verbose')}
-            className={`text-xs px-3 py-1 ${
-              logLevel === 'verbose'
-                ? 'bg-nndd-accent text-white'
-                : 'bg-nndd-panel hover:bg-nndd-border'
-            }`}
-          >
-            詳細
-          </button>
+        <div className="ml-2">
+          <ButtonGroup
+            value={logLevel}
+            onChange={(v) => void setLogLevel(v)}
+            options={[
+              { value: 'standard', label: '標準' },
+              { value: 'verbose', label: '詳細' }
+            ]}
+          />
         </div>
 
         <label className="text-xs text-nndd-subtext ml-auto flex items-center gap-1">
@@ -107,49 +84,35 @@ export function LogViewer(): JSX.Element {
           />
           自動再読込
         </label>
-        <button
-          onClick={load}
-          className="text-xs px-3 py-1 bg-nndd-border rounded hover:bg-nndd-accent"
-        >
-          再読込
-        </button>
-        <button
-          onClick={handleOpen}
-          disabled={!logPath}
-          className="text-xs px-3 py-1 bg-nndd-border rounded hover:bg-nndd-accent disabled:opacity-50"
-        >
+        <Btn onClick={load}>再読込</Btn>
+        <Btn onClick={handleOpen} disabled={!logPath}>
           ファイルを開く
-        </button>
-        <button
-          onClick={handleClear}
-          className="text-xs px-3 py-1 bg-nndd-border rounded hover:bg-red-700 hover:text-white"
-        >
+        </Btn>
+        <Btn variant="danger" onClick={handleClear}>
           ログをクリア
-        </button>
+        </Btn>
       </div>
       <div className="flex items-center gap-2 px-2 py-1.5 border-b border-nndd-border bg-nndd-panel text-xs text-nndd-subtext">
         <span>自動ローテーション:</span>
         <label className="flex items-center gap-1">
           上限
-          <input
-            type="number"
+          <NumberCommitInput
             min={1}
             step={1}
+            className="w-16"
             value={logRotation.maxSizeMb}
-            onChange={(e) => handleRotationChange({ maxSizeMb: Math.max(1, Number(e.target.value) || 1) })}
-            className="w-14 bg-nndd-bg border border-nndd-border px-1 py-0.5 text-xs"
+            onCommit={(v) => handleRotationChange({ maxSizeMb: Math.floor(v) })}
           />
           MB
         </label>
         <label className="flex items-center gap-1">
           保持世代数
-          <input
-            type="number"
+          <NumberCommitInput
             min={1}
             step={1}
+            className="w-16"
             value={logRotation.maxFiles}
-            onChange={(e) => handleRotationChange({ maxFiles: Math.max(1, Number(e.target.value) || 1) })}
-            className="w-14 bg-nndd-bg border border-nndd-border px-1 py-0.5 text-xs"
+            onCommit={(v) => handleRotationChange({ maxFiles: Math.floor(v) })}
           />
         </label>
       </div>

@@ -122,7 +122,7 @@ export function registerBrowseHandlers(ctx: IpcHandlerContext): void {
       data?: { items?: RecommendItem[] };
     }
     const url = NicoEndpoint.recommend(videoId);
-    log.debug('fetch related videos:', url);
+    log.verbose('fetch related videos:', url);
     const res = await ctx.http.getJson<RecommendRes>(url);
     if (res.meta?.status && res.meta.status >= 400) {
       throw new Error(`関連動画取得失敗: status=${res.meta.status}`);

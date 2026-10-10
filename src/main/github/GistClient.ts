@@ -104,7 +104,7 @@ export class GistClient {
       })
     });
     const raw = (await res.json()) as RawGist;
-    log.debug('gist created:', raw.id);
+    log.verbose('gist created:', raw.id);
     return GistClient.toDetail(raw);
   }
 
@@ -118,7 +118,7 @@ export class GistClient {
       })
     });
     const raw = (await res.json()) as RawGist;
-    log.debug('gist updated:', raw.id);
+    log.verbose('gist updated:', raw.id);
     return GistClient.toDetail(raw);
   }
 

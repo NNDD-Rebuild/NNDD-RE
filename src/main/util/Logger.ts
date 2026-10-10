@@ -9,11 +9,21 @@ import { getConfigStore } from '../config/ConfigStore';
  * - コンソール出力
  * - ファイル出力 (`<userData>/log/nndd.log`)
  * - サイズが大きくなったら自動ローテート (設定 > logRotation で上限サイズ・保持世代数を変更可能)
+ *
+ * ログレベル:
+ * - info / warn / error: 常に出力 (標準)
+ * - verbose: 設定 > ログ が「詳細」のとき、または開発実行 (npm run dev) のとき出力
+ * - debug: 開発実行 (npm run dev) のときだけ出力。設定には連動しない
  */
 
 let logFilePath: string | null = null;
 let initialized = false;
 let currentLogLevel: 'standard' | 'verbose' = 'standard';
+
+/** 開発実行 (未パッケージ) か。app 未取得時は false 扱い */
+function isDevRun(): boolean {
+  return app ? !app.isPackaged : false;
+}
 
 export function setLogLevel(level: 'standard' | 'verbose'): void {
   currentLogLevel = level;
@@ -110,13 +120,13 @@ export class Logger {
     writeToFile('ERROR', this.tag, format(args));
   }
   verbose(...args: unknown[]): void {
-    if (currentLogLevel === 'verbose') {
+    if (currentLogLevel === 'verbose' || isDevRun()) {
       console.log(`[VERBOSE][${this.tag}]`, ...args);
       writeToFile('VERBOSE', this.tag, format(args));
     }
   }
   debug(...args: unknown[]): void {
-    if (process.env.NODE_ENV !== 'production') {
+    if (isDevRun()) {
       console.debug(`[DEBUG][${this.tag}]`, ...args);
       writeToFile('DEBUG', this.tag, format(args));
     }

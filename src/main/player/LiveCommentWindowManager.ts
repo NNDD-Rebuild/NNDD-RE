@@ -4,6 +4,7 @@ import { is } from '@electron-toolkit/utils';
 import { IpcChannel, type LiveCommentWindowEvent, type LiveCommentWindowMessage } from '@shared/types';
 import { getConfigStore } from '../config/ConfigStore';
 import { createLogger } from '../util/Logger';
+import { revealWindow, visibleBoundsOrUndefined } from '../util/windowBounds';
 
 const log = createLogger('LiveCommentWindowManager');
 
@@ -34,8 +35,7 @@ export class LiveCommentWindowManager {
   open(player: WebContents): void {
     const existing = this.byPlayer.get(player.id);
     if (existing && !existing.win.isDestroyed()) {
-      existing.win.show();
-      existing.win.focus();
+      revealWindow(existing.win);
       // プレイヤーが番組を切り替えて読み込み直した場合に備え、全件を送り直してもらう
       this.sendToPlayer(player, { type: 'ready' });
       return;
@@ -45,7 +45,8 @@ export class LiveCommentWindowManager {
     const live = config.get('live');
     const playerWin = BrowserWindow.fromWebContents(player);
     const pb = playerWin?.getBounds();
-    const saved = live?.commentWindowBounds;
+    // 保存位置が今の画面構成で画面外 (モニター取り外し等) なら使わず、プレイヤーの右隣にする
+    const saved = visibleBoundsOrUndefined(live?.commentWindowBounds);
     const bounds = saved ?? {
       // 初回はプレイヤーの右隣
       x: pb ? pb.x + pb.width : undefined,

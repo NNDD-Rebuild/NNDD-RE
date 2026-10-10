@@ -48,7 +48,7 @@ if (process.platform === 'win32' && getConfigStore().get('player').streamingMode
   app.commandLine.appendSwitch('disable-features', 'D3D11VideoDecoder,D3D12VideoDecoder');
 }
 // DEV: renderer remote debugging (removed after testing)
-if (process.env['NODE_ENV'] !== 'production') {
+if (!app.isPackaged) {
   app.commandLine.appendSwitch('remote-debugging-port', '9222');
 }
 

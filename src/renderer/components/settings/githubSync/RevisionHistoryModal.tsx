@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { BackupResult, GistRevision } from '@shared/types';
+import { Btn, Hint, StatusText } from '../common';
 
 /**
  * Gist の世代 (リビジョン) 履歴モーダル。
@@ -62,27 +63,22 @@ export function RevisionHistoryModal({
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-nndd-panel border border-nndd-border rounded-lg p-4 w-full max-w-md max-h-[80vh] flex flex-col">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-bold text-nndd-text">世代履歴</h3>
-          <button
-            onClick={onClose}
-            className="text-xs px-2 py-1 bg-nndd-border rounded hover:bg-nndd-accent hover:text-white"
-          >
-            閉じる
-          </button>
+          <h3 className="text-sm font-bold">世代履歴</h3>
+          <Btn onClick={onClose}>閉じる</Btn>
         </div>
 
-        <p className="text-[11px] text-nndd-subtext mb-3">
+        <Hint className="mb-3">
           過去のバックアップ内容をローカルへ復元します。Gist自体(リモート)は変更されません。
-        </p>
+        </Hint>
 
-        {error && <p className="text-xs text-red-500">{error}</p>}
+        {error && <StatusText kind="error">{error}</StatusText>}
 
         {!error && revisions === null && (
-          <div className="text-xs text-nndd-subtext">読み込み中…</div>
+          <Hint>読み込み中…</Hint>
         )}
 
         {revisions !== null && revisions.length === 0 && (
-          <div className="text-xs text-nndd-subtext">履歴がありません</div>
+          <Hint>履歴がありません</Hint>
         )}
 
         {revisions !== null && revisions.length > 0 && (
@@ -101,19 +97,19 @@ export function RevisionHistoryModal({
                   </div>
                   <div className="text-nndd-subtext">変更: {rev.totalChanges}行</div>
                 </div>
-                <button
+                <Btn
                   onClick={() => handleRestore(rev)}
                   disabled={restoringSha !== null || idx === 0}
-                  className="shrink-0 ml-2 text-xs px-2 py-1 bg-nndd-border rounded hover:bg-nndd-accent hover:text-white disabled:opacity-50"
+                  className="shrink-0 ml-2"
                 >
                   {restoringSha === rev.sha ? '復元中…' : 'このバージョンを復元'}
-                </button>
+                </Btn>
               </div>
             ))}
           </div>
         )}
 
-        {resultMessage && <p className="text-xs text-nndd-subtext mt-3">{resultMessage}</p>}
+        {resultMessage && <Hint className="mt-3">{resultMessage}</Hint>}
       </div>
     </div>
   );

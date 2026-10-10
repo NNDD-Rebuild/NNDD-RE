@@ -73,7 +73,7 @@ export class SeriesClient {
 
   private static async fetchPageRaw(id: string, page: number): Promise<NicoSeriesResponse> {
     const url = NicoEndpoint.series(id, PAGE_SIZE, page);
-    log.debug('fetch series page %d:', page, url);
+    log.verbose('fetch series page %d:', page, url);
     return NicoContext.get().http.getJson<NicoSeriesResponse>(url);
   }
 

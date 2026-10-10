@@ -280,7 +280,7 @@ export class WatchInfoHandler {
     // 未ログイン: /api/watch/v3_guest
     const endpoint = loggedIn ? 'v3' : 'v3_guest';
     const url = NicoEndpoint.watchApi(endpoint, videoId, actionTrackId);
-    log.debug('fetching watch JSON API:', url);
+    log.verbose('fetching watch JSON API:', url);
     
     // debugDumpPath の設定 (設定画面から有効化)
     let debugDumpPath: string | undefined;
@@ -316,7 +316,7 @@ export class WatchInfoHandler {
   private static async fetchViaHtml(videoId: string, noCookie = false): Promise<WatchPageInfo> {
     const ctx = NicoContext.get();
     const url = `${NicoApi.WATCH_PAGE}${videoId}`;
-    log.debug('fetching watch page (HTML):', url);
+    log.verbose('fetching watch page (HTML):', url);
     const html = await ctx.http.getText(url, { noCookie, noCookieReceive: noCookie });
     const parsed = WatchPageParser.parse(html, videoId);
     return { ...parsed, guestFetched: noCookie };

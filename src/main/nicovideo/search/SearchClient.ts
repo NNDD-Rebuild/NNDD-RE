@@ -51,7 +51,7 @@ export class SearchClient {
     }
     if (apiMode === 'nvapi') return this.searchNvapi(opts);
     const url = this.buildUrl(opts);
-    log.debug('search:', url);
+    log.verbose('search:', url);
     const res = await NicoContext.get().http.getJson<NicoSnapshotV2Response>(url);
     const items = (res.data ?? []).map(this.toItem);
     return {
@@ -65,7 +65,7 @@ export class SearchClient {
     totalCount: number;
   }> {
     const url = this.buildNvapiUrl(opts);
-    log.debug('searchNvapi:', url);
+    log.verbose('searchNvapi:', url);
     const res = await NicoContext.get().http.getJson<NicoNvapiSearchResponse>(url);
     const items = (res.data?.items ?? []).map(this.toItemFromNvapi);
     return {

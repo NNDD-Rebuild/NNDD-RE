@@ -3,6 +3,7 @@ import type { NgListItem, NgListItemTypeValue } from '@shared/types';
 import { NgListItemType } from '@shared/types';
 import { useConfig } from '@renderer/hooks/useConfig';
 import { useNgList } from '@renderer/hooks/player/useNgList';
+import { Btn, Hint, PageTitle, Select, TextInput } from './common';
 
 const STRENGTH_OPTIONS: { value: 'weak' | 'medium' | 'strong'; label: string; desc: string }[] = [
   { value: 'weak', label: '弱', desc: 'NGワードは完全一致のみ適用' },
@@ -54,78 +55,64 @@ export function NgCommentSettings(): JSX.Element {
 
   return (
     <div className="p-6 space-y-6 max-w-2xl">
-      <div>
-        <h2 className="text-base font-bold text-nndd-text mb-1">NGコメント設定</h2>
-        <p className="text-xs text-nndd-subtext">
-          ここで登録したNG設定は全動画に適用されます。プレイヤー内の右クリックからも追加できます。
-        </p>
-      </div>
+      <PageTitle title="NGコメント設定">
+        ここで登録したNG設定は全動画に適用されます。プレイヤー内の右クリックからも追加できます。
+      </PageTitle>
 
       {/* NG強度プリセット */}
       <div>
         <div className="flex gap-1">
           {STRENGTH_OPTIONS.map((opt) => (
-            <button
+            <Btn
               key={opt.value}
+              variant={ngStrength === opt.value ? 'primary' : 'default'}
               onClick={() => setNgStrength(opt.value)}
-              className={[
-                'text-xs px-3 py-1 rounded',
-                ngStrength === opt.value
-                  ? 'bg-nndd-accent text-white'
-                  : 'bg-nndd-border hover:bg-nndd-accent/70'
-              ].join(' ')}
             >
               {opt.label}
-            </button>
+            </Btn>
           ))}
         </div>
-        <p className="text-xs text-nndd-subtext mt-1">
-          {STRENGTH_OPTIONS.find((o) => o.value === ngStrength)?.desc}
-        </p>
+        <Hint className="mt-1">{STRENGTH_OPTIONS.find((o) => o.value === ngStrength)?.desc}</Hint>
       </div>
 
       {/* 入力フォーム */}
       <div className="flex gap-2 items-center">
-        <select
+        <Select
           value={kind}
           onChange={(e) => { setKind(e.target.value as NgListItemTypeValue); setMatchExact(false); setInput(''); }}
-          className="text-xs bg-nndd-bg border border-nndd-border rounded px-2 py-1.5 shrink-0"
+          className="shrink-0"
         >
           {KIND_OPTIONS.map((o) => (
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
-        </select>
+        </Select>
 
         {selectedKind.hasMatch && (
-          <select
+          <Select
             value={matchExact ? 'exact' : 'partial'}
             onChange={(e) => setMatchExact(e.target.value === 'exact')}
-            className="text-xs bg-nndd-bg border border-nndd-border rounded px-2 py-1.5 shrink-0"
+            className="shrink-0"
           >
             <option value="partial">部分一致</option>
             <option value="exact">完全一致</option>
-          </select>
+          </Select>
         )}
 
-        <input
-          type="text"
+        <TextInput
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
           placeholder={selectedKind.placeholder}
-          className="flex-1 px-2 py-1.5 text-xs bg-nndd-bg border border-nndd-border rounded min-w-0"
+          className="flex-1 min-w-0"
         />
-        <button
-          onClick={handleAdd}
-          className="px-3 py-1.5 text-xs bg-nndd-accent text-white rounded hover:opacity-80 shrink-0"
-        >
+        <Btn variant="primary" onClick={handleAdd} className="shrink-0">
           追加
-        </button>
+        </Btn>
       </div>
 
       {/* 登録一覧 */}
       <div>
-        <div className="text-xs text-nndd-subtext mb-1">登録済み — {ngList.length} 件</div>
+        <Hint className="mb-1">登録済み — {ngList.length} 件</Hint>
         {ngList.length === 0 ? (
           <div className="text-xs text-nndd-subtext italic">未登録</div>
         ) : (

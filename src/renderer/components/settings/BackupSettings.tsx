@@ -11,6 +11,7 @@ import { GitHubLoginArea } from './githubSync/GitHubLoginArea';
 import { DeviceFlowModal } from './githubSync/DeviceFlowModal';
 import { ProfileList } from './githubSync/ProfileList';
 import { ProfileEditor } from './githubSync/ProfileEditor';
+import { Hint, PageTitle, SettingsPage, StatusText } from './common';
 
 export function BackupSettings(): JSX.Element {
   const [status, setStatus] = useState<GitHubStatus>({ loggedIn: false });
@@ -204,22 +205,21 @@ export function BackupSettings(): JSX.Element {
   }, [refreshProfiles]);
 
   if (loading) {
-    return <div className="p-6 text-sm text-nndd-subtext">読み込み中…</div>;
+    return <SettingsPage><Hint>読み込み中…</Hint></SettingsPage>;
   }
 
   const activeProfile = profiles.find((p) => p.id === activeProfileId) ?? null;
 
   return (
-    <div className="p-6 space-y-6 max-w-2xl">
-      <div>
-        <h2 className="text-base font-bold text-nndd-text mb-1">バックアップ</h2>
-        <p className="text-xs text-nndd-subtext">
-          GitHub Gist を使ってアプリ設定・NGリスト・マイリスト・スケジュール・保存検索・プレイリスト・
-          視聴履歴をバックアップ/同期できます。アップロードはプロファイルごとに手動、または
-          「起動時・終了時に自動アップロード」を有効にすると自動で行われます(前回から変更がなければ
-          スキップされます)。ダウンロード(ローカルへの反映)は誤操作防止のため常に手動です。
-        </p>
-      </div>
+    <SettingsPage>
+      <PageTitle title="バックアップ">
+        GitHub Gist を使ってアプリ設定・NGリスト・マイリスト・スケジュール・保存検索・プレイリスト・
+        視聴履歴をバックアップ/同期できます。アップロードはプロファイルごとに手動、または
+        「起動時・終了時に自動アップロード」を有効にすると自動で行われます(前回から変更がなければ
+        スキップされます)。ダウンロード(ローカルへの反映)は誤操作防止のため常に手動です。
+      </PageTitle>
+
+      <div className="space-y-6">
 
       <GitHubLoginArea
         status={status}
@@ -227,7 +227,7 @@ export function BackupSettings(): JSX.Element {
         onLogin={handleLogin}
         onLogout={handleLogout}
       />
-      {loginError && <p className="text-xs text-red-500">{loginError}</p>}
+      {loginError && <StatusText kind="error">{loginError}</StatusText>}
 
       {status.loggedIn && (
         <>
@@ -266,6 +266,7 @@ export function BackupSettings(): JSX.Element {
           onCancel={handleCancelDeviceFlow}
         />
       )}
-    </div>
+      </div>
+    </SettingsPage>
   );
 }

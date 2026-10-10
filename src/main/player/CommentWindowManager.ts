@@ -5,6 +5,7 @@ import { IpcChannel } from '@shared/types';
 import type { NNDDREComment } from '@shared/types';
 import { createLogger } from '../util/Logger';
 import { getConfigStore } from '../config/ConfigStore';
+import { revealWindow, visibleBoundsOrUndefined } from '../util/windowBounds';
 
 const log = createLogger('CommentWindowManager');
 
@@ -49,7 +50,7 @@ export class CommentWindowManager {
     if (this.win && !this.win.isDestroyed()) {
       // 既存ウィンドウに新データを送信してフォーカス (位置は維持)
       this.win.webContents.send(IpcChannel.COMMENT_WINDOW_INIT, data);
-      this.win.focus();
+      revealWindow(this.win);
       return;
     }
 
@@ -58,9 +59,12 @@ export class CommentWindowManager {
 
     // 保存済みboundsがあればそれを使う。なければプレイヤーウィンドウの右隣に配置
     const playerBounds = playerWin.getBounds();
-    const savedBounds = getConfigStore().get('player.commentWindowBounds') as
-      | { width: number; height: number; x: number; y: number; maximized?: boolean }
-      | undefined;
+    // 保存位置が今の画面構成で画面外 (モニター取り外し等) なら使わない
+    const savedBounds = visibleBoundsOrUndefined(
+      getConfigStore().get('player.commentWindowBounds') as
+        | { width: number; height: number; x: number; y: number; maximized?: boolean }
+        | undefined
+    );
     const winX = savedBounds?.x ?? playerBounds.x + playerBounds.width;
     const winY = savedBounds?.y ?? playerBounds.y;
     const winW = savedBounds?.width ?? 540;

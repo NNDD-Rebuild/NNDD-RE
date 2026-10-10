@@ -217,7 +217,7 @@ export class AuthManager {
       return { ok: false, error: '保存済みパスワードの復号に失敗しました' };
     }
 
-    log.debug('auto relogin for:', email);
+    log.verbose('auto relogin for:', email);
     try {
       // 起動時は無音優先: 隠しウィンドウのみ。表示ウィンドウは起動時に勝手に出さない
       // (失敗時は期限切れ通知経由でユーザーが手動ログインに進む)。
@@ -271,7 +271,7 @@ export class AuthManager {
           'X-Frontend-Version': NicoApi.ACCOUNT_FRONTEND_VERSION
         }
       });
-      log.debug('server logout status:', res.status);
+      log.verbose('server logout status:', res.status);
     } catch (e) {
       log.warn('Server logout failed (ignored):', e);
     }

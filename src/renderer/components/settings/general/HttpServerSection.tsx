@@ -1,10 +1,24 @@
 import { useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useConfig } from '@renderer/hooks/useConfig';
-import { Section, Btn } from '../common';
+import {
+  Btn,
+  CheckRow,
+  CommitInput,
+  Hint,
+  NumberCommitInput,
+  RadioGroup,
+  Row,
+  Section,
+  StatusText,
+  TextInput
+} from '../common';
 
 type BindMode = 'loopback' | 'lan' | 'tailscale' | 'tailscale-serve' | 'tailscale-node';
 
+const BIND_MODES: BindMode[] = ['loopback', 'lan', 'tailscale', 'tailscale-serve', 'tailscale-node'];
+
+/** Tailscale への公開 (serve / 独立端末) の状態 */
 interface ExposureInfo {
   state: 'idle' | 'starting' | 'needs_login' | 'running' | 'error';
   message?: string;
@@ -12,93 +26,69 @@ interface ExposureInfo {
   urls: string[];
 }
 
+interface HttpStatus {
+  running: boolean;
+  port?: number;
+  lanIp?: string;
+  bindMode?: BindMode;
+  tailscaleIp?: string;
+  waitingForTailscale?: boolean;
+  exposure?: ExposureInfo;
+}
+
 /** 設定 > 全般 > 内蔵HTTPサーバー */
 export function HttpServerSection(): JSX.Element {
-  const [httpStatus, setHttpStatus] = useState<{
-    running: boolean;
-    port?: number;
-    lanIp?: string;
-    bindMode?: BindMode;
-    tailscaleIp?: string;
-    waitingForTailscale?: boolean;
-    exposure?: ExposureInfo;
-  }>({ running: false });
+  const [httpStatus, setHttpStatus] = useState<HttpStatus>({ running: false });
   const [httpBusy, setHttpBusy] = useState(false);
   const [showQr, setShowQr] = useState(false);
-  const [bindMode, setBindMode] = useState<BindMode>('loopback');
-  const [allowVideo, setAllowVideo] = useState(true);
-  const [allowMyList, setAllowMyList] = useState(true);
+  // 待受範囲。bindMode が無い設定 (旧バージョン) は allowExternal から導出する
+  const [bindModeCfg, setBindModeCfg] = useConfig<string>('httpServer.bindMode', '');
+  const [allowExternal, setAllowExternal] = useConfig<boolean>('httpServer.allowExternal', false);
+  const bindMode: BindMode = (BIND_MODES as string[]).includes(bindModeCfg)
+    ? (bindModeCfg as BindMode)
+    : allowExternal ? 'lan' : 'loopback';
+  const [allowVideo, setAllowVideo] = useConfig<boolean>('httpServer.allowVideo', true);
+  const [allowMyList, setAllowMyList] = useConfig<boolean>('httpServer.allowMyList', true);
   const [httpEnabled, setHttpEnabled] = useConfig<boolean>('httpServer.enabled', false);
   const [httpPort, setHttpPort] = useConfig<number>('httpServer.port', 12345);
   const [requireToken, setRequireToken] = useConfig<boolean>('httpServer.requireToken', false);
   const [allowedHosts, setAllowedHosts] = useConfig<string[]>('httpServer.allowedHosts', []);
-  const [allowedHostsText, setAllowedHostsText] = useState('');
   const [serveHttpsPort, setServeHttpsPort] = useConfig<number>('httpServer.serveHttpsPort', 8443);
   const [nodeHostname, setNodeHostname] = useConfig<string>('httpServer.nodeHostname', 'nndd-re');
-  const [nodeHostnameInput, setNodeHostnameInput] = useState('nndd-re');
   const [nodeHttps, setNodeHttps] = useConfig<boolean>('httpServer.nodeHttps', false);
   const [nodeEphemeral, setNodeEphemeral] = useConfig<boolean>('httpServer.nodeEphemeral', false);
-  const [servePortInput, setServePortInput] = useState('8443');
+  // 端末名が不正なとき、入力欄の下書きを捨てて元に戻すための鍵
+  const [hostnameKey, setHostnameKey] = useState(0);
   const [token, setToken] = useState<string | null>(null);
   const [showToken, setShowToken] = useState(false);
 
   const refreshHttpStatus = (): void => {
     window.nndd
-      .invoke<{
-        running: boolean;
-        port?: number;
-        lanIp?: string;
-        bindMode?: BindMode;
-        tailscaleIp?: string;
-        waitingForTailscale?: boolean;
-        exposure?: ExposureInfo;
-      }>(window.nndd.channels.HTTPD_STATUS)
+      .invoke<HttpStatus>(window.nndd.channels.HTTPD_STATUS)
       .then(setHttpStatus)
       .catch(() => setHttpStatus({ running: false }));
   };
 
   useEffect(() => {
-    Promise.all([
-      window.nndd.invoke<string | undefined>(window.nndd.channels.CONFIG_GET, 'httpServer.bindMode'),
-      window.nndd.invoke<boolean>(window.nndd.channels.CONFIG_GET, 'httpServer.allowExternal')
-    ])
-      .then(([mode, ext]) => {
-        // bindMode が無い設定 (旧バージョン) は allowExternal から導出する
-        setBindMode(
-          mode === 'loopback' || mode === 'lan' || mode === 'tailscale' || mode === 'tailscale-serve' || mode === 'tailscale-node'
-            ? mode
-            : ext === true ? 'lan' : 'loopback'
-        );
-      })
-      .catch(() => {});
-    window.nndd
-      .invoke<boolean>(window.nndd.channels.CONFIG_GET, 'httpServer.allowVideo')
-      .then((v) => setAllowVideo(v !== false))
-      .catch(() => {});
-    window.nndd
-      .invoke<boolean>(window.nndd.channels.CONFIG_GET, 'httpServer.allowMyList')
-      .then((v) => setAllowMyList(v !== false))
-      .catch(() => {});
     refreshHttpStatus();
   }, []);
 
-  useEffect(() => { setAllowedHostsText(allowedHosts.join(', ')); }, [allowedHosts]);
-  useEffect(() => { setNodeHostnameInput(nodeHostname); }, [nodeHostname]);
-  useEffect(() => { setServePortInput(String(serveHttpsPort)); }, [serveHttpsPort]);
-
-  // 起動中は Tailscale の接続状態の変化 (待機 → 接続) を反映する
+  // 起動中は Tailscale の接続状態の変化 (待機 → 接続、ログイン承認など) を反映する
   useEffect(() => {
     if (!httpStatus.running) return;
     const timer = setInterval(refreshHttpStatus, 5000);
     return () => clearInterval(timer);
   }, [httpStatus.running]);
 
-  // tailscale モードはトークン必須
+  // tailscale 系のモードはトークン必須
   const tokenActive = requireToken || bindMode.startsWith('tailscale');
 
   // トークン認証が有効なときだけトークンを取得する (QR・表示用)
   useEffect(() => {
-    if (!tokenActive) { setToken(null); return; }
+    if (!tokenActive) {
+      setToken(null);
+      return;
+    }
     window.nndd
       .invoke<{ token: string }>(window.nndd.channels.HTTPD_TOKEN_GET)
       .then((r) => setToken(r.token))
@@ -110,14 +100,6 @@ export function HttpServerSection(): JSX.Element {
     const r = await window.nndd.invoke<{ token: string }>(window.nndd.channels.HTTPD_TOKEN_REGENERATE);
     setToken(r.token);
   };
-
-  // QR・共有用のURL (トークンなし)。Tailscale への公開 (serve) があればその URL を使う
-  const shareUrl =
-    httpStatus.exposure?.urls[0] ??
-    `http://${httpStatus.tailscaleIp ?? httpStatus.lanIp ?? 'localhost'}:${httpStatus.port}/library`;
-
-  const withToken = (url: string): string =>
-    tokenActive && token ? `${url}?token=${encodeURIComponent(token)}` : url;
 
   const handleHttpStart = async (): Promise<void> => {
     setHttpBusy(true);
@@ -139,6 +121,24 @@ export function HttpServerSection(): JSX.Element {
     }
   };
 
+  const changeBindMode = async (mode: BindMode): Promise<void> => {
+    await setBindModeCfg(mode);
+    // 旧バージョンとの互換のため allowExternal も同期する
+    await setAllowExternal(mode === 'lan');
+    refreshHttpStatus();
+  };
+
+  // QR・共有用のURL (トークンなし)。Tailscale への公開 (serve / 独立端末) があればその URL を使う
+  const shareUrl =
+    httpStatus.exposure?.urls[0] ??
+    `http://${httpStatus.tailscaleIp ?? httpStatus.lanIp ?? 'localhost'}:${httpStatus.port}/library`;
+  const withToken = (url: string): string =>
+    tokenActive && token ? `${url}?token=${encodeURIComponent(token)}` : url;
+  const exposure = httpStatus.exposure;
+  const exposureReady = !exposure || exposure.state === 'running';
+  const qrAvailable = !httpStatus.waitingForTailscale && exposureReady;
+  const isTailscaleRunning = httpStatus.bindMode?.startsWith('tailscale') ?? false;
+
   return (
     <Section title="内蔵HTTPサーバー">
       <div className="flex items-center gap-2">
@@ -146,51 +146,27 @@ export function HttpServerSection(): JSX.Element {
           {httpStatus.running ? (
             <>
               <div>
-                <span className="text-green-600 dark:text-green-400">● 起動中</span>
-                {!httpStatus.bindMode?.startsWith('tailscale') && (
+                <StatusText kind="ok">● 起動中</StatusText>
+                {!isTailscaleRunning && (
                   <span className="ml-2 text-xs text-nndd-subtext">
                     <a
                       href="#"
-                      onClick={(e) => { e.preventDefault(); window.open(withToken(`http://127.0.0.1:${httpStatus.port}/library`)); }}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        window.open(withToken(`http://127.0.0.1:${httpStatus.port}/library`));
+                      }}
                       className="underline"
                     >
                       http://127.0.0.1:{httpStatus.port}/library
                     </a>
                   </span>
                 )}
-                {httpStatus.waitingForTailscale && (
-                  <div className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
-                    Tailscale の接続を待っています (Tailscale を起動してログインすると自動で待受を開始します)
-                  </div>
-                )}
-                {httpStatus.exposure && (
-                  <div className="text-xs mt-1">
-                    {httpStatus.exposure.state === 'running' && httpStatus.exposure.urls.map((u) => (
-                      <div key={u} className="text-nndd-subtext">
-                        Tailscale:{' '}
-                        <span className="text-green-600 dark:text-green-300">{u}</span>
-                      </div>
-                    ))}
-                    {httpStatus.exposure.state === 'starting' && (
-                      <div className="text-nndd-subtext">Tailscale の公開を設定しています…</div>
-                    )}
-                    {(httpStatus.exposure.state === 'needs_login' || httpStatus.exposure.state === 'error') && (
-                      <div className="text-yellow-600 dark:text-yellow-400">
-                        {httpStatus.exposure.message}
-                        {httpStatus.exposure.authUrl && (
-                          <>
-                            {' '}
-                            <a
-                              href="#"
-                              onClick={(e) => { e.preventDefault(); window.open(httpStatus.exposure?.authUrl); }}
-                              className="underline"
-                            >
-                              ログイン用ページを開く
-                            </a>
-                          </>
-                        )}
-                      </div>
-                    )}
+                {httpStatus.lanIp && (
+                  <div className="text-xs text-nndd-subtext mt-1">
+                    LAN:{' '}
+                    <span className="text-green-600 dark:text-green-300">
+                      http://{httpStatus.lanIp}:{httpStatus.port}/library
+                    </span>
                   </div>
                 )}
                 {httpStatus.tailscaleIp && (
@@ -201,12 +177,42 @@ export function HttpServerSection(): JSX.Element {
                     </span>
                   </div>
                 )}
-                {httpStatus.lanIp && (
-                  <div className="text-xs text-nndd-subtext mt-1">
-                    LAN:{' '}
-                    <span className="text-green-600 dark:text-green-300">
-                      http://{httpStatus.lanIp}:{httpStatus.port}/library
-                    </span>
+                {httpStatus.waitingForTailscale && (
+                  <div className="mt-1">
+                    <StatusText kind="warn">
+                      Tailscale の接続を待っています (Tailscale を起動してログインすると自動で待受を開始します)
+                    </StatusText>
+                  </div>
+                )}
+                {exposure && (
+                  <div className="mt-1 space-y-0.5">
+                    {exposure.state === 'running' &&
+                      exposure.urls.map((u) => (
+                        <div key={u} className="text-xs text-nndd-subtext">
+                          Tailscale: <span className="text-green-600 dark:text-green-300">{u}</span>
+                        </div>
+                      ))}
+                    {exposure.state === 'starting' && <Hint>Tailscale の公開を設定しています…</Hint>}
+                    {(exposure.state === 'needs_login' || exposure.state === 'error') && (
+                      <div>
+                        <StatusText kind="warn">{exposure.message}</StatusText>
+                        {exposure.authUrl && (
+                          <>
+                            {' '}
+                            <a
+                              href="#"
+                              onClick={(e) => {
+                                e.preventDefault();
+                                window.open(exposure.authUrl);
+                              }}
+                              className="text-xs underline"
+                            >
+                              ログイン用ページを開く
+                            </a>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -217,19 +223,16 @@ export function HttpServerSection(): JSX.Element {
                 >
                   {showQr ? 'QRコードを隠す' : 'QRコードを表示'}
                 </button>
-                {showQr && !httpStatus.waitingForTailscale && !(httpStatus.exposure && httpStatus.exposure.state !== 'running') && (
-                  <div className="mt-2 inline-block bg-white p-3">
-                    <QRCodeSVG
-                      value={withToken(shareUrl)}
-                      size={128}
-                    />
-                  </div>
-                )}
-                {showQr && !httpStatus.waitingForTailscale && !(httpStatus.exposure && httpStatus.exposure.state !== 'running') && (
-                  <p className="text-xs text-nndd-subtext mt-1">
-                    {shareUrl}
-                    {tokenActive && ' (QRコードにはアクセストークンが含まれます)'}
-                  </p>
+                {showQr && qrAvailable && (
+                  <>
+                    <div className="mt-2 inline-block bg-white p-3">
+                      <QRCodeSVG value={withToken(shareUrl)} size={128} />
+                    </div>
+                    <p className="text-xs text-nndd-subtext mt-1">
+                      {shareUrl}
+                      {tokenActive && ' (QRコードにはアクセストークンが含まれます)'}
+                    </p>
+                  </>
                 )}
               </div>
             </>
@@ -247,192 +250,126 @@ export function HttpServerSection(): JSX.Element {
           </Btn>
         )}
       </div>
-      <div className="mt-3 text-sm">
-        <div className="text-xs text-nndd-subtext mb-1">待受範囲</div>
-        {([
-          ['loopback', 'このPCのみ (127.0.0.1)'],
-          ['lan', 'LAN内の他端末からのアクセスを許可 (スマホ等から閲覧できます)'],
-          ['tailscale', 'Tailscale 経由のみ許可 (外出先から。アクセストークン必須)'],
-          ['tailscale-serve', 'Tailscale Serve で HTTPS 公開 (導入済みの Tailscale を使用。アクセストークン必須)'],
-          ['tailscale-node', 'Tailscale 独立端末 (NNDD-RE 専用の端末として参加。外部ツールで取得が必要。アクセストークン必須)']
-        ] as [BindMode, string][]).map(([mode, label]) => (
-          <label key={mode} className="flex items-center gap-2 cursor-pointer select-none py-0.5">
-            <input
-              type="radio"
-              name="httpBindMode"
-              checked={bindMode === mode}
-              onChange={async () => {
-                setBindMode(mode);
-                await window.nndd.invoke(window.nndd.channels.CONFIG_SET, 'httpServer.bindMode', mode);
-                // 旧バージョンとの互換のため allowExternal も同期する
-                await window.nndd.invoke(window.nndd.channels.CONFIG_SET, 'httpServer.allowExternal', mode === 'lan');
-                refreshHttpStatus();
-              }}
-            />
-            {label}
-          </label>
-        ))}
-      </div>
-      {httpStatus.running && httpStatus.bindMode !== undefined && httpStatus.bindMode !== bindMode && (
-        <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
-          設定変更を反映するにはサーバーを再起動してください。
-        </p>
-      )}
-      {bindMode === 'lan' && (
-        <p className="text-xs text-nndd-subtext mt-1">
-          スマホからアクセスできない場合は Windows ファイアウォールでポート {httpStatus.port ?? 12345} (TCP) の受信規則を許可してください。
-        </p>
-      )}
-      {bindMode === 'tailscale-serve' && (
-        <div className="mt-1">
-          <p className="text-xs text-nndd-subtext">
-            導入済みの Tailscale の `tailscale serve` で HTTPS 公開します (127.0.0.1 で待受し、LAN内には公開されません)。
-            Tailscale の管理画面で MagicDNS と HTTPS 証明書を有効にしてください。既存の serve 設定は変更せず、ここで作った設定だけを停止時に外します。
-          </p>
-          <div className="flex items-center gap-2 mt-1">
-            <span className="text-xs text-nndd-subtext shrink-0">HTTPSポート</span>
-            <input
-              type="number"
-              min={1}
-              max={65535}
-              value={servePortInput}
-              onChange={(e) => setServePortInput(e.target.value)}
-              onBlur={() => {
-                const n = Number(servePortInput);
-                if (Number.isInteger(n) && n >= 1 && n <= 65535) void setServeHttpsPort(n);
-                else setServePortInput(String(serveHttpsPort));
-              }}
-              className="w-24 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
-            />
-            <span className="text-xs text-nndd-subtext">(デフォルト 8443。443 は他の用途と衝突しやすいため非推奨)</span>
-          </div>
-        </div>
-      )}
-      {bindMode === 'tailscale-node' && (
-        <div className="mt-1">
-          <p className="text-xs text-nndd-subtext">
-            NNDD-RE を PC の Tailscale とは別の「専用の端末」として tailnet に参加させます (127.0.0.1 で待受し、LAN内には公開されません)。
-            設定 → 外部ツール で Tailscale (独立端末) を取得し、起動後に表示されるログイン用ページで承認してください。
-          </p>
-          <div className="flex items-center gap-2 mt-1">
-            <span className="text-xs text-nndd-subtext shrink-0">端末名</span>
-            <input
-              type="text"
-              value={nodeHostnameInput}
-              onChange={(e) => setNodeHostnameInput(e.target.value)}
-              onBlur={() => {
-                const v = nodeHostnameInput.trim().toLowerCase();
-                if (/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(v)) void setNodeHostname(v);
-                else setNodeHostnameInput(nodeHostname);
-              }}
-              className="w-40 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
-            />
-            <span className="text-xs text-nndd-subtext">(MagicDNS 名。英数字とハイフン)</span>
-          </div>
-          <label className="flex items-center gap-2 mt-1 cursor-pointer select-none text-sm">
-            <input type="checkbox" checked={nodeHttps} onChange={(e) => void setNodeHttps(e.target.checked)} />
-            HTTPS (443) で公開する (Tailscale の管理画面で HTTPS 証明書の有効化が必要。オフは HTTP 80。tailnet 内は暗号化されます)
-          </label>
-          <label className="flex items-center gap-2 mt-1 cursor-pointer select-none text-sm">
-            <input type="checkbox" checked={nodeEphemeral} onChange={(e) => void setNodeEphemeral(e.target.checked)} />
-            一時的な端末にする (停止すると端末一覧から消えます。毎回ログインが必要になる場合があります)
-          </label>
-        </div>
-      )}
-      {bindMode === 'tailscale' && (
-        <p className="text-xs text-nndd-subtext mt-1">
-          このPCと閲覧する端末の両方に Tailscale を入れ、同じ tailnet に参加してください。Tailscale の IP (100.x.x.x) にだけ待ち受けるため、LAN内の他端末からは届きません。
-          LAN内のスマホからも使う場合は「LAN内の他端末からのアクセスを許可」を選んでください。
-        </p>
-      )}
-      <label className="flex items-center gap-2 mt-3 cursor-pointer select-none text-sm">
-        <input
-          type="checkbox"
-          checked={httpEnabled}
-          onChange={(e) => setHttpEnabled(e.target.checked)}
+
+      <div className="mt-3">
+        <Hint className="mb-1">待受範囲</Hint>
+        <RadioGroup<BindMode>
+          name="httpBindMode"
+          direction="column"
+          value={bindMode}
+          onChange={(m) => void changeBindMode(m)}
+          options={[
+            { value: 'loopback', label: 'このPCのみ (127.0.0.1)' },
+            {
+              value: 'lan',
+              label: 'LAN内の他端末からのアクセスを許可 (スマホ等から閲覧できます)',
+              hint: `スマホからアクセスできない場合は Windows ファイアウォールでポート ${httpStatus.port ?? 12345} (TCP) の受信規則を許可してください。`
+            },
+            {
+              value: 'tailscale',
+              label: 'Tailscale 経由のみ許可 (外出先から。アクセストークン必須)',
+              hint: 'このPCと閲覧する端末の両方に Tailscale を入れ、同じ tailnet に参加してください。Tailscale の IP (100.x.x.x) にだけ待ち受けるため、LAN内の他端末からは届きません。LAN内のスマホからも使う場合は「LAN内の他端末からのアクセスを許可」を選んでください。'
+            },
+            {
+              value: 'tailscale-serve',
+              label: 'Tailscale Serve で HTTPS 公開 (導入済みの Tailscale を使用。アクセストークン必須)',
+              hint: '導入済みの Tailscale の `tailscale serve` で HTTPS 公開します (127.0.0.1 で待受し、LAN内には公開されません)。Tailscale の管理画面で MagicDNS と HTTPS 証明書を有効にしてください。既存の serve 設定は変更せず、ここで作った設定だけを停止時に外します。',
+              children: (
+                <Row label="HTTPSポート" hint="(デフォルト 8443。443 は他の用途と衝突しやすいため非推奨)">
+                  <NumberCommitInput value={serveHttpsPort} min={1} max={65535} onCommit={setServeHttpsPort} />
+                </Row>
+              )
+            },
+            {
+              value: 'tailscale-node',
+              label: 'Tailscale 独立端末 (NNDD-RE 専用の端末として参加。外部ツールで取得が必要。アクセストークン必須)',
+              hint: 'NNDD-RE を PC の Tailscale とは別の「専用の端末」として tailnet に参加させます (127.0.0.1 で待受し、LAN内には公開されません)。設定 → 外部ツール で Tailscale (独立端末) を取得し、起動後に表示されるログイン用ページで承認してください。',
+              children: (
+                <>
+                  <Row label="端末名" hint="MagicDNS 名になります。英小文字・数字・ハイフン">
+                    <CommitInput
+                      key={hostnameKey}
+                      value={nodeHostname}
+                      onCommit={(v) => {
+                        const name = v.trim().toLowerCase();
+                        if (/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(name)) void setNodeHostname(name);
+                        else setHostnameKey((k) => k + 1);
+                      }}
+                      className="w-40"
+                    />
+                  </Row>
+                  <CheckRow
+                    checked={nodeHttps}
+                    onChange={setNodeHttps}
+                    label="HTTPS (443) で公開する"
+                    hint="Tailscale の管理画面で HTTPS 証明書の有効化が必要です。オフは HTTP (80) で、tailnet 内は WireGuard で暗号化されます。"
+                  />
+                  <CheckRow
+                    checked={nodeEphemeral}
+                    onChange={setNodeEphemeral}
+                    label="一時的な端末にする"
+                    hint="停止すると端末一覧から消えます。毎回ログインが必要になる場合があります。"
+                  />
+                </>
+              )
+            }
+          ]}
         />
-        起動時に自動起動する
-      </label>
-      <div className="flex items-center gap-2 mt-2">
-        <span className="text-xs text-nndd-subtext w-12 shrink-0">ポート</span>
-        <input
-          type="number"
-          min={1024}
-          max={65535}
-          value={httpPort}
-          onChange={(e) => setHttpPort(Number(e.target.value))}
-          className="w-24 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
-        />
-        <span className="text-xs text-nndd-subtext">(デフォルト 12345)</span>
+        {httpStatus.running && httpStatus.bindMode !== undefined && httpStatus.bindMode !== bindMode && (
+          <StatusText kind="warn">設定変更を反映するにはサーバーを再起動してください。</StatusText>
+        )}
       </div>
-      <label className="flex items-center gap-2 mt-3 cursor-pointer select-none text-sm">
-        <input
-          type="checkbox"
+
+      <div className="mt-3">
+        <CheckRow
           checked={tokenActive}
           disabled={bindMode.startsWith('tailscale')}
-          onChange={(e) => setRequireToken(e.target.checked)}
+          onChange={setRequireToken}
+          label="アクセストークンを要求する (QRコード・URLのトークンが無いと開けません)"
+          hint={bindMode.startsWith('tailscale') ? 'Tailscale のモードでは常に有効です。' : undefined}
         />
-        アクセストークンを要求する (QRコード・URLのトークンが無いと開けません){bindMode.startsWith('tailscale') && ' — Tailscale モードでは常に有効'}
-      </label>
-      {tokenActive && (
-        <div className="flex items-center gap-2 mt-2">
-          <span className="text-xs text-nndd-subtext w-12 shrink-0">トークン</span>
-          <input
-            type={showToken ? 'text' : 'password'}
-            readOnly
-            value={token ?? ''}
-            className="flex-1 min-w-0 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm font-mono"
+        {tokenActive && (
+          <Row label="トークン">
+            <TextInput
+              type={showToken ? 'text' : 'password'}
+              readOnly
+              value={token ?? ''}
+              className="flex-1 min-w-0 font-mono"
+            />
+            <Btn onClick={() => setShowToken((v) => !v)}>{showToken ? '隠す' : '表示'}</Btn>
+            <Btn onClick={() => void handleRegenerateToken()}>再生成</Btn>
+          </Row>
+        )}
+        <Row
+          label="追加で許可するホスト名"
+          hint="IPアドレス・PC名・*.local・*.ts.net は自動で許可されます。独自ドメイン名でアクセスする場合だけ追加してください (カンマ区切り)。"
+        >
+          <CommitInput
+            placeholder="example.lan, *.example.lan"
+            value={allowedHosts.join(', ')}
+            onCommit={(v) =>
+              void setAllowedHosts(v.split(',').map((h) => h.trim()).filter((h) => h.length > 0))
+            }
+            className="flex-1 min-w-0"
           />
-          <Btn onClick={() => setShowToken((v) => !v)}>{showToken ? '隠す' : '表示'}</Btn>
-          <Btn onClick={handleRegenerateToken}>再生成</Btn>
-        </div>
-      )}
-      <div className="flex items-center gap-2 mt-3">
-        <span className="text-xs text-nndd-subtext shrink-0">追加で許可するホスト名</span>
-        <input
-          type="text"
-          placeholder="example.lan, *.example.lan"
-          value={allowedHostsText}
-          onChange={(e) => setAllowedHostsText(e.target.value)}
-          onBlur={() =>
-            setAllowedHosts(
-              allowedHostsText.split(',').map((h) => h.trim()).filter((h) => h.length > 0)
-            )
-          }
-          className="flex-1 min-w-0 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
-        />
+        </Row>
       </div>
-      <p className="text-xs text-nndd-subtext mt-1">
-        IPアドレス・PC名・*.local・*.ts.net は自動で許可されます。独自ドメイン名でアクセスする場合だけ追加してください。
-      </p>
-      <label className="flex items-center gap-2 mt-3 cursor-pointer select-none text-sm">
-        <input
-          type="checkbox"
-          checked={allowVideo}
-          onChange={async (e) => {
-            const v = e.target.checked;
-            setAllowVideo(v);
-            await window.nndd.invoke(window.nndd.channels.CONFIG_SET, 'httpServer.allowVideo', v);
-          }}
-        />
-        動画ファイルのストリーミング配信を許可 (スマホ・WEBクライアント用)
-      </label>
-      <label className="flex items-center gap-2 mt-2 cursor-pointer select-none text-sm">
-        <input
-          type="checkbox"
-          checked={allowMyList}
-          onChange={async (e) => {
-            const v = e.target.checked;
-            setAllowMyList(v);
-            await window.nndd.invoke(window.nndd.channels.CONFIG_SET, 'httpServer.allowMyList', v);
-          }}
-        />
-        マイリスト情報の共有を許可
-      </label>
-      <p className="text-xs text-nndd-subtext mt-2">
+
+      <CheckRow checked={httpEnabled} onChange={setHttpEnabled} label="起動時に自動起動する" />
+      <Row label="ポート">
+        <NumberCommitInput value={httpPort} min={1024} max={65535} onCommit={setHttpPort} />
+        <Hint>(デフォルト 12345)</Hint>
+      </Row>
+      <CheckRow
+        checked={allowVideo}
+        onChange={setAllowVideo}
+        label="動画ファイルのストリーミング配信を許可 (スマホ・WEBクライアント用)"
+      />
+      <CheckRow checked={allowMyList} onChange={setAllowMyList} label="マイリスト情報の共有を許可" />
+      <Hint className="mt-2">
         内蔵HTTPサーバーを起動すると、ブラウザから /library でライブラリを閲覧・再生できます。
         ポート変更は再起動後に反映されます。
-      </p>
+      </Hint>
     </Section>
   );
 }
