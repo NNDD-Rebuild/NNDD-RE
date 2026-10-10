@@ -165,11 +165,14 @@
 - フェーズ 3・4 のレビュー反映: 失敗カウントを転送元 IP 単位に(プロキシ経由で全員が 1 バケットにならない)。serve の衝突判定を HTTPS 以外・TCP 転送・他パスのハンドラまで広げ、停止時は自分が作った(または完全に同一内容の)エントリだけ外す。CLI エラーの分類は stderr のみで判定。アプリ終了時に HTTP サーバーと serve / サイドカーを止める。`exposure.start` を待たず IPC を即返し、確認の多重実行を防止。サイドカーは二重起動の防止、`close` まで待つ終了処理、`needs_approval`(管理者の承認待ち)、MagicDNS・HTTPS 証明書が無効なら `ready` ではなく `error`、ログアウト時は待受を先に停止。転送先は loopback の IP リテラルのみ。状態表示でもハッシュを確認(改ざんを「最新」と表示しない)。`downloadFile` は https 以外へのリダイレクトを拒否。
 - 未対応(許容): 検証後・実行前の差し替え(同一ユーザー権限の攻撃者に限る。その権限があれば本体自体を改変できる)。リリース workflow の GitHub Actions はタグ指定(コミット SHA への固定は未実施)。
 
-**リリース手順(未実施)**
+**リリース手順(1〜3 実施済み: サイドカー `v0.1.0`、ピン更新済み)**
 1. `nndd-re-tailscale` の `feature/sidecar` を `main` にマージする(サンドボックスの権限では PR・タグ push を行っていない)。
 2. `main` に `v0.1.0` タグを push → CI が 4 ターゲットをビルドして prerelease を作る。
 3. 本体で `node scripts/update-sidecar-pin.mjs v0.1.0`。各バイナリを取得して自前でハッシュを計算し、SHA256SUMS と突き合わせたうえで `sidecarPin.ts` を書き換える。差分をレビューしてコミットする。
-4. 実機(Windows / macOS / Linux)で、取得 → ログイン → 閲覧端末からの再生 → ログアウトを確認する。
+4. 実機(Windows / macOS / Linux)で、取得 → ログイン → 閲覧端末からの再生 → ログアウトを確認する(**未実施**)。
+
+- `v0.1.0` の確認結果(linux/amd64、サンドボックス): 実リリースからの取得と SHA256 検証 → `--version` → 1 バイト改ざんで実行拒否 → 再取得で復旧 → 実バイナリ起動(プロトコル v1 の hello を受理、`needs_login` へ遷移)まで確認。コントロールプレーンに届かないため、ログイン・接続・再生は未確認。
+- リリースは Actions の `release` を **Run workflow(タグ名を入力)** で作る。画面から先にリリース(タグ)を作ると、タグ push でも workflow が動いて `gh release create` が衝突する(修正ブランチ `fix/release-existing` は既存リリースへの添付に対応)。
 
 **追従の自動化(実装済み。PR を作るところまで。マージは人)**
 - サイドカー側 `update-tailscale.yml`: 毎週月曜 日本時間 5:00(`0 20 * * 0` UTC)に `tailscale.com@latest` を確認し、更新があれば gofmt / vet / test / 4 ターゲットのビルドを通して `chore/update-tailscale-<ver>` の PR を作る。マージ後は Actions → release を手動実行(タグ名を入力。`workflow_dispatch` を追加した。タグ push が使えない環境でもリリースできる)。

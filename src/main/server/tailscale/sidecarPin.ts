@@ -17,8 +17,13 @@ export interface SidecarPin {
 }
 
 export const SIDECAR_PIN: SidecarPin = {
-  version: '',
-  assets: {}
+  version: 'v0.1.0',
+  assets: {
+    'nndd-re-tailscale-windows-amd64.exe': '8a7c184e2094bcc78d68fea53818fdcfc252a261bb3cb7728baad9ad70310f39',
+    'nndd-re-tailscale-darwin-amd64': 'a7baebf5119fb4648b072aa369c0ec31165ee9e3293f76dcc91d1d648ede3737',
+    'nndd-re-tailscale-darwin-arm64': 'a8ec44b24eccda3a5a07ad608646dcdbf1a304375529e2512c75c8677b946149',
+    'nndd-re-tailscale-linux-amd64': '9a43e763dffff6d133c4556bbca94a55fc5fad741b44f0a637e3642c59544d16'
+  }
 };
 
 /** 本体が解釈できる制御プロトコルのバージョン (サイドカーの hello.protocol と一致が必要) */
