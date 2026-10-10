@@ -33,6 +33,7 @@ export function startHeadlessDashboard(server: NnddHttpServer): void {
       lines.push('NNDD-RE ヘッドレスサーバー');
       lines.push('');
       lines.push(`接続台数: ${s.clients}   視聴数: ${s.viewers}`);
+      if (server.isWaitingForTailscale()) lines.push('Tailscale の接続を待っています…');
       for (const v of s.viewerList) lines.push(`  視聴中: ${v.ip}  ${v.videoId}`);
       lines.push('');
       lines.push(`ステータス: ${urls[0]?.replace(/\/library(\?.*)?$/, '/status$1') ?? ''}`);

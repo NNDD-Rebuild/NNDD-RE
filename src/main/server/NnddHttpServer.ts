@@ -9,11 +9,11 @@ import { VideoFileSuffix } from '@shared/constants/paths';
 import { extractBracketedVideoId } from '@shared/utils/videoId';
 import { LibraryManager } from '../db/LibraryManager';
 import { isPathAllowed } from '../player/LocalVideoProtocol';
-import { getConfigStore } from '../config/ConfigStore';
+import { getConfigStore, resolveBindMode, type HttpBindMode } from '../config/ConfigStore';
 import { createLogger } from '../util/Logger';
 import { forceAllowExternal, forcePort } from '../util/headless';
 import QRCode from 'qrcode';
-import { ServerStats, getAccessUrls, type ServerStatsSnapshot } from './ServerStats';
+import { ServerStats, getAccessUrls, detectTailscaleIps, type ServerStatsSnapshot } from './ServerStats';
 import { CommentXmlReader } from '../nicovideo/comment/CommentXmlReader';
 import { ThumbInfoXmlReader } from '../nicovideo/video/ThumbInfoXmlReader';
 import { generateLibraryPage } from './libraryPage';
@@ -22,6 +22,9 @@ import { createHostGuard, createTokenGuard, maskTokenInUrl } from './accessContr
 import { SecretStore } from './SecretStore';
 
 const log = createLogger('HTTPServer');
+
+/** tailscale モードで Tailscale の IP の変化を確認する間隔 */
+const TAILSCALE_WATCH_INTERVAL_MS = 15_000;
 
 /** XML 属性値・テキスト用の最小エスケープ */
 const esc = (s: string): string =>
@@ -51,7 +54,10 @@ export class NnddHttpServer {
   private server: http.Server | null = null;
   private port: number;
   private allowVideo: boolean;
-  private allowExternal: boolean;
+  private bindMode: HttpBindMode;
+  private boundAddr: string | null = null;
+  private running = false;
+  private watchTimer: NodeJS.Timeout | null = null;
   private allowMyList: boolean;
   private readonly stats = new ServerStats();
 
@@ -67,40 +73,103 @@ export class NnddHttpServer {
     const httpCfg = cfg.get('httpServer');
     this.port = forcePort ?? httpCfg.port ?? 12345;
     this.allowVideo = httpCfg.allowVideo ?? true;
-    this.allowExternal = forceAllowExternal || (httpCfg.allowExternal ?? false);
+    // --allow-external は設定より優先して LAN 公開にする
+    this.bindMode = forceAllowExternal ? 'lan' : resolveBindMode(httpCfg);
     this.allowMyList = httpCfg.allowMyList ?? true;
   }
 
-  /** サーバー起動 */
-  start(): Promise<{ port: number }> {
-    if (this.server) return Promise.resolve({ port: this.port });
-    const bindAddr = this.allowExternal ? '0.0.0.0' : '127.0.0.1';
+  /**
+   * サーバー起動。
+   * tailscale モードで Tailscale の IP がまだ無い (未接続・OS起動直後) ときは待機し、
+   * 検出できた時点で自動的にバインドする。IP が変わったときも再バインドする。
+   */
+  async start(): Promise<{ port: number }> {
+    if (this.running) return { port: this.port };
+    this.running = true;
+    try {
+      await this.syncBinding();
+    } catch (e) {
+      this.running = false;
+      throw e;
+    }
+    if (this.bindMode === 'tailscale') {
+      this.watchTimer = setInterval(() => {
+        this.syncBinding().catch((e) => log.warn('Tailscale rebind failed (will retry):', e));
+      }, TAILSCALE_WATCH_INTERVAL_MS);
+      this.watchTimer.unref();
+    }
+    return { port: this.port };
+  }
+
+  /** 現在の bind モードに合わせて待受を作る・張り直す */
+  private async syncBinding(): Promise<void> {
+    let addr: string | null;
+    if (this.bindMode === 'tailscale') {
+      addr = detectTailscaleIps()[0] ?? null;
+    } else {
+      addr = this.bindMode === 'lan' ? '0.0.0.0' : '127.0.0.1';
+    }
+    if (addr === this.boundAddr) return;
+    if (this.server) {
+      log.info(`Tailscale address changed (${this.boundAddr ?? 'none'} → ${addr ?? 'none'}): rebinding`);
+      await this.closeServer();
+    }
+    if (addr === null) {
+      log.info('Tailscale IP not found: waiting for Tailscale to connect');
+      return;
+    }
+    await this.listenOn(addr);
+  }
+
+  private listenOn(addr: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      const server = this.app.listen(this.port, bindAddr, () => {
-        const addr = server.address();
-        const port =
-          typeof addr === 'object' && addr ? addr.port : this.port;
-        this.port = port;
-        log.info(`HTTP server listening on http://${bindAddr}:${port}`);
-        resolve({ port });
+      const server = this.app.listen(this.port, addr, () => {
+        const a = server.address();
+        this.port = typeof a === 'object' && a ? a.port : this.port;
+        this.boundAddr = addr;
+        log.info(`HTTP server listening on http://${addr}:${this.port}`);
+        resolve();
       });
-      server.on('error', reject);
+      server.once('error', (e) => {
+        if (this.server === server) this.server = null;
+        reject(e);
+      });
       this.server = server;
     });
   }
 
-  stop(): Promise<void> {
+  private closeServer(): Promise<void> {
     return new Promise((resolve) => {
-      if (!this.server) {
+      const server = this.server;
+      this.server = null;
+      this.boundAddr = null;
+      if (!server) {
         resolve();
         return;
       }
-      this.server.close(() => {
-        this.server = null;
-        log.info('HTTP server stopped');
-        resolve();
-      });
+      server.close(() => resolve());
+      // 配信中の長い接続 (動画ストリーム) が閉じるのを待たない
+      server.closeAllConnections();
     });
+  }
+
+  async stop(): Promise<void> {
+    if (this.watchTimer) {
+      clearInterval(this.watchTimer);
+      this.watchTimer = null;
+    }
+    this.running = false;
+    await this.closeServer();
+    log.info('HTTP server stopped');
+  }
+
+  /** 待受を作れていない (tailscale モードで Tailscale 未接続) */
+  isWaitingForTailscale(): boolean {
+    return this.running && this.bindMode === 'tailscale' && this.boundAddr === null;
+  }
+
+  getBindMode(): HttpBindMode {
+    return this.bindMode;
   }
 
   setAllowVideo(allow: boolean): void {
@@ -111,10 +180,6 @@ export class NnddHttpServer {
     return this.port;
   }
 
-  getAllowExternal(): boolean {
-    return this.allowExternal;
-  }
-
   /** 接続台数・視聴数のスナップショット */
   getStats(): ServerStatsSnapshot {
     return this.stats.snapshot();
@@ -122,7 +187,7 @@ export class NnddHttpServer {
 
   /** アクセス用URL一覧 (LAN公開時は各NICのIPv4)。トークン認証が有効なら ?token= を付ける */
   getAccessUrls(): string[] {
-    const urls = getAccessUrls(this.port, this.allowExternal);
+    const urls = getAccessUrls(this.port, this.bindMode);
     if (!this.isTokenRequired()) return urls;
     const token = encodeURIComponent(SecretStore.getOrCreateAccessToken());
     return urls.map((u) => `${u}?token=${token}`);
@@ -130,7 +195,8 @@ export class NnddHttpServer {
 
   /** トークン認証が有効か (設定の変更を再起動なしで反映する) */
   isTokenRequired(): boolean {
-    return getConfigStore().get('httpServer').requireToken === true;
+    // tailscale モードは tailnet の他端末にも届くため、設定に関わらずトークン必須
+    return this.bindMode === 'tailscale' || getConfigStore().get('httpServer').requireToken === true;
   }
 
   private getAllowedHosts(): string[] {
@@ -437,7 +503,7 @@ export class NnddHttpServer {
   }
 
   private async buildStatus(): Promise<
-    ServerStatsSnapshot & { urls: { url: string; qrSvg: string }[]; allowExternal: boolean }
+    ServerStatsSnapshot & { urls: { url: string; qrSvg: string }[]; allowExternal: boolean; bindMode: HttpBindMode; waitingForTailscale: boolean }
   > {
     // QR は先頭 (本命) のURLだけ。複数NICでもQRが並ばないようにする
     const urls = await Promise.all(
@@ -446,7 +512,13 @@ export class NnddHttpServer {
         qrSvg: i === 0 ? await QRCode.toString(url, { type: 'svg', margin: 1 }) : ''
       }))
     );
-    return { ...this.stats.snapshot(), urls, allowExternal: this.allowExternal };
+    return {
+      ...this.stats.snapshot(),
+      urls,
+      allowExternal: this.bindMode === 'lan',
+      bindMode: this.bindMode,
+      waitingForTailscale: this.isWaitingForTailscale()
+    };
   }
 
   private handleThumb(req: Request, res: Response): void {

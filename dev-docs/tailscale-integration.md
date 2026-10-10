@@ -39,7 +39,7 @@
 | フェーズ | 内容 | 状態 |
 |---|---|---|
 | 1 | アクセス制御: Host 検証(全モード)、トークン + Cookie 認証、ログのマスク | 実装済み(`feature/tailscale`)。§3 フェーズ 1 の実装メモ参照 |
-| 2 | 既存 Tailscale の検出と表示、bind モード `loopback / lan / tailscale` | 未着手 |
+| 2 | 既存 Tailscale の検出と表示、bind モード `loopback / lan / tailscale` | 実装済み(`feature/tailscale`)。§3 フェーズ 2 の実装メモ参照 |
 | 3 | (任意) `tailscale serve` 連携 | 未着手 |
 | 4 | (任意) 独立端末: tsnet サイドカー | 未着手。§8 の基準で着手判断 |
 
@@ -101,6 +101,14 @@
 - `HttpServerSection.tsx`: 既存の `allowExternal` トグルと整合させて、bind モード選択に置き換える。URL/QR 表示に kind を表示。
 - HTTP の 100.x は secure context にならず、一部ブラウザ API が制限される点を注記する(フェーズ 3 の HTTPS で解消)。
 - `docs/http-server-integration.md`、`docs/settings.md`、`headlessDashboard.ts` の表示を更新する。
+
+**実装メモ(フェーズ 2 実装済み)**
+- `httpServer.bindMode`(`loopback | lan | tailscale`)。**既定値は持たせない(`undefined`)**: 既定値があると旧設定 `allowExternal=true` からの導出(`resolveBindMode`)が効かなくなる。キー自体は `CONFIG_SET` の許可判定(DEFAULT_CONFIG に存在するキーのみ通す)のために `DEFAULT_CONFIG` へ `undefined` で置く。UI は `bindMode` と `allowExternal` を同期して書く。
+- `--allow-external` は設定より優先して `lan`。
+- `tailscale` モードは Tailscale の IPv4(100.64.0.0/10。NIC 名が `tailscale` / `utun` のものを優先)にだけバインドし、トークン認証を強制する。
+- Tailscale 未接続(IP なし)のときは待機して 15 秒ごとに再検出。IP が変わったら再バインド。`start()` は待機中でも成功を返し、`HTTPD_STATUS.waitingForTailscale` とヘッドレスのダッシュボードに表示する。
+- `getAccessUrls(port, mode)` は `string[]` のまま(種別の型は付けず、モードごとに内容を切り替え)。
+- 未実施: 実機の Tailscale での動作確認(IP 検出は NIC のモックでのみ確認)、IPv6、MagicDNS 名の表示(フェーズ 3 で CLI を使う場合に検討)。
 
 ### フェーズ 3: Serve 連携(任意)
 - `tailscale serve` を CLI から実行。**専用ポートを使い、自分が設定したエントリだけを off にする。`serve reset` は呼ばない。**

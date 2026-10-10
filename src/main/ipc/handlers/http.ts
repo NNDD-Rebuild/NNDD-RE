@@ -5,6 +5,7 @@ import { getConfigStore } from '../../config/ConfigStore';
 import { NnddHttpServer } from '../../server/NnddHttpServer';
 import { LanLibraryClient } from '../../server/LanLibraryClient';
 import { SecretStore } from '../../server/SecretStore';
+import { detectTailscaleIps } from '../../server/ServerStats';
 import { createLogger } from '../../util/Logger';
 import { isHeadless } from '../../util/headless';
 import { startHeadlessDashboard } from '../../server/headlessDashboard';
@@ -51,11 +52,18 @@ export function registerHttpHandlers(ctx: IpcHandlerContext): void {
   ipcMain.handle(IpcChannel.HTTPD_STATUS, () => {
     if (runtimeHttpServer) {
       const port = runtimeHttpServer.getPort();
+      const bindMode = runtimeHttpServer.getBindMode();
       let lanIp: string | undefined;
-      if (runtimeHttpServer.getAllowExternal()) {
-        lanIp = getLanIp();
-      }
-      return { running: true, port, lanIp };
+      if (bindMode === 'lan') lanIp = getLanIp();
+      const tailscaleIp = bindMode === 'tailscale' ? detectTailscaleIps()[0] : undefined;
+      return {
+        running: true,
+        port,
+        lanIp,
+        bindMode,
+        tailscaleIp,
+        waitingForTailscale: runtimeHttpServer.isWaitingForTailscale()
+      };
     }
     return { running: false };
   });

@@ -1,4 +1,5 @@
 import os from 'node:os';
+import type { HttpBindMode } from '../config/ConfigStore';
 
 /** 直近この時間内にリクエストのあったIPを「接続中」とみなす */
 const CLIENT_ACTIVE_MS = 60_000;
@@ -100,12 +101,38 @@ function lanRank(ip: string): number {
   return 3;
 }
 
+/** 100.64.0.0/10 (CGNAT 帯域。Tailscale がノードに割り当てる範囲) */
+export function isTailscaleIp(ip: string): boolean {
+  const m = /^100\.(\d+)\.\d+\.\d+$/.exec(ip);
+  return !!m && Number(m[1]) >= 64 && Number(m[1]) <= 127;
+}
+
 /**
- * アクセス用URL一覧。LAN公開時は各NICのIPv4、非公開時はループバックのみ。
- * 複数NICがあるPCでは、仮想アダプタを後ろ、家庭内LANらしいアドレスを前に並べる (先頭が本命)。
+ * このPCの Tailscale IPv4 を検出する (未接続なら空)。IPv6 (fd7a:…) は対象外。
+ * 100.64/10 は ISP の CGNAT などでも使われうるため、NIC名が tailscale / utun (macOS) のものがあればそれを優先する。
  */
-export function getAccessUrls(port: number, allowExternal: boolean): string[] {
-  if (!allowExternal) return [`http://127.0.0.1:${port}/library`];
+export function detectTailscaleIps(): string[] {
+  const all: { ip: string; named: boolean }[] = [];
+  for (const [name, nets] of Object.entries(os.networkInterfaces())) {
+    for (const net of nets ?? []) {
+      if (net.family === 'IPv4' && !net.internal && isTailscaleIp(net.address)) {
+        all.push({ ip: net.address, named: /tailscale|utun/i.test(name) });
+      }
+    }
+  }
+  const named = all.filter((a) => a.named);
+  return (named.length > 0 ? named : all).map((a) => a.ip);
+}
+
+/**
+ * アクセス用URL一覧。
+ *  - loopback: ループバックのみ
+ *  - lan: 各NICのIPv4 (複数NICなら仮想アダプタを後ろ、家庭内LANらしいアドレスを前。先頭が本命)
+ *  - tailscale: Tailscale の IP のみ (未接続なら空)
+ */
+export function getAccessUrls(port: number, mode: HttpBindMode): string[] {
+  if (mode === 'loopback') return [`http://127.0.0.1:${port}/library`];
+  if (mode === 'tailscale') return detectTailscaleIps().map((ip) => `http://${ip}:${port}/library`);
   const found: { ip: string; virtual: boolean }[] = [];
   for (const [name, nets] of Object.entries(os.networkInterfaces())) {
     for (const net of nets ?? []) {
