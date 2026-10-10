@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import type { SyncProfile } from '@shared/types';
+import { Btn, Hint, TextInput } from '../common';
 
 export function ProfileList({
   profiles,
@@ -27,10 +28,10 @@ export function ProfileList({
 
   return (
     <div className="space-y-2">
-      <div className="text-sm font-bold text-nndd-text">同期プロファイル</div>
+      <div className="text-sm font-bold">同期プロファイル</div>
 
       {profiles.length === 0 && !adding && (
-        <div className="text-xs text-nndd-subtext italic">プロファイル未登録</div>
+        <Hint>プロファイル未登録</Hint>
       )}
 
       <div className="space-y-1">
@@ -60,23 +61,23 @@ export function ProfileList({
                   ` ・最終同期: ${new Date(p.lastSyncedAt).toLocaleString('ja-JP')} (${p.lastSyncDirection === 'upload' ? 'アップロード' : 'ダウンロード'})`}
               </div>
             </div>
-            <button
+            <Btn
+              variant="danger"
               onClick={(e) => {
                 e.stopPropagation();
                 onRemove(p.id);
               }}
-              className="text-xs text-nndd-subtext hover:text-red-500 shrink-0 ml-2"
+              className="shrink-0 ml-2"
             >
               削除
-            </button>
+            </Btn>
           </div>
         ))}
       </div>
 
       {adding ? (
         <div className="flex gap-2">
-          <input
-            type="text"
+          <TextInput
             autoFocus
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
@@ -85,28 +86,15 @@ export function ProfileList({
               if (e.key === 'Escape') setAdding(false);
             }}
             placeholder="プロファイル名 (例: 仕事用)"
-            className="flex-1 px-2 py-1.5 text-xs bg-nndd-bg border border-nndd-border rounded"
+            className="flex-1"
           />
-          <button
-            onClick={handleAdd}
-            className="text-xs px-3 py-1.5 bg-nndd-accent text-white rounded hover:opacity-80"
-          >
+          <Btn variant="primary" onClick={handleAdd}>
             追加
-          </button>
-          <button
-            onClick={() => setAdding(false)}
-            className="text-xs px-3 py-1.5 bg-nndd-border hover:bg-nndd-accent rounded"
-          >
-            キャンセル
-          </button>
+          </Btn>
+          <Btn onClick={() => setAdding(false)}>キャンセル</Btn>
         </div>
       ) : (
-        <button
-          onClick={() => setAdding(true)}
-          className="text-xs px-3 py-1.5 bg-nndd-border hover:bg-nndd-accent rounded"
-        >
-          + 新規プロファイル
-        </button>
+        <Btn onClick={() => setAdding(true)}>+ 新規プロファイル</Btn>
       )}
     </div>
   );

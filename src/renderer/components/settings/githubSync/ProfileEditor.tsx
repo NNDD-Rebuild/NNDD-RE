@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { DataScope, GistSummary, SyncProfile } from '@shared/types';
 import { RevisionHistoryModal } from './RevisionHistoryModal';
+import { Btn, Card, CheckRow, Hint } from '../common';
 
 const SCOPE_LABELS: { key: keyof DataScope; label: string }[] = [
   { key: 'config', label: 'アプリ設定 (プレイヤー・UI・LAN共有等)' },
@@ -65,57 +66,42 @@ export function ProfileEditor({
   };
 
   return (
-    <div className="space-y-4 border border-nndd-border rounded p-4">
-      <div className="text-sm font-bold text-nndd-text">{profile.name}</div>
+    <Card title={profile.name}>
 
       <div>
-        <div className="text-xs text-nndd-subtext mb-2">同期対象データ</div>
-        <div className="space-y-1">
-          {SCOPE_LABELS.map((s) => (
-            <label key={s.key} className="flex items-center gap-2 text-xs text-nndd-text">
-              <input
-                type="checkbox"
-                checked={!!profile.dataScope[s.key]}
-                onChange={() => toggleScope(s.key)}
-              />
-              {s.label}
-            </label>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <label className="flex items-center gap-2 text-xs text-nndd-text">
-          <input
-            type="checkbox"
-            checked={!!profile.autoUploadEnabled}
-            onChange={onToggleAutoUpload}
+        <Hint className="mb-2">同期対象データ</Hint>
+        {SCOPE_LABELS.map((s) => (
+          <CheckRow
+            key={s.key}
+            checked={!!profile.dataScope[s.key]}
+            onChange={() => toggleScope(s.key)}
+            label={s.label}
           />
-          アプリ起動時・終了時に自動アップロード
-        </label>
-        <p className="text-[11px] text-nndd-subtext mt-1">
-          このプロファイルがアクティブな間のみ有効です。前回アップロード時から変更がない場合はスキップされます。
-          ダウンロードは自動実行されません(手動のみ)。
-        </p>
+        ))}
       </div>
 
       <div>
-        <div className="text-xs text-nndd-subtext mb-2">Gist連携</div>
+        <CheckRow
+          checked={!!profile.autoUploadEnabled}
+          onChange={onToggleAutoUpload}
+          label="アプリ起動時・終了時に自動アップロード"
+          hint="このプロファイルがアクティブな間のみ有効です。前回アップロード時から変更がない場合はスキップされます。ダウンロードは自動実行されません(手動のみ)。"
+        />
+      </div>
+
+      <div>
+        <Hint className="mb-2">Gist連携</Hint>
         {profile.gistId ? (
-          <div className="text-xs text-nndd-text">連携済み (Gist ID: {profile.gistId})</div>
+          <div className="text-xs">連携済み (Gist ID: {profile.gistId})</div>
         ) : (
           <div className="space-y-2">
-            <div className="text-xs text-nndd-subtext">
+            <Hint>
               未連携です。「アップロード」を実行すると新規Gistが自動作成されます。
               既存のGistに連携する場合は下から選択してください。
-            </div>
-            <button
-              onClick={handleShowCandidates}
-              disabled={loadingCandidates}
-              className="text-xs px-3 py-1 bg-nndd-border hover:bg-nndd-accent rounded disabled:opacity-50"
-            >
+            </Hint>
+            <Btn onClick={handleShowCandidates} disabled={loadingCandidates}>
               {loadingCandidates ? '検索中…' : '既存Gistを検索'}
-            </button>
+            </Btn>
             {candidates && (
               <div className="border border-nndd-border rounded divide-y divide-nndd-border max-h-40 overflow-y-auto">
                 {candidates.length === 0 ? (
@@ -128,13 +114,10 @@ export function ProfileEditor({
                       key={g.id}
                       className="flex items-center justify-between px-2 py-1.5 text-xs hover:bg-nndd-border/30"
                     >
-                      <span className="text-nndd-text truncate">{g.description}</span>
-                      <button
-                        onClick={() => onLinkGist(g.id)}
-                        className="shrink-0 ml-2 text-nndd-accent hover:underline"
-                      >
+                      <span className="truncate">{g.description}</span>
+                      <Btn onClick={() => onLinkGist(g.id)} className="shrink-0 ml-2">
                         連携
-                      </button>
+                      </Btn>
                     </div>
                   ))
                 )}
@@ -145,31 +128,22 @@ export function ProfileEditor({
       </div>
 
       <div className="flex gap-2">
-        <button
-          onClick={onUpload}
-          disabled={uploading || downloading}
-          className="text-xs px-3 py-1.5 bg-nndd-accent text-white rounded hover:opacity-80 disabled:opacity-50"
-        >
+        <Btn variant="primary" onClick={onUpload} disabled={uploading || downloading}>
           {uploading ? 'アップロード中…' : 'アップロード'}
-        </button>
-        <button
-          onClick={handleDownload}
-          disabled={uploading || downloading || !profile.gistId}
-          className="text-xs px-3 py-1.5 bg-nndd-border hover:bg-nndd-accent rounded disabled:opacity-50"
-        >
+        </Btn>
+        <Btn onClick={handleDownload} disabled={uploading || downloading || !profile.gistId}>
           {downloading ? 'ダウンロード中…' : 'ダウンロード'}
-        </button>
-        <button
+        </Btn>
+        <Btn
           onClick={() => setShowRevisionHistory(true)}
           disabled={uploading || downloading || !profile.gistId}
-          className="text-xs px-3 py-1.5 bg-nndd-border hover:bg-nndd-accent rounded disabled:opacity-50"
           title="過去のバージョンを見て、任意の時点へ復元できます"
         >
           世代履歴
-        </button>
+        </Btn>
       </div>
 
-      {resultMessage && <p className="text-xs text-nndd-subtext">{resultMessage}</p>}
+      {resultMessage && <Hint>{resultMessage}</Hint>}
 
       {showRevisionHistory && (
         <RevisionHistoryModal
@@ -177,6 +151,6 @@ export function ProfileEditor({
           onClose={() => setShowRevisionHistory(false)}
         />
       )}
-    </div>
+    </Card>
   );
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { IpcChannel } from '@shared/types';
-import { Section, Btn } from '../common';
+import { Btn, CheckRow, Hint, NumberCommitInput, Row, Section } from '../common';
 
 interface CacheInfo { sizeBytes: number; fileCount: number; dir: string }
 
@@ -32,44 +32,34 @@ export function ImageCacheSection(): JSX.Element {
 
   return (
     <Section title="画像キャッシュ (サムネイル・アイコン)">
-      <div className="flex items-center gap-3 mb-2">
-        <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={imgCacheEnabled}
-            onChange={async (e) => {
-              const v = e.target.checked;
-              setImgCacheEnabled(v);
-              await window.nndd.invoke(IpcChannel.IMAGE_CACHE_ENABLED_SET, v);
-            }}
-          />
-          キャッシュを有効にする
-        </label>
-      </div>
-      <div className="flex items-center gap-2 mb-2">
-        <span className="text-xs text-nndd-subtext w-20 shrink-0">上限サイズ</span>
-        <input
-          type="number"
+      <CheckRow
+        checked={imgCacheEnabled}
+        onChange={async (v) => {
+          setImgCacheEnabled(v);
+          await window.nndd.invoke(IpcChannel.IMAGE_CACHE_ENABLED_SET, v);
+        }}
+        label="キャッシュを有効にする"
+      />
+      <Row label="上限サイズ">
+        <NumberCommitInput
           min={0}
           step={100}
           value={imgCacheMaxSizeMb}
-          onChange={async (e) => {
-            const v = Math.max(0, Number(e.target.value));
+          onCommit={async (v) => {
             setImgCacheMaxSizeMb(v);
             await window.nndd.invoke(IpcChannel.IMAGE_CACHE_MAX_SIZE_SET, v);
           }}
-          className="w-24 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
         />
-        <span className="text-xs text-nndd-subtext">MB (0 = 無制限)</span>
-      </div>
+        <Hint>MB (0 = 無制限)</Hint>
+      </Row>
       {imgCacheInfo && (
-        <div className="text-xs text-nndd-subtext mb-2">
+        <Hint className="mb-2">
           {imgCacheInfo.fileCount} ファイル /{' '}
           {(imgCacheInfo.sizeBytes / 1024 / 1024).toFixed(1)} MB
           <span className="ml-2 opacity-60 truncate" title={imgCacheInfo.dir}>
             ({imgCacheInfo.dir})
           </span>
-        </div>
+        </Hint>
       )}
       <div className="flex gap-2">
         <Btn onClick={refreshImgCacheInfo}>更新</Btn>
@@ -89,10 +79,10 @@ export function ImageCacheSection(): JSX.Element {
           {imgCacheBusy ? '削除中…' : 'キャッシュを削除'}
         </Btn>
       </div>
-      <p className="text-xs text-nndd-subtext mt-2">
+      <Hint className="mt-2">
         動画再生時に取得したサムネイルとユーザーアイコンをローカルに保存します。
         次回同じ動画を開く際にオフラインでも表示できます。
-      </p>
+      </Hint>
     </Section>
   );
 }

@@ -8,6 +8,7 @@ import { ImageCacheSection } from './general/ImageCacheSection';
 import { DiscordRpcSection, WebhookSection, ChannelWatchSection } from './general/IntegrationSections';
 import { DeveloperSection } from './general/DeveloperSection';
 import { HonkeImportSettings } from './HonkeImportSettings';
+import { PageTitle, SettingsPage } from './common';
 
 
 /**
@@ -27,8 +28,8 @@ interface GeneralSettingsProps {
 
 export function GeneralSettings({ onDeveloperModeChange }: GeneralSettingsProps): JSX.Element {
   return (
-    <div className="p-4 max-w-3xl">
-      <h2 className="text-base font-bold mb-3">全般</h2>
+    <SettingsPage>
+      <PageTitle title="全般" />
 
       <LibraryRootSection />
       <LoginSection />
@@ -44,6 +45,6 @@ export function GeneralSettings({ onDeveloperModeChange }: GeneralSettingsProps)
       <ChannelWatchSection />
       <HonkeImportSettings />
       <DeveloperSection onDeveloperModeChange={onDeveloperModeChange} />
-    </div>
+    </SettingsPage>
   );
 }

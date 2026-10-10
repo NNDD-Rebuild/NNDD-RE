@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Btn, Hint, StatusText } from '../common';
 
 export function DeviceFlowModal({
   userCode,
@@ -26,33 +27,25 @@ export function DeviceFlowModal({
       <div className="bg-nndd-panel border border-nndd-border rounded p-6 w-96 space-y-4">
         <h3 className="text-sm font-bold text-nndd-text">GitHubでログイン</h3>
 
-        <p className="text-xs text-nndd-subtext">
+        <Hint>
           ブラウザで <span className="text-nndd-text">{verificationUri}</span> を開き、
           以下のコードを入力してください。
-        </p>
+        </Hint>
 
         <div className="flex items-center gap-2">
           <div className="flex-1 text-center text-2xl font-mono tracking-widest bg-nndd-bg border border-nndd-border rounded py-2 text-nndd-text">
             {userCode}
           </div>
-          <button
-            onClick={handleCopy}
-            className="text-xs px-3 py-2 bg-nndd-border hover:bg-nndd-accent rounded shrink-0"
-          >
+          <Btn onClick={handleCopy} className="shrink-0">
             {copied ? 'コピー済み' : 'コピー'}
-          </button>
+          </Btn>
         </div>
 
-        <p className="text-xs text-nndd-subtext min-h-[1rem]">{statusMessage}</p>
-        {errorMessage && <p className="text-xs text-red-500">{errorMessage}</p>}
+        <Hint className="min-h-[1rem]">{statusMessage}</Hint>
+        {errorMessage && <StatusText kind="error">{errorMessage}</StatusText>}
 
         <div className="flex justify-end">
-          <button
-            onClick={onCancel}
-            className="text-xs px-3 py-1.5 bg-nndd-border hover:bg-nndd-accent rounded"
-          >
-            キャンセル
-          </button>
+          <Btn onClick={onCancel}>キャンセル</Btn>
         </div>
       </div>
     </div>

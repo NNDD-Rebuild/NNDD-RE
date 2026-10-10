@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import { useConfig } from '@renderer/hooks/useConfig';
-import { Section, Btn } from '../common';
+import { Btn, CheckRow, Hint, NumberCommitInput, Row, Section, StatusText } from '../common';
 
 /** 設定 > 全般 > 内蔵HTTPサーバー */
 export function HttpServerSection(): JSX.Element {
@@ -12,9 +12,9 @@ export function HttpServerSection(): JSX.Element {
   }>({ running: false });
   const [httpBusy, setHttpBusy] = useState(false);
   const [showQr, setShowQr] = useState(false);
-  const [allowExternal, setAllowExternal] = useState(false);
-  const [allowVideo, setAllowVideo] = useState(true);
-  const [allowMyList, setAllowMyList] = useState(true);
+  const [allowExternal, setAllowExternal] = useConfig<boolean>('httpServer.allowExternal', false);
+  const [allowVideo, setAllowVideo] = useConfig<boolean>('httpServer.allowVideo', true);
+  const [allowMyList, setAllowMyList] = useConfig<boolean>('httpServer.allowMyList', true);
   const [httpEnabled, setHttpEnabled] = useConfig<boolean>('httpServer.enabled', false);
   const [httpPort, setHttpPort] = useConfig<number>('httpServer.port', 12345);
 
@@ -28,18 +28,6 @@ export function HttpServerSection(): JSX.Element {
   };
 
   useEffect(() => {
-    window.nndd
-      .invoke<boolean>(window.nndd.channels.CONFIG_GET, 'httpServer.allowExternal')
-      .then((v) => setAllowExternal(v === true))
-      .catch(() => {});
-    window.nndd
-      .invoke<boolean>(window.nndd.channels.CONFIG_GET, 'httpServer.allowVideo')
-      .then((v) => setAllowVideo(v !== false))
-      .catch(() => {});
-    window.nndd
-      .invoke<boolean>(window.nndd.channels.CONFIG_GET, 'httpServer.allowMyList')
-      .then((v) => setAllowMyList(v !== false))
-      .catch(() => {});
     refreshHttpStatus();
   }, []);
 
@@ -70,7 +58,7 @@ export function HttpServerSection(): JSX.Element {
           {httpStatus.running ? (
             <>
               <div>
-                <span className="text-green-600 dark:text-green-400">● 起動中</span>
+                <StatusText kind="ok">● 起動中</StatusText>
                 <span className="ml-2 text-xs text-nndd-subtext">
                   <a
                     href="#"
@@ -127,81 +115,39 @@ export function HttpServerSection(): JSX.Element {
           </Btn>
         )}
       </div>
-      <label className="flex items-center gap-2 mt-3 cursor-pointer select-none text-sm">
-        <input
-          type="checkbox"
+      <div className="mt-3">
+        <CheckRow
           checked={allowExternal}
-          onChange={async (e) => {
-            const v = e.target.checked;
-            setAllowExternal(v);
-            await window.nndd.invoke(
-              window.nndd.channels.CONFIG_SET,
-              'httpServer.allowExternal',
-              v
-            );
+          onChange={async (v) => {
+            await setAllowExternal(v);
             refreshHttpStatus();
           }}
+          label="LAN内からのアクセスを許可 (スマホ等から閲覧できます)"
         />
-        LAN内からのアクセスを許可 (スマホ等から閲覧できます)
-      </label>
-      {allowExternal && httpStatus.running && (
-        <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-1">
-          設定変更を反映するにはサーバーを再起動してください。
-        </p>
-      )}
-      {allowExternal && (
-        <p className="text-xs text-nndd-subtext mt-1">
-          スマホからアクセスできない場合は Windows ファイアウォールでポート {httpStatus.port ?? 12345} (TCP) の受信規則を許可してください。
-        </p>
-      )}
-      <label className="flex items-center gap-2 mt-3 cursor-pointer select-none text-sm">
-        <input
-          type="checkbox"
-          checked={httpEnabled}
-          onChange={(e) => setHttpEnabled(e.target.checked)}
-        />
-        起動時に自動起動する
-      </label>
-      <div className="flex items-center gap-2 mt-2">
-        <span className="text-xs text-nndd-subtext w-12 shrink-0">ポート</span>
-        <input
-          type="number"
-          min={1024}
-          max={65535}
-          value={httpPort}
-          onChange={(e) => setHttpPort(Number(e.target.value))}
-          className="w-24 bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
-        />
-        <span className="text-xs text-nndd-subtext">(デフォルト 12345)</span>
+        {allowExternal && httpStatus.running && (
+          <StatusText kind="warn">設定変更を反映するにはサーバーを再起動してください。</StatusText>
+        )}
+        {allowExternal && (
+          <Hint className="mt-1">
+            スマホからアクセスできない場合は Windows ファイアウォールでポート {httpStatus.port ?? 12345} (TCP) の受信規則を許可してください。
+          </Hint>
+        )}
       </div>
-      <label className="flex items-center gap-2 mt-3 cursor-pointer select-none text-sm">
-        <input
-          type="checkbox"
-          checked={allowVideo}
-          onChange={async (e) => {
-            const v = e.target.checked;
-            setAllowVideo(v);
-            await window.nndd.invoke(window.nndd.channels.CONFIG_SET, 'httpServer.allowVideo', v);
-          }}
-        />
-        動画ファイルのストリーミング配信を許可 (スマホ・WEBクライアント用)
-      </label>
-      <label className="flex items-center gap-2 mt-2 cursor-pointer select-none text-sm">
-        <input
-          type="checkbox"
-          checked={allowMyList}
-          onChange={async (e) => {
-            const v = e.target.checked;
-            setAllowMyList(v);
-            await window.nndd.invoke(window.nndd.channels.CONFIG_SET, 'httpServer.allowMyList', v);
-          }}
-        />
-        マイリスト情報の共有を許可
-      </label>
-      <p className="text-xs text-nndd-subtext mt-2">
+      <CheckRow checked={httpEnabled} onChange={setHttpEnabled} label="起動時に自動起動する" />
+      <Row label="ポート">
+        <NumberCommitInput value={httpPort} min={1024} max={65535} onCommit={setHttpPort} />
+        <Hint>(デフォルト 12345)</Hint>
+      </Row>
+      <CheckRow
+        checked={allowVideo}
+        onChange={setAllowVideo}
+        label="動画ファイルのストリーミング配信を許可 (スマホ・WEBクライアント用)"
+      />
+      <CheckRow checked={allowMyList} onChange={setAllowMyList} label="マイリスト情報の共有を許可" />
+      <Hint className="mt-2">
         内蔵HTTPサーバーを起動すると、ブラウザから /library でライブラリを閲覧・再生できます。
         ポート変更は再起動後に反映されます。
-      </p>
+      </Hint>
     </Section>
   );
 }
