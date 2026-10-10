@@ -18,7 +18,7 @@
 |---|---|
 | このPCのみ(`loopback`) | 既定。127.0.0.1 |
 | LAN公開(`lan`) | 0.0.0.0。**PC に Tailscale が入っていれば、同じ設定で Tailscale 経由(100.x.x.x)でも届く。** 画面に Tailscale の URL も表示 |
-| Tailscale 独立端末(`tailscale-node`) | PC に Tailscale を入れない人向け。127.0.0.1 で待受し、RE 専用の端末(tsnet サイドカー)として tailnet に参加 |
+| Tailscale 独立端末(`tailscale-node`) | PC に Tailscale を入れない人向け。**LAN公開に加えて**、RE 専用の端末(tsnet サイドカー)として tailnet に参加。LAN 内の IP でも入れる(サイドカーは 127.0.0.1 へ転送) |
 
 5. 次の機能は作らない(検討の結果、削除した): アクセストークン認証 / 「Tailscale の IP にだけバインド」/ `tailscale serve` による HTTPS 公開 / 独立端末の HTTPS(443)公開・一時的な端末。tailnet 内は WireGuard で暗号化されるので HTTP でも盗聴の心配はなく、動画の再生に HTTPS は不要。
 6. 閲覧側にも Tailscale が必要という前提は変わらない。

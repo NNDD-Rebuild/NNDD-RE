@@ -117,8 +117,9 @@ export class NnddHttpServer {
   }
 
   private listen(): Promise<void> {
-    // lan は 0.0.0.0 (同じ PC の Tailscale 経由でも届く)。loopback / tailscale-node は 127.0.0.1
-    const addr = this.bindMode === 'lan' ? '0.0.0.0' : '127.0.0.1';
+    // loopback 以外は 0.0.0.0。lan は同じ PC の Tailscale 経由でも届く。
+    // tailscale-node は、サイドカーが 127.0.0.1 へ転送しつつ、LAN 内の IP からも入れるようにする
+    const addr = this.bindMode === 'loopback' ? '127.0.0.1' : '0.0.0.0';
     return new Promise((resolve, reject) => {
       const server = this.app.listen(this.port, addr, () => {
         const a = server.address();

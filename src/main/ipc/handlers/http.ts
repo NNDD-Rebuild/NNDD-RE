@@ -4,7 +4,7 @@ import { getConfigStore } from '../../config/ConfigStore';
 import { NnddHttpServer } from '../../server/NnddHttpServer';
 import { LanLibraryClient } from '../../server/LanLibraryClient';
 import fs from 'node:fs';
-import { detectTailscaleIps, isTailscaleIp } from '../../server/ServerStats';
+import { detectTailscaleIps, getAccessUrls, isTailscaleIp } from '../../server/ServerStats';
 import { SecretStore } from '../../server/SecretStore';
 import { SidecarInstaller } from '../../server/tailscale/SidecarInstaller';
 import { createLogger } from '../../util/Logger';
@@ -68,8 +68,12 @@ export function registerHttpHandlers(ctx: IpcHandlerContext): void {
     if (runtimeHttpServer) {
       const port = runtimeHttpServer.getPort();
       const bindMode = runtimeHttpServer.getBindMode();
+      // LAN 内の IP (loopback 以外は 0.0.0.0 で待ち受ける)。独立端末のときも LAN 内の IP から入れる
+      const lanIp =
+        bindMode !== 'loopback'
+          ? getAccessUrls(port, 'lan').map((u) => new URL(u).hostname).find((h) => h !== '127.0.0.1' && !isTailscaleIp(h))
+          : undefined;
       // LAN 公開のときは、同じPCの Tailscale (導入済みなら) 経由でも届く。その URL も画面に出す
-      const lanIp = bindMode === 'lan' ? runtimeHttpServer.getAccessUrls().map((u) => new URL(u).hostname).find((h) => !isTailscaleIp(h)) : undefined;
       const tailscaleIp = bindMode === 'lan' ? detectTailscaleIps()[0] : undefined;
       return {
         running: true,

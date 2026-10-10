@@ -311,7 +311,7 @@ export interface NnddConfig {
      * 待受範囲。未設定なら allowExternal から導出する (resolveBindMode)。
      * - loopback: このPCのみ (127.0.0.1)
      * - lan: LAN内の他端末にも公開 (0.0.0.0)。同じPCの Tailscale 経由 (100.x.x.x) でも届く
-     * - tailscale-node: 127.0.0.1 で待受し、RE 専用の独立した Tailscale 端末 (tsnet サイドカー) で公開
+     * - tailscale-node: lan に加えて、RE 専用の独立した Tailscale 端末 (tsnet サイドカー) としても公開する
      */
     bindMode?: HttpBindMode;
     /** 動画ファイルのストリーミング配信を許可 */

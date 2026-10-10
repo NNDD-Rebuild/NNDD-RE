@@ -105,7 +105,6 @@ export function HttpServerSection(): JSX.Element {
   const shareUrl =
     exposure?.urls[0] ?? `http://${httpStatus.lanIp ?? 'localhost'}:${httpStatus.port}/library`;
   const qrAvailable = !exposure || exposure.state === 'running';
-  const isNodeRunning = httpStatus.bindMode === 'tailscale-node';
 
   return (
     <Section title="内蔵HTTPサーバー">
@@ -115,20 +114,18 @@ export function HttpServerSection(): JSX.Element {
             <>
               <div>
                 <StatusText kind="ok">● 起動中</StatusText>
-                {!isNodeRunning && (
-                  <span className="ml-2 text-xs text-nndd-subtext">
-                    <a
-                      href="#"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        window.open(`http://127.0.0.1:${httpStatus.port}/library`);
-                      }}
-                      className="underline"
-                    >
-                      http://127.0.0.1:{httpStatus.port}/library
-                    </a>
-                  </span>
-                )}
+                <span className="ml-2 text-xs text-nndd-subtext">
+                  <a
+                    href="#"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      window.open(`http://127.0.0.1:${httpStatus.port}/library`);
+                    }}
+                    className="underline"
+                  >
+                    http://127.0.0.1:{httpStatus.port}/library
+                  </a>
+                </span>
                 {httpStatus.lanIp && (
                   <div className="text-xs text-nndd-subtext mt-1">
                     LAN:{' '}
@@ -225,8 +222,8 @@ export function HttpServerSection(): JSX.Element {
             },
             {
               value: 'tailscale-node',
-              label: 'Tailscale 独立端末 (NNDD-RE 専用の端末として参加。外部ツールで取得が必要)',
-              hint: 'このPCに Tailscale を入れていなくても使えます。NNDD-RE を PC の Tailscale とは別の「専用の端末」として tailnet に参加させます (127.0.0.1 で待受し、LAN内には公開されません)。設定 → 外部ツール で Tailscale (独立端末) を取得し、起動後に表示されるログイン用ページで承認してください。アクセスできる端末は、Tailscale の管理画面の ACL で絞れます (例: 端末にタグ tag:nndd-re を付け、自分の端末だけに許可)。',
+              label: 'Tailscale 独立端末 (NNDD-RE 専用の端末として参加。LAN内からもアクセス可。外部ツールで取得が必要)',
+              hint: 'このPCに Tailscale を入れていなくても使えます。NNDD-RE を PC の Tailscale とは別の「専用の端末」として tailnet に参加させます。LAN内の他端末からも、IP アドレスでアクセスできます (LAN公開と同じ。認証はありません)。設定 → 外部ツール で Tailscale (独立端末) を取得し、起動後に表示されるログイン用ページで承認してください。アクセスできる端末は、Tailscale の管理画面の ACL で絞れます (例: 端末にタグ tag:nndd-re を付け、自分の端末だけに許可)。',
               children: (
                 <Row label="端末名" hint="MagicDNS 名になります。英小文字・数字・ハイフン">
                   <CommitInput
