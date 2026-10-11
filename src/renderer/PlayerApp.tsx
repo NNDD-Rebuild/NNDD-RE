@@ -13,6 +13,7 @@ import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useConfig } from './hooks/useConfig';
 import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
 import { extractBracketedVideoId, isVideoId } from '@shared/utils/videoId';
+import { describeAccessRestriction } from '@shared/utils/watchAccess';
 import { isLiveProgramId } from '@shared/utils/liveId';
 import {
   pickDefaultQualityId,
@@ -340,6 +341,9 @@ export default function PlayerApp(): JSX.Element {
     const w = cached?.watchInfo
       ?? await window.nndd.invoke<WatchPageInfo>(window.nndd.channels.VIDEO_GET_WATCH_INFO, videoId, forceAllowHistory);
     setWatch(w);
+    if (!w.isDownloadable && w.accessRestriction) {
+      throw new Error(describeAccessRestriction(w.accessRestriction, w.channel?.name));
+    }
     if (w.channel !== null && !w.isDownloadable) {
       throw new Error(`チャンネル限定動画です。「${w.channel.name}」への加入が必要です。`);
     }

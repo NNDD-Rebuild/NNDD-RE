@@ -1,7 +1,8 @@
 import type {
   WatchPageInfo,
   CommentThreadInfo,
-  DomandStreamCandidate
+  DomandStreamCandidate,
+  WatchAccessRestriction
 } from '@shared/types';
 import { NicoApi } from '@shared/constants';
 import { createLogger } from '../../util/Logger';
@@ -96,6 +97,9 @@ export class WatchPageParser {
       .map((t) => String(t.name ?? ''))
       .filter(Boolean);
 
+    const videoNodeDownloadable =
+      !Boolean(videoNode.isDeleted) && (domandInfo.accessRightKey !== null || dmcSessionJson !== null);
+
     return {
       videoId: String(videoNode.id ?? videoId),
       title: String(videoNode.title ?? ''),
@@ -131,10 +135,10 @@ export class WatchPageParser {
           }
         : null,
       isDMS,
-      isDownloadable: !Boolean(videoNode.isDeleted) &&
-        (domandInfo.accessRightKey !== null || dmcSessionJson !== null),
+      isDownloadable: videoNodeDownloadable,
       isEncrypted: this.detectIsEncrypted(mediaNode),
       isEconomy: false,
+      accessRestriction: this.detectAccessRestriction(data, videoNodeDownloadable),
       commentThreads,
       userKey,
       threadKey,
@@ -153,6 +157,26 @@ export class WatchPageParser {
       actionTrackId,
       guestFetched: false
     };
+  }
+
+  /**
+   * 再生用の情報 (media) が無いとき、payment / viewer から視聴できない理由を推定する。
+   * 実機 (一般会員・プレミアム会員の両方) で確認した区分:
+   *  - プレミアム限定動画: payment.video.isPremium=true、プレミアム会員なら media あり
+   *  - チャンネル会員専用: payment.video.isAdmission=true (プレミアム会員でも media なし)
+   *  - 無料 (お試し含む): billingType=free で制限なし
+   * payment.video.isPpv はプレミアム限定動画でも true になるため判定に使わない。
+   */
+  private static detectAccessRestriction(
+    data: NicoWatchV4Data,
+    downloadable: boolean
+  ): WatchAccessRestriction | null {
+    if (downloadable || data.video?.isDeleted) return null;
+    const payment = data.payment?.video;
+    if (payment?.isAdmission === true) return 'channel_member';
+    if (payment?.isPremium === true && data.viewer?.isPremium !== true) return 'premium_only';
+    if (data.okReason === 'PAYMENT_PREVIEW_SUPPORTED') return 'payment_required';
+    return null;
   }
 
   /**

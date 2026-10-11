@@ -307,6 +307,11 @@ export class WatchInfoHandler {
     });
     if (!json?.data) throw new Error(`watch ${endpoint} API: data field missing`);
     const parsed = WatchPageParser.parseApiData(json.data, videoId, actionTrackId);
+    // 会員種別で挙動が変わる処理なので、視聴者の会員種別と視聴制限の判定結果をログに残す
+    log.info(
+      `watch ${endpoint} ${videoId}: viewerPremium=${(json.data as { viewer?: { isPremium?: unknown } }).viewer?.isPremium ?? 'n/a'} ` +
+        `downloadable=${parsed.isDownloadable} restriction=${parsed.accessRestriction ?? 'none'}`
+    );
     // v3_guest エンドポイント or Cookie無しで叩いた場合、accessRightKey はゲスト用JWTになる。
     // 後続の DMS access-rights POST でも Cookie無し送信を強制するためにフラグを立てる。
     return { ...parsed, guestFetched: !loggedIn || noCookie };

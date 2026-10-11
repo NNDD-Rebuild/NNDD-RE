@@ -123,6 +123,7 @@ export class ThumbInfoXmlReader {
       isDownloadable: false,
       isEncrypted: false,
       isEconomy: false,
+      accessRestriction: null,
       commentThreads: [],
       userKey: '',
       threadKey: null,

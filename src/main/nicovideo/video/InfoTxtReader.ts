@@ -141,6 +141,7 @@ export class InfoTxtReader {
       isDownloadable: false,
       isEncrypted: false,
       isEconomy: false,
+      accessRestriction: null,
       commentThreads: [],
       userKey: '',
       threadKey: null,

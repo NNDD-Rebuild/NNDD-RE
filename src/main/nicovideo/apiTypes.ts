@@ -469,6 +469,17 @@ export interface NicoWatchChannelNode {
   isOfficialAnime?: unknown;
 }
 
+/** watch API の payment.video。視聴に必要な会員種別・課金の区分 */
+export interface NicoWatchPaymentNode {
+  video?: {
+    isPremium?: unknown;
+    isAdmission?: unknown;
+    isPpv?: unknown;
+    billingType?: unknown;
+    watchableUserType?: unknown;
+  };
+}
+
 export interface NicoWatchSeriesNode {
   id?: unknown;
   title?: unknown;
@@ -541,6 +552,12 @@ export interface NicoWatchV4Data {
   comment?: NicoWatchCommentNode;
   tag?: NicoWatchTagNode;
   client?: NicoWatchClientNode;
+  /** 視聴に必要な会員種別・課金の区分 */
+  payment?: NicoWatchPaymentNode | null;
+  /** 視聴者自身の情報 (会員種別のみ使う) */
+  viewer?: { isPremium?: unknown } | null;
+  /** 視聴できる理由。`PURELY` は制限なし、`PAYMENT_PREVIEW_SUPPORTED` は購入/会員でないためプレビューのみ */
+  okReason?: unknown;
   lazy?: { authKey?: unknown };
 }
 

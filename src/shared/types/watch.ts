@@ -2,6 +2,14 @@
  * ニコニコのウォッチページから取得する情報。
  * 新API (V3 DMS) で利用するため、Niconicome-develop の V2/V3 構造を踏まえる。
  */
+/**
+ * 再生に必要な視聴権限が足りないときの理由。視聴できる (または理由が不明な) ときは null。
+ *  - premium_only: プレミアム会員限定 (一般会員・未ログイン)
+ *  - channel_member: チャンネルへの入会が必要 (プレミアム会員でも視聴できない)
+ *  - payment_required: 購入・入会など別の条件が必要
+ */
+export type WatchAccessRestriction = 'premium_only' | 'channel_member' | 'payment_required';
+
 export interface WatchPageInfo {
   /** 動画ID */
   videoId: string;
@@ -49,6 +57,8 @@ export interface WatchPageInfo {
   isEncrypted: boolean;
   /** エコノミーかどうか */
   isEconomy: boolean;
+  /** 視聴権限が足りないときの理由。API が理由を返さない取得経路では null */
+  accessRestriction: WatchAccessRestriction | null;
   /** コメントスレッド情報 */
   commentThreads: CommentThreadInfo[];
   /** ユーザーキー */

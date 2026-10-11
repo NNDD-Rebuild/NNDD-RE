@@ -1,5 +1,6 @@
 import type { WatchPageInfo, DomandStreamCandidate } from '@shared/types';
 import { NicoApi, NicoEndpoint } from '@shared/constants';
+import { describeAccessRestriction } from '@shared/utils/watchAccess';
 import { NicoContext } from '../NicoContext';
 import { createLogger } from '../../util/Logger';
 import * as path from 'path';
@@ -55,6 +56,9 @@ export class WatchSession {
     if (this.session) return this.session;
 
     if (!this.watch.isDownloadable) {
+      if (this.watch.accessRestriction) {
+        throw new Error(describeAccessRestriction(this.watch.accessRestriction, this.watch.channel?.name));
+      }
       throw new Error(
         this.watch.isEncrypted
           ? '動画が暗号化されているためダウンロードできません'
