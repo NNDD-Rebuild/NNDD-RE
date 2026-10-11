@@ -22,7 +22,8 @@
     "tc:web": "tsc --noEmit -p tsconfig.web.json",
     "tc:all": "npm run tc && npm run tc:web",
     "check:ipc": "node scripts/check-ipc-coverage.mjs",
-    "gen:proto": "buf generate"
+    "gen:proto": "buf generate",
+    "postinstall": "node node_modules/electron/install.js"
   },
   "dependencies": {
     "@aptabase/electron": "^0.3.1",
