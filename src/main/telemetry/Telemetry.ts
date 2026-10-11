@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { ipcMain, protocol } from 'electron';
 import { initialize, trackEvent } from '@aptabase/electron/main';
 import type { TelemetryRendererEvent, TelemetryState } from '@shared/types';
@@ -84,9 +84,13 @@ export function getTelemetryState(): TelemetryState {
   return { consent: t.consent, needsConsent };
 }
 
-/** その場で 1 件送る。同意の確認は呼び出し側で済ませること。失敗は握りつぶす */
+/**
+ * その場で 1 件送る。同意の確認は呼び出し側で済ませること。失敗は握りつぶす。
+ * すべてのイベントに匿名ID (iid) を付ける。Aptabase 側で端末ごとに集計 (重複排除) できるようにするため。
+ */
 function sendNow(name: string, props?: TelemetryProps): void {
-  trackEvent(name, props).catch(() => {});
+  const iid = getConfigStore().get('telemetry.installId');
+  trackEvent(name, iid ? { ...props, iid } : props).catch(() => {});
 }
 
 /**
@@ -180,12 +184,25 @@ function ensureInstallId(): string {
   return id;
 }
 
-/** 起動直後 / 同意直後: 起動イベントと設定の一覧を送り、生存通知 (heartbeat) を始める */
-function startSending(): void {
-  const iid = ensureInstallId();
-  sendNow('app_start', { iid });
+/** 設定グループのうち、前回送った内容から変わったものだけ送る (初回・ID 作り直し後は全部) */
+function sendChangedSettings(): void {
   const store = getConfigStore();
-  for (const { event, props } of buildSettingsSnapshot(store.store)) sendNow(event, props);
+  const sent = { ...store.get('telemetry.settingsHash') };
+  for (const { event, props } of buildSettingsSnapshot(store.store)) {
+    const hash = createHash('sha1').update(JSON.stringify(props)).digest('hex');
+    if (sent[event] === hash) continue;
+    sendNow(event, props);
+    sent[event] = hash;
+  }
+  store.set('telemetry.settingsHash', sent);
+}
+
+/** 起動直後 / 同意直後: 起動イベントと変わった設定を送り、生存通知 (heartbeat) を始める */
+function startSending(): void {
+  ensureInstallId();
+  sendNow('app_start');
+  const store = getConfigStore();
+  sendChangedSettings();
 
   // 前回終了時に送れなかった操作イベントを、今回分より先に送る
   const pending = store.get('telemetry.pending');
@@ -197,7 +214,7 @@ function startSending(): void {
 
   if (heartbeatTimer) return;
   heartbeatTimer = setInterval(() => {
-    sendNow('heartbeat', { iid: getConfigStore().get('telemetry.installId') });
+    sendNow('heartbeat');
   }, HEARTBEAT_INTERVAL_MS);
   heartbeatTimer.unref();
   flushTimer = setInterval(() => void flushQueue(), FLUSH_INTERVAL_MS);
@@ -216,7 +233,10 @@ function stopSending(): void {
   // 同意を外したら、未送信のイベントも捨て、送信中の flush も止める
   epoch++;
   queue = [];
-  getConfigStore().set('telemetry.pending', []);
+  const store = getConfigStore();
+  store.set('telemetry.pending', []);
+  // 同意を外すと匿名IDも消える。再同意後は新しいIDで設定を全部送り直す
+  store.set('telemetry.settingsHash', {});
 }
 
 /** アプリ起動時 (config 読み込み後) に呼ぶ。同意済みなら送信を始める */
@@ -241,10 +261,13 @@ export function setTelemetryConsent(granted: boolean): TelemetryState {
   return getTelemetryState();
 }
 
-/** 匿名IDを作り直す。同意中のみ (以後の heartbeat から新しいIDになる) */
+/** 匿名IDを作り直す。同意中のみ (以後の送信から新しいIDになる) */
 export function resetTelemetryInstallId(): void {
   if (!isEnabled()) return;
-  const iid = randomUUID();
-  getConfigStore().set('telemetry.installId', iid);
-  sendNow('heartbeat', { iid });
+  const store = getConfigStore();
+  store.set('telemetry.installId', randomUUID());
+  // 新しいIDには設定がまだ紐づいていないので、全部送り直す
+  store.set('telemetry.settingsHash', {});
+  sendNow('heartbeat');
+  sendChangedSettings();
 }

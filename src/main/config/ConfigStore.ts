@@ -448,6 +448,8 @@ export interface NnddConfig {
     installId: string;
     /** 終了時に送れていなかった操作イベント。次回起動時に送ってから空にする */
     pending: { name: string; props?: Record<string, string | number | boolean> }[];
+    /** 設定グループ (settings_xxx) ごとに、最後に送った内容のハッシュ。変わったグループだけ送り直す */
+    settingsHash: Record<string, string>;
   };
 }
 
@@ -607,7 +609,8 @@ const DEFAULTS: NnddConfig = {
     consent: 'unknown',
     consentVersion: 0,
     installId: '',
-    pending: []
+    pending: [],
+    settingsHash: {}
   }
 };
 
