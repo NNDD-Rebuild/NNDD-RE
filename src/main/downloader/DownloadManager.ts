@@ -866,7 +866,7 @@ export class DownloadManager extends EventEmitter {
 
     if (useNative) {
       const tempDir = path.join(os.tmpdir(), 'nndd-video-dl', item.id);
-      const muxImpl = getConfigStore().get('downloadMuxImplementation') ?? 'ffmpeg';
+      const muxImpl = getConfigStore().get('downloadMuxImplementation') ?? 'mediabunny';
       let currentPhase: VideoDownloadPhase = 'session';
       try {
         await VideoDownloader.download(watch, {
