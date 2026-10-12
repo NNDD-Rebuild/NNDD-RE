@@ -39,7 +39,8 @@ npm run build       # プロダクションビルド
 |---|---|
 | SQLite DB | `~/Documents/NNDD-RE/system/library.db` |
 | DL動画 | `~/Documents/NNDD-RE/library/Downloads/` |
-| キャッシュ | `userData/cache/` |
+| 画像キャッシュ (サムネ・アイコン) | `userData/nndd-cache/image/` |
+| 映像ストリームキャッシュ | `userData/nndd-cache/movie/` (設定 `cacheRoot` 時は `<cacheRoot>/cache/movie/`) |
 | 設定 | `userData/config.json` (Electron ConfigStore) |
 | Cookie | `userData/session/` (tough-cookie) |
 
@@ -74,16 +75,25 @@ npm run build       # プロダクションビルド
 
 - **`WatchPageParser`**: watch ページの HTML/JSON 抽出 (動画メタ、低レイヤ)
 - **`WatchInfoHandler`**: `WatchPageParser` を使いつつ画像キャッシュ差し替え等の上位処理を行うハンドラ。`registerIpc.ts` から呼ばれる実際の取得口はこちら
-- **`WatchSession`**: `/v1/watch/{id}/access-rights/hls` で session ID 取得。**再生 (ストリーミング) 専用**に使われる (`ensureStreamSession()` 経由)
-- **`YtDlpDownloader`**: **実際の動画ダウンロードで使われている唯一の経路**。`DownloadManager.runItem()` から直接呼ばれ、yt-dlp で bestvideo+bestaudio を取得しmux
+- **`WatchSession`**: `/v1/watch/{id}/access-rights/hls` で session ID 取得。**再生 (ストリーミング) 専用**に使われる (`ensureStreamSession()` 経由)- **`VideoDownloader`** (`src/main/nicovideo/video/VideoDownloader.ts`): **既定の動画DL**。`WatchSession` → `M3U8Parser` → `SegmentDownloader` で HLS セグメントを取得・AES-128 復号し、mux して保存する。yt-dlp・FFmpeg 不要
+- **`YtDlpDownloader`**: yt-dlp で bestvideo+bestaudio を取得して mux。`useNativeVideoDownloader` が false のときと、ネイティブ失敗時のフォールバック (下記「動画DLの経路」)
 - **`YtDlpStreamer`**: ストリーミングキャッシュ (`userData/nndd-cache/movie` または `<cacheRoot>/cache/movie`) の管理 (パス解決・キャッシュ確認・削除)
-- **`M3U8Parser` / `SegmentDownloader` / `Aes128Decryptor` / `FFmpegManager` / `VideoDownloader.ts`**: 独自にHLSセグメントをDL・AES-128復号・FFmpegでmuxする自前パイプライン。**現在どこからも呼ばれていない未使用コード** (`nicovideo/index.ts` から re-export されているだけ)。README/CLAUDE.md に残る「WatchSession→M3U8Parser→SegmentDownloader→FFmpegManager」という説明はこの未使用実装を指しており、実際のDL処理とは異なるので注意
+- **`M3U8Parser` / `SegmentDownloader` / `Aes128Decryptor`**: ネイティブDL (`VideoDownloader`) と生放送の録画 (`LiveRecorder` / `LiveDownloader`) が使うHLS処理
+- **`MediabunnyMuxer`**: 既定の mux (JS 実装、stream copy、ffmpeg 不要)
+- **`FFmpegManager`**: `downloadMuxImplementation` が `ffmpeg` のときの mux
 
 ### 動画DL・再生とyt-dlp/FFmpegの関係
 
-再生とダウンロードで必要な外部ツールが異なる。実装未確認のままREADMEを書くと上記の「未使用パイプライン」を実処理と誤解しやすいので要注意。
+yt-dlp・FFmpeg は既定では使わない。外部ツールが要るのは設定で yt-dlp / ffmpeg を選んだときだけ。
 
-- **ダウンロード** (`DOWNLOAD_ENQUEUE`、`commentOnly: false`): `DownloadManager.ts:265` 付近で `YtDlpDownloader.download()` を直接呼び出す。yt-dlp が `--format bestvideo+bestaudio --merge-output-format mp4` でDLし、mux時にffmpegバイナリを外部プロセスとして必要とする（`userData/bin/` に yt-dlp と同居させることで yt-dlp が自動検出）。**yt-dlp・FFmpeg 両方が事実上必須**。`commentOnly: true` の場合はこのステップ自体スキップ
+**動画DLの経路** (`DownloadManager.downloadVideoWithFallback`、`src/main/downloader/DownloadManager.ts`) は設定で決まる:
+
+- 既定 (`useNativeVideoDownloader: true`、`downloadMuxImplementation: 'mediabunny'`): ネイティブDL + mediabunny mux。yt-dlp・FFmpeg 不要。失敗時はエラーをそのまま出す (yt-dlp へはフォールバックしない)
+- `downloadMuxImplementation: 'ffmpeg'`: ネイティブでセグメント取得 → FFmpeg で mux。ネイティブが失敗したら yt-dlp にフォールバックする (この場合のみ)
+- `useNativeVideoDownloader: false`: 常に yt-dlp (mux は yt-dlp が行い、FFmpeg バイナリを使う)。トラブル時の緊急回避用
+- 音声のみ (`isAudioOnly`) はネイティブ必須。`useNativeVideoDownloader: false` だとエラー
+- `commentOnly: true` は動画DLをスキップ (コメントのみ)
+
 - **再生** (`VIDEO_GET_STREAM_URL`): `getConfigStore().get('player').streamingMode` (`'native' | 'hls' | 'niconico'`、デフォルト `native`) に応じて分岐。`native`/`hls` はどちらも `ensureStreamSession()` → `WatchSession.ensure()` で HLS URL を取得し、`native` は hls.js が直接、`hls` は `StreamServer`/`HlsProxy` 経由でプロキシ再生。`niconico` は公式プレイヤーの webview 埋め込み。**いずれも yt-dlp・FFmpeg 不要**。既にキャッシュ済みファイル (`YtDlpStreamer.getCachedPath()`) があれば最優先でそれを再生
 - **`BinaryInstaller.ts`** (`src/main/util/BinaryInstaller.ts`): yt-dlp/FFmpeg/ffplay のパス解決・バージョン確認・オンデマンドインストールを一元管理。`userData/bin/` に配置。yt-dlpはGitHub Releases本家、ffmpeg/ffplayは `yt-dlp/FFmpeg-Builds` から取得 (Windowsはwinget優先、macOSのffmpeg自動取得は非対応でbrew案内)。バイナリが見つからない場合、`YtDlpDownloader.findExe()` は `ytDlpPath`設定 → `userData/bin/` → PATH上の `yt-dlp` の順にフォールバックし、最終的に見つからなければDL項目が `FAIL` になるだけでアプリはクラッシュしない
 - **`StreamProtocol.ts`** の `spawnMergeDownload()` (yt-dlp+ffmpegでのマージDL、'wait'モード用) は定義されているが現状どこからも呼ばれていない未使用コード
@@ -140,6 +150,7 @@ npm run build       # プロダクションビルド
 - **`HlsSessionInterceptor`**: HLSセッション関連のリクエストインターセプト
 - **`StreamProtocol`**: **カスタムプロトコルではない**。yt-dlp+ffmpegでのマージDL用ユーティリティ関数 (`spawnMergeDownload()`) を提供するファイル。現状呼び出し元なし (未使用)
 - **`CommentWindowManager`**: コメント別ウィンドウの管理
+- **`src/main/protocol/CmdProtocol.ts`** (`nndd-re-cmd://`): 外部起動用 (ブラウザ拡張等)。`app.setAsDefaultProtocolClient` で登録。`play/videoId` / `download/videoId` / `mylist/mylistId` / `live/programId` に対応
 
 ### GitHub同期バックアップ (`src/main/githubSync/`)
 
@@ -285,6 +296,40 @@ live.nicovideo.jp/watch/lvXXX の #embedded-data (data-props)
 - `move_order` と `ssng_updated` の中身 (生データをログに出している。SSNG の種別対応は USER → ユーザーID、COMMAND → コマンド、WORD → ワード)
 - タイムシフト予約の解除 API の応答形式、一般会員での予約件数制限などのエラーコード (`nico-account-diff` のとおり会員種別による差は未検証)
 - タイムシフト予約一覧の `timeshiftSetting` (`status` / `watchLimit` / `endTime`) と `timeshiftTicket.expireTimeMs` の読み方は、プレミアム会員の実通信 (HAR) で確認済み。一般会員での値は未検証 (カードの視聴可否・期限表示は `LiveView.tsx` の `timeshiftStatusOf`。公式の一覧ページの判定を移植したもの)
+
+### 会員種別による機能差
+
+出典: https://premium.nicovideo.jp/payment/premium_detail (公式マーケティングページの要約。**数値は変動するため実装の根拠にはせず、必ず実機で会員種別を分けて検証すること**)
+
+#### ニコニコ動画
+
+| 機能 | 一般会員 | プレミアム会員 |
+|---|---|---|
+| 最高画質 | 制限あり | 1080p |
+| 動画広告 | 表示 | 非表示 |
+| バックグラウンド再生 | 非対応 | 対応 |
+| サムネイルシーク (シークバーのプレビュー) | 非対応 | 対応 |
+| レジューム再生 (続きから再生) | 非対応 | 対応 |
+| プレミアム限定動画 | 視聴不可 | 視聴可能 |
+| あとで見る / マイリスト登録数 | 少ない (100件等) | 大幅に多い |
+| 視聴履歴保持期間 | 短い (30日) | 長い (180日) |
+| 同時視聴タブ数 | 制限あり (3タブ) | 無制限 |
+| 再生速度上限 | 1.25倍 | 2.0倍 |
+| Picture-in-Picture | 非対応 | 対応 |
+| 音声のみ再生 | 非対応 | 対応 |
+
+#### ニコニコ生放送
+
+| 機能 | 一般会員 | プレミアム会員 | 備考 |
+|---|---|---|---|
+| **追っかけ再生 (chasePlay)** | **非対応** | 対応 | **実機で確定済み** (2026-09-27、`account: standard/non` で `chasePlay: true` → `NO_PERMISSION`/`NO_STREAM_AVAILABLE`)。フラグ `isChasePlayEnabled` は会員種別に関係なく `true` |
+| 視聴優先度 (満員時) | 入場規制あり | 優先入場 | 未検証 |
+| 配信画質上限 | 低い | 高い | 未検証。画質リストは `startWatching` の応答 `availableQualities` で実際に確認するのが確実 |
+| タイムシフト予約 | 要予約・件数制限あり | 予約不要な番組が広い・件数制限緩い | 未検証。`activateTimeshift` (予約→視聴開始) は会員種別を問わず呼べる想定だが、番組側の制限は別途あり得る |
+| コメント表示色数・位置 | 制限あり | 拡張 | 未検証 |
+| 再生速度上限 | 1.25倍 | 2.0倍 | タイムシフト再生時。未検証 |
+
+「未検証」の項目は、この表の記載のみを信じて実装しない。前回と同じ事故になる。
 
 ### その他
 
@@ -596,7 +641,7 @@ npm run tc:web      # web側のみ
 
 ### 6. 既知の型エラーをスキップ
 
-CLAUDE.md に既知エラーリストがあります。自分の変更と無関係なら無視OK。
+既知の型エラーリストは無い。`npm run tc:all` のエラーは基準 0 (CLAUDE.md「型エラーの基準」) なので、出たら自分の変更を疑う。
 
 ---
 
@@ -636,7 +681,8 @@ npm run rebuild  # または electron-rebuild -f -t dev
 
 ### 動画がダウンロードできない
 
-- 再生（ストリーミング）とは異なり、ダウンロードは yt-dlp + FFmpeg が必須。設定 > 外部ツール で両方が検出されているか確認する（本ドキュメントの「動画DL・再生とyt-dlp/FFmpegの関係」参照）
+- 既定の設定ではダウンロードに yt-dlp / FFmpeg は不要。失敗時のエラー内容を確認する (ネイティブDLはフォールバックしない)
+- yt-dlp / FFmpeg を使う設定 (`useNativeVideoDownloader: false` または `downloadMuxImplementation: 'ffmpeg'`) の場合は、設定 > 外部ツール で検出されているか確認する（本ドキュメントの「動画DL・再生とyt-dlp/FFmpegの関係」参照）
 - `YtDlpDownloader.findExe()` は `ytDlpPath` 設定 → `userData/bin/` → PATH の順で探索するため、パス指定が誤っていないか確認
 
 ---
