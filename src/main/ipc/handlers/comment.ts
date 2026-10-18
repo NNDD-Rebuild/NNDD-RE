@@ -6,6 +6,7 @@ import { WatchInfoHandler, CommentClient, CommentXmlReader, CommentDiffUpdater, 
 import { mergeNgWithServer, pushNgAdd, pushNgRemove } from '../../nicovideo/ng/NgServerSync';
 import { CommentWindowManager } from '../../player/CommentWindowManager';
 import { createLogger } from '../../util/Logger';
+import { runExclusive } from '../../util/KeyedMutex';
 import type { IpcHandlerContext } from './context';
 
 const log = createLogger('IPC');
@@ -62,23 +63,26 @@ export function registerCommentHandlers(ctx: IpcHandlerContext): {
     return true;
   });
   // サーバー側NGとのマージ (手動の同期ボタン)。ローカルの変更は broadcast で他ウィンドウへ通知する
-  ipcMain.handle(IpcChannel.NG_SERVER_SYNC, async (_e, args?: { force?: boolean }) => {
-    const dao = library.ngListDao;
-    const result = await mergeNgWithServer(
-      {
-        list: () => dao.listComment(),
-        add: (item) => dao.addComment(item),
-        remove: (item) => dao.removeComment(item),
-        getBase: (account) => dao.getSyncBase(account),
-        setBase: (account, items) => dao.setSyncBase(account, items)
-      },
-      { force: args?.force === true }
-    );
-    if (result.pulled > 0 || result.deletedLocal > 0) {
-      if (!result.aborted) broadcastNgChanged();
-    }
-    return result;
-  });
+  ipcMain.handle(IpcChannel.NG_SERVER_SYNC, (_e, args?: { force?: boolean }) =>
+    // 並走すると同じ基準から二重にサーバーへ追加・削除するため直列にする
+    runExclusive('ng-sync', async () => {
+      const dao = library.ngListDao;
+      const result = await mergeNgWithServer(
+        {
+          list: () => dao.listComment(),
+          add: (item) => dao.addComment(item),
+          remove: (item) => dao.removeComment(item),
+          getBase: (account) => dao.getSyncBase(account),
+          setBase: (account, items) => dao.setSyncBase(account, items)
+        },
+        { force: args?.force === true }
+      );
+      if (result.pulled > 0 || result.deletedLocal > 0) {
+        if (!result.aborted) broadcastNgChanged();
+      }
+      return result;
+    })
+  );
   ipcMain.handle(IpcChannel.NG_LIST_TAG, () => library.ngListDao.listTags());
   ipcMain.handle(IpcChannel.NG_ADD_TAG, (_e, tag: string) => {
     library.ngListDao.addTag(tag);

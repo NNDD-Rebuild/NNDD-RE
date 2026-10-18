@@ -70,7 +70,14 @@ function isLimitError(e: unknown): boolean {
 export class NgServerClient {
   static async list(): Promise<ServerNgItem[]> {
     const res = await NicoContext.get().http.getJson<ServerNgResponse>(NicoEndpoint.ngCommentsClient());
-    return res.data?.items ?? [];
+    // data 欠落を「サーバーに NG が 0 件」と取り違えると、ローカルの NG が黙って消える
+    const items = res.data?.items;
+    if (!Array.isArray(items)) throw new Error('サーバーNGの応答が不正です (items がありません)');
+    const count = res.data?.count;
+    if (typeof count === 'number' && count !== items.length) {
+      throw new Error(`サーバーNGの応答が不正です (count=${count} / items=${items.length})`);
+    }
+    return items;
   }
 
   static async add(item: { type: ServerNgType; source: string }): Promise<void> {
@@ -197,6 +204,9 @@ export async function mergeNgWithServer(
       deleteRetry.push(item);
     }
   }
+  // 上限の errorCode が未確認で isLimitError に掛からない場合に備え、連続で失敗したら打ち切る
+  const MAX_CONSECUTIVE_PUSH_FAILURES = 3;
+  let pushFailStreak = 0;
   for (const item of pushServer) {
     const mapped = toServerNg(item);
     if (!mapped) continue;
@@ -204,6 +214,7 @@ export async function mergeNgWithServer(
       await NgServerClient.add(mapped);
       finalServer.set(key(item), item);
       result.pushed++;
+      pushFailStreak = 0;
     } catch (e) {
       if (isLimitError(e)) {
         log.warn(`NG server limit reached after pushing ${result.pushed} items`);
@@ -212,6 +223,10 @@ export async function mergeNgWithServer(
       }
       log.warn('NG push failed:', e);
       result.failed++;
+      if (++pushFailStreak >= MAX_CONSECUTIVE_PUSH_FAILURES) {
+        log.warn(`NG push stopped after ${pushFailStreak} consecutive failures`);
+        break;
+      }
     }
   }
 

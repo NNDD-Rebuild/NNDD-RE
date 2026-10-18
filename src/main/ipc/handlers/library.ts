@@ -19,6 +19,7 @@ import {
 import { LibraryScanner } from '../../library/LibraryScanner';
 import { NICOWARI_MARK, readNicowariSwf } from '../../library/NicowariSwf';
 import { createLogger } from '../../util/Logger';
+import { runExclusive } from '../../util/KeyedMutex';
 import type { IpcHandlerContext } from './context';
 
 const log = createLogger('IPC');
@@ -283,44 +284,49 @@ export function registerLibraryHandlers(ctx: IpcHandlerContext): void {
     }
   };
 
-  ipcMain.handle(IpcChannel.PLAYLIST_SERVER_SYNC, async (_e, args: { id: number; force?: boolean }) => {
-    const mylistId = library.playlistDao.getServerMylistId(args.id);
-    if (!mylistId) return { ok: false as const, reason: 'notSynced' as const };
-    if (!(await NicoContext.get().isLoggedIn())) return { ok: false as const, reason: 'notLoggedIn' as const };
-    await ensureSyncKey(args.id, mylistId);
-    const result = await mergePlaylistWithServer(mylistId, playlistStore(args.id), { force: args.force === true });
-    return { ok: true as const, result };
-  });
-
-  ipcMain.handle(IpcChannel.PLAYLIST_SET_SYNC, async (_e, args: { id: number; enabled: boolean }) => {
-    if (!args.enabled) {
-      // 解除してもニコニコ側のマイリストは消さない。登録キーは取り込み除外にして、復活させない
-      library.playlistDao.unlink(args.id);
-      return { ok: true as const };
-    }
-    if (!(await NicoContext.get().isLoggedIn())) return { ok: false as const, reason: 'notLoggedIn' as const };
-    let mylistId = library.playlistDao.getServerMylistId(args.id);
-    if (!mylistId) {
-      const pl = library.playlistDao.list().find((p) => p.id === args.id);
-      if (!pl) throw new Error('プレイリストが見つかりません');
-      // 非公開で作成。説明文にプレイリスト固有の登録キーを入れる。作成に失敗した (上限など) ときは例外にして、リンクを作らない
-      const key = randomUUID();
-      mylistId = await MyListClient.createMylist(pl.name, false, buildPlaylistSyncDescription(key));
-      library.playlistDao.linkServer(args.id, mylistId, key);
-    } else {
+  ipcMain.handle(IpcChannel.PLAYLIST_SERVER_SYNC, (_e, args: { id: number; force?: boolean }) =>
+    // 同じプレイリストの同期は直列に (並走するとサーバーへ二重に追加・削除し、基準も不正になる)
+    runExclusive(`playlist-sync:${args.id}`, async () => {
+      const mylistId = library.playlistDao.getServerMylistId(args.id);
+      if (!mylistId) return { ok: false as const, reason: 'notSynced' as const };
+      if (!(await NicoContext.get().isLoggedIn())) return { ok: false as const, reason: 'notLoggedIn' as const };
       await ensureSyncKey(args.id, mylistId);
-    }
-    // 初回マージ (基準が無いので和集合)。失敗してもリンクは残し、次回の同期で再試行できる
-    let result: PlaylistSyncResult | undefined;
-    let error: string | undefined;
-    try {
-      result = await mergePlaylistWithServer(mylistId, playlistStore(args.id));
-    } catch (e) {
-      log.warn('playlist initial sync failed:', e);
-      error = e instanceof Error ? e.message : String(e);
-    }
-    return { ok: true as const, result, error };
-  });
+      const result = await mergePlaylistWithServer(mylistId, playlistStore(args.id), { force: args.force === true });
+      return { ok: true as const, result };
+    })
+  );
+
+  ipcMain.handle(IpcChannel.PLAYLIST_SET_SYNC, (_e, args: { id: number; enabled: boolean }) =>
+    runExclusive(`playlist-sync:${args.id}`, async () => {
+      if (!args.enabled) {
+        // 解除してもニコニコ側のマイリストは消さない。登録キーは取り込み除外にして、復活させない
+        library.playlistDao.unlink(args.id);
+        return { ok: true as const };
+      }
+      if (!(await NicoContext.get().isLoggedIn())) return { ok: false as const, reason: 'notLoggedIn' as const };
+      let mylistId = library.playlistDao.getServerMylistId(args.id);
+      if (!mylistId) {
+        const pl = library.playlistDao.list().find((p) => p.id === args.id);
+        if (!pl) throw new Error('プレイリストが見つかりません');
+        // 非公開で作成。説明文にプレイリスト固有の登録キーを入れる。作成に失敗した (上限など) ときは例外にして、リンクを作らない
+        const key = randomUUID();
+        mylistId = await MyListClient.createMylist(pl.name, false, buildPlaylistSyncDescription(key));
+        library.playlistDao.linkServer(args.id, mylistId, key);
+      } else {
+        await ensureSyncKey(args.id, mylistId);
+      }
+      // 初回マージ (基準が無いので和集合)。失敗してもリンクは残し、次回の同期で再試行できる
+      let result: PlaylistSyncResult | undefined;
+      let error: string | undefined;
+      try {
+        result = await mergePlaylistWithServer(mylistId, playlistStore(args.id));
+      } catch (e) {
+        log.warn('playlist initial sync failed:', e);
+        error = e instanceof Error ? e.message : String(e);
+      }
+      return { ok: true as const, result, error };
+    })
+  );
 
   // 別の PC で作られたプレイリスト同期用マイリスト (登録キー付き) を、この PC のプレイリストとして取り込む。
   // この PC で削除・同期解除したもの (取り込み除外のキー) や、すでに取り込み済みのものは対象外

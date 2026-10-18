@@ -261,11 +261,13 @@ export class MyListClient {
     for (let page = 1; ; page++) {
       const res = await http.getJson<NicoNvapiMylistResponse>(NicoEndpoint.myMylist(mylistId, pageSize, page));
       const m = res.data?.mylist;
-      const total = m?.totalItemCount ?? 0;
+      // 応答の欠落を「空のマイリスト」と取り違えると、同期でローカルの項目が黙って消える
+      if (!m) throw new Error('マイリストの応答が不正です (mylist がありません)');
+      const total = m.totalItemCount ?? 0;
       if (total > maxItems) {
         throw new Error(`マイリストの動画が ${maxItems} 件を超えているため同期できません (${total} 件)`);
       }
-      const items = m?.items ?? [];
+      const items = m.items ?? [];
       for (const i of items) {
         out.push({
           // 削除・非公開になった動画は video が欠けることがあるので watchId を正とする
