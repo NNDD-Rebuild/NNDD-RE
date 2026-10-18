@@ -142,10 +142,14 @@ function timeshiftStatusOf(
   };
 }
 
-/** 番組の長さ (開始〜終了予定)。1 時間未満は M:SS、以上は H:MM:SS。長さが分からなければ空文字 */
-function formatProgramLength(beginMs: number, endMs: number): string {
-  if (!(beginMs > 0 && endMs > beginMs)) return '';
-  const s = Math.floor((endMs - beginMs) / 1000);
+/**
+ * 番組の長さ。放送中は開始から現在まで、それ以外は開始〜終了。
+ * 1 時間未満は M:SS、以上は H:MM:SS。長さが分からなければ空文字
+ */
+function formatProgramLength(p: LiveProgramSummary, now: number): string {
+  const endMs = p.status === 'ON_AIR' ? now : p.endAtMs;
+  if (!(p.beginAtMs > 0 && endMs > p.beginAtMs)) return '';
+  const s = Math.floor((endMs - p.beginAtMs) / 1000);
   const h = Math.floor(s / 3600);
   const m = Math.floor((s % 3600) / 60);
   const pad = (n: number): string => String(n).padStart(2, '0');
@@ -191,13 +195,14 @@ function ProgramCard({
   /** 録画予約の追加・解除 (放送予定の番組にだけボタンを出す) */
   onRecordReserve?: (p: LiveProgramSummary) => void;
 }): JSX.Element {
-  const tsStatus = timeshiftStatusOf(p, Date.now());
+  const now = Date.now();
+  const tsStatus = timeshiftStatusOf(p, now);
   // 終了済みでタイムシフトの状態が分かる番組は、公式の一覧と同じく「タイムシフト」/「公開終了」のバッジにする
   const badge =
     p.status === 'ENDED' && tsStatus
       ? { label: tsStatus.available ? 'タイムシフト' : '公開終了', className: tsStatus.available ? 'bg-blue-600' : 'bg-neutral-600' }
       : STATUS_BADGE[p.status];
-  const length = formatProgramLength(p.beginAtMs, p.endAtMs);
+  const length = formatProgramLength(p, now);
   // 見た目は動画一覧のカード (VideoCard のグリッド表示) に揃える
   return (
     <div
