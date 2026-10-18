@@ -6,7 +6,7 @@
  * 既存のオフライン NNDD ライブラリ DB をそのまま読み込めるようにする。
  */
 
-export const DB_SCHEMA_VERSION = '11';
+export const DB_SCHEMA_VERSION = '14';
 
 export const CREATE_TABLES = [
   /* NNDDREVideo - 動画本体 */
@@ -145,13 +145,27 @@ export const CREATE_TABLES = [
     userId TEXT UNIQUE
   );`,
 
-  /* 自作プレイリスト (ローカル完結、サーバー同期なし) */
+  /* 自作プレイリスト (ローカル。serverMylistId があればニコニコ側の同名マイリストと同期) */
   `CREATE TABLE IF NOT EXISTS playlist (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     createdAt REAL,
     updatedAt REAL,
-    icon TEXT
+    icon TEXT,
+    serverMylistId TEXT,
+    syncKey TEXT
+  );`,
+
+  /* この PC では取り込まない登録キー。ローカルで削除・同期解除したプレイリストが、ニコニコ側に残ったマイリストから復活しないようにする */
+  `CREATE TABLE IF NOT EXISTS playlist_sync_dismissed (
+    syncKey TEXT PRIMARY KEY
+  );`,
+
+  /* プレイリストとニコニコ側マイリストの同期で使う「前回同期した時点の動画一覧」。削除の伝播を判定するための基準 */
+  `CREATE TABLE IF NOT EXISTS playlist_sync_base (
+    playlist_id INTEGER NOT NULL,
+    videoId TEXT NOT NULL,
+    UNIQUE(playlist_id, videoId)
   );`,
 
   /* プレイリスト内動画 (追加時のタイトル等スナップショットを保持) */
@@ -302,6 +316,10 @@ export const Q = {
   INSERT_NG_LIST: `INSERT OR IGNORE INTO ng_list (type, value) VALUES (?, ?);`,
   DELETE_NG_LIST: `DELETE FROM ng_list WHERE type = ? AND value = ?;`,
   DELETE_ALL_NG_LIST: `DELETE FROM ng_list;`,
+  SELECT_NG_SYNC_BASE: `SELECT type, value FROM ng_sync_base WHERE account = ?;`,
+  INSERT_NG_SYNC_BASE: `INSERT OR IGNORE INTO ng_sync_base (account, type, value) VALUES (?, ?, ?);`,
+  DELETE_NG_SYNC_BASE_BY_ACCOUNT: `DELETE FROM ng_sync_base WHERE account = ?;`,
+  DELETE_ALL_NG_SYNC_BASE: `DELETE FROM ng_sync_base;`,
 
   SELECT_SEARCH_HISTORY: `SELECT word FROM search_history ORDER BY usedAt DESC, id DESC LIMIT ?;`,
   UPSERT_SEARCH_HISTORY: `INSERT INTO search_history (word, usedAt) VALUES (?, ?)
@@ -316,10 +334,6 @@ export const Q = {
   UPSERT_MYLIST_HISTORY: `INSERT INTO mylist_history (url, name, usedAt) VALUES (?, ?, ?)
     ON CONFLICT(url) DO UPDATE SET name = excluded.name, usedAt = excluded.usedAt;`,
   INSERT_MYLIST_HISTORY_IGNORE: `INSERT OR IGNORE INTO mylist_history (url, name, usedAt) VALUES (?, ?, ?);`,
-  SELECT_NG_SYNC_BASE: `SELECT type, value FROM ng_sync_base WHERE account = ?;`,
-  INSERT_NG_SYNC_BASE: `INSERT OR IGNORE INTO ng_sync_base (account, type, value) VALUES (?, ?, ?);`,
-  DELETE_NG_SYNC_BASE_BY_ACCOUNT: `DELETE FROM ng_sync_base WHERE account = ?;`,
-  DELETE_ALL_NG_SYNC_BASE: `DELETE FROM ng_sync_base;`,
   TRIM_MYLIST_HISTORY: `DELETE FROM mylist_history WHERE id NOT IN
     (SELECT id FROM mylist_history ORDER BY usedAt DESC, id DESC LIMIT ?);`,
   SELECT_MYLIST_HISTORY_USED_RANGE: `SELECT MIN(usedAt) AS minUsedAt, MAX(usedAt) AS maxUsedAt FROM mylist_history;`,
@@ -351,6 +365,11 @@ export const Q = {
     VALUES (?, ?, ?, ?, ?, ?, ?);`,
   DELETE_PLAYLIST_ITEM: `DELETE FROM playlist_item WHERE playlist_id = ? AND videoId = ?;`,
   DELETE_PLAYLIST_ITEMS: `DELETE FROM playlist_item WHERE playlist_id = ?;`,
+  UPDATE_PLAYLIST_SERVER_MYLIST: `UPDATE playlist SET serverMylistId = ? WHERE id = ?;`,
+  SELECT_PLAYLIST_SYNC_BASE: `SELECT videoId FROM playlist_sync_base WHERE playlist_id = ?;`,
+  INSERT_PLAYLIST_SYNC_BASE: `INSERT OR IGNORE INTO playlist_sync_base (playlist_id, videoId) VALUES (?, ?);`,
+  DELETE_PLAYLIST_SYNC_BASE: `DELETE FROM playlist_sync_base WHERE playlist_id = ?;`,
+  DELETE_ALL_PLAYLIST_SYNC_BASE: `DELETE FROM playlist_sync_base;`,
   DELETE_ALL_PLAYLIST_ITEM: `DELETE FROM playlist_item;`,
   UPDATE_PLAYLIST_ITEM_ORDER: `UPDATE playlist_item SET sortOrder = ? WHERE playlist_id = ? AND videoId = ?;`,
   SELECT_PLAYLISTS_CONTAINING_VIDEO: `SELECT playlist_id FROM playlist_item WHERE videoId = ?;`,

@@ -2,7 +2,20 @@ import path from 'node:path';
 import { ipcMain, shell, webContents } from 'electron';
 import { IpcChannel } from '@shared/types';
 import type { LibraryScanOptions, LibraryScanProgress, LibraryScanResult } from '@shared/types';
-import { NicoHistoryClient } from '../../nicovideo';
+import { MyListClient, NicoContext, NicoHistoryClient } from '../../nicovideo';
+import {
+  buildPlaylistSyncDescription,
+  extractPlaylistSyncKey,
+  withPlaylistSyncKey,
+  type PlaylistSyncResult
+} from '@shared/types/playlist';
+import { randomUUID } from 'node:crypto';
+import {
+  mergePlaylistWithServer,
+  pushPlaylistAdd,
+  pushPlaylistRemove,
+  type LocalPlaylistStore
+} from '../../nicovideo/mylist/PlaylistServerSync';
 import { LibraryScanner } from '../../library/LibraryScanner';
 import { NICOWARI_MARK, readNicowariSwf } from '../../library/NicowariSwf';
 import { createLogger } from '../../util/Logger';
@@ -171,7 +184,10 @@ export function registerLibraryHandlers(ctx: IpcHandlerContext): void {
     return library.playlistDao.create(name);
   });
 
-  ipcMain.handle(IpcChannel.PLAYLIST_RENAME, (_e, args: { id: number; name: string }) => {
+  // 同期中のプレイリストは先にサーバーへ反映する。失敗したらローカルも変えない (名前がずれるのを防ぐ)
+  ipcMain.handle(IpcChannel.PLAYLIST_RENAME, async (_e, args: { id: number; name: string }) => {
+    const mylistId = library.playlistDao.getServerMylistId(args.id);
+    if (mylistId) await MyListClient.renameMylist(mylistId, args.name);
     library.playlistDao.rename(args.id, args.name);
     return true;
   });
@@ -189,6 +205,15 @@ export function registerLibraryHandlers(ctx: IpcHandlerContext): void {
     return true;
   });
 
+  ipcMain.handle(IpcChannel.PLAYLIST_REMOVE_WITH_SERVER, async (_e, args: { id: number }) => {
+    const mylistId = library.playlistDao.getServerMylistId(args.id);
+    if (!mylistId) throw new Error('このプレイリストはニコニコと同期していません');
+    // ニコニコ側を先に消す。失敗したときにプレイリストだけ消えて、同期先が分からなくなるのを防ぐ
+    await MyListClient.deleteMylist(mylistId);
+    library.playlistDao.remove(args.id);
+    return true;
+  });
+
   ipcMain.handle(IpcChannel.PLAYLIST_GET_ITEMS, (_e, id: number) => {
     return library.playlistDao.getItems(id);
   });
@@ -200,6 +225,13 @@ export function registerLibraryHandlers(ctx: IpcHandlerContext): void {
       args: { playlistId: number; videoId: string; title: string; thumbnailUrl: string; lengthSec: number }
     ) => {
       library.playlistDao.addVideo(args.playlistId, args);
+      // 同期中ならニコニコ側にも即時反映 (ローカルを先に確定し、失敗はログのみ)
+      const mylistId = library.playlistDao.getServerMylistId(args.playlistId);
+      if (mylistId) {
+        void NicoContext.get().isLoggedIn().then((on) => {
+          if (on) return pushPlaylistAdd(mylistId, args.videoId);
+        });
+      }
       return true;
     }
   );
@@ -208,6 +240,12 @@ export function registerLibraryHandlers(ctx: IpcHandlerContext): void {
     IpcChannel.PLAYLIST_REMOVE_VIDEO,
     (_e, args: { playlistId: number; videoId: string }) => {
       library.playlistDao.removeVideo(args.playlistId, args.videoId);
+      const mylistId = library.playlistDao.getServerMylistId(args.playlistId);
+      if (mylistId) {
+        void NicoContext.get().isLoggedIn().then((on) => {
+          if (on) return pushPlaylistRemove(mylistId, args.videoId);
+        });
+      }
       return true;
     }
   );
@@ -219,6 +257,105 @@ export function registerLibraryHandlers(ctx: IpcHandlerContext): void {
       return true;
     }
   );
+
+  // --- プレイリスト ↔ ニコニコ側マイリスト 同期 ---
+  const playlistStore = (id: number): LocalPlaylistStore => ({
+    items: () => library.playlistDao.getItems(id),
+    add: (item) => library.playlistDao.addVideo(id, item),
+    remove: (videoId) => library.playlistDao.removeVideo(id, videoId),
+    getBase: () => library.playlistDao.getSyncBase(id),
+    setBase: (videoIds) => library.playlistDao.setSyncBase(id, videoIds)
+  });
+
+  /**
+   * 登録キーを持たない (キー導入前に同期した) プレイリストに、キーを付ける。
+   * 同期先マイリストの説明文にも書き込み、別の PC で見たときにプレイリストとして取り込めるようにする。
+   * 失敗してもローカル側は変えない (次回の同期でまた試す)。
+   */
+  const ensureSyncKey = async (id: number, mylistId: string): Promise<void> => {
+    if (library.playlistDao.getSyncKey(id)) return;
+    const key = randomUUID();
+    try {
+      await MyListClient.updateMylist(mylistId, { description: (cur) => withPlaylistSyncKey(cur, key) });
+      library.playlistDao.setSyncKey(id, key);
+    } catch (e) {
+      log.warn('playlist: failed to attach sync key:', e);
+    }
+  };
+
+  ipcMain.handle(IpcChannel.PLAYLIST_SERVER_SYNC, async (_e, args: { id: number; force?: boolean }) => {
+    const mylistId = library.playlistDao.getServerMylistId(args.id);
+    if (!mylistId) return { ok: false as const, reason: 'notSynced' as const };
+    if (!(await NicoContext.get().isLoggedIn())) return { ok: false as const, reason: 'notLoggedIn' as const };
+    await ensureSyncKey(args.id, mylistId);
+    const result = await mergePlaylistWithServer(mylistId, playlistStore(args.id), { force: args.force === true });
+    return { ok: true as const, result };
+  });
+
+  ipcMain.handle(IpcChannel.PLAYLIST_SET_SYNC, async (_e, args: { id: number; enabled: boolean }) => {
+    if (!args.enabled) {
+      // 解除してもニコニコ側のマイリストは消さない。登録キーは取り込み除外にして、復活させない
+      library.playlistDao.unlink(args.id);
+      return { ok: true as const };
+    }
+    if (!(await NicoContext.get().isLoggedIn())) return { ok: false as const, reason: 'notLoggedIn' as const };
+    let mylistId = library.playlistDao.getServerMylistId(args.id);
+    if (!mylistId) {
+      const pl = library.playlistDao.list().find((p) => p.id === args.id);
+      if (!pl) throw new Error('プレイリストが見つかりません');
+      // 非公開で作成。説明文にプレイリスト固有の登録キーを入れる。作成に失敗した (上限など) ときは例外にして、リンクを作らない
+      const key = randomUUID();
+      mylistId = await MyListClient.createMylist(pl.name, false, buildPlaylistSyncDescription(key));
+      library.playlistDao.linkServer(args.id, mylistId, key);
+    } else {
+      await ensureSyncKey(args.id, mylistId);
+    }
+    // 初回マージ (基準が無いので和集合)。失敗してもリンクは残し、次回の同期で再試行できる
+    let result: PlaylistSyncResult | undefined;
+    let error: string | undefined;
+    try {
+      result = await mergePlaylistWithServer(mylistId, playlistStore(args.id));
+    } catch (e) {
+      log.warn('playlist initial sync failed:', e);
+      error = e instanceof Error ? e.message : String(e);
+    }
+    return { ok: true as const, result, error };
+  });
+
+  // 別の PC で作られたプレイリスト同期用マイリスト (登録キー付き) を、この PC のプレイリストとして取り込む。
+  // この PC で削除・同期解除したもの (取り込み除外のキー) や、すでに取り込み済みのものは対象外
+  let adopting: Promise<Array<{ id: number; name: string }>> | null = null;
+  const adoptServerPlaylists = async (): Promise<Array<{ id: number; name: string }>> => {
+    if (!(await NicoContext.get().isLoggedIn())) return [];
+    const known = new Set([...library.playlistDao.listSyncKeys(), ...library.playlistDao.listDismissedKeys()]);
+    const linkedIds = new Set(
+      library.playlistDao.list().flatMap((p) => (p.serverMylistId ? [p.serverMylistId] : []))
+    );
+    const adopted: Array<{ id: number; name: string }> = [];
+    for (const m of await MyListClient.fetchOwnMylistsCompact()) {
+      const key = extractPlaylistSyncKey(m.description);
+      if (!key || known.has(key) || linkedIds.has(m.id)) continue;
+      try {
+        const pl = library.playlistDao.createLinked(m.name, m.id, key);
+        known.add(key);
+        adopted.push({ id: pl.id, name: pl.name });
+        // 動画を取り込む (ローカルが空で基準も無いので、サーバー側の動画がそのまま入る)
+        await mergePlaylistWithServer(m.id, playlistStore(pl.id)).catch((e) =>
+          log.warn(`playlist adopt: initial sync failed (${m.id}):`, e)
+        );
+      } catch (e) {
+        log.warn(`playlist adopt failed (${m.id}):`, e);
+      }
+    }
+    return adopted;
+  };
+  ipcMain.handle(IpcChannel.PLAYLIST_ADOPT_SERVER, () => {
+    // 画面の再描画などで続けて呼ばれても、同時に二重で取り込まない
+    adopting ??= adoptServerPlaylists().finally(() => {
+      adopting = null;
+    });
+    return adopting;
+  });
 
   ipcMain.handle(IpcChannel.PLAYLIST_LIST_CONTAINING, (_e, videoId: string) => {
     return library.playlistDao.listPlaylistIdsForVideo(videoId);

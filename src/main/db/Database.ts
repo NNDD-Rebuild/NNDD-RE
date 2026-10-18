@@ -41,6 +41,10 @@ export class NnddDatabase {
         this.migrate(current.version, DB_SCHEMA_VERSION);
         this.db.prepare(Q.INSERT_VERSION).run(DB_SCHEMA_VERSION);
       }
+      // 登録キーの一意制約。カラムの追加 (migrate) の後でないと既存 DB で失敗するので、ここで作る
+      this.db.exec(
+        `CREATE UNIQUE INDEX IF NOT EXISTS playlist_sync_key_idx ON playlist (syncKey) WHERE syncKey IS NOT NULL;`
+      );
     })();
   }
 
@@ -117,6 +121,25 @@ export class NnddDatabase {
       try {
         this.db.exec(`ALTER TABLE mylist ADD COLUMN parentUrl TEXT;`);
         log.info('added mylist.parentUrl column');
+      } catch {
+        // 既にカラムあり — 無視
+      }
+    }
+    // v11 → v12: 欠番 (マイリストの同期フラグは廃止。自分のマイリストは所有確認だけで書き込めるため)
+    // v12 → v13: playlist に serverMylistId カラム追加 (ニコニコ側マイリストとの同期)
+    if (Number(from) <= 12) {
+      try {
+        this.db.exec(`ALTER TABLE playlist ADD COLUMN serverMylistId TEXT;`);
+        log.info('added playlist.serverMylistId column');
+      } catch {
+        // 既にカラムあり — 無視
+      }
+    }
+    // v13 → v14: playlist に syncKey カラム追加 (別の PC でも同じプレイリストだと見分ける登録キー)
+    if (Number(from) <= 13) {
+      try {
+        this.db.exec(`ALTER TABLE playlist ADD COLUMN syncKey TEXT;`);
+        log.info('added playlist.syncKey column');
       } catch {
         // 既にカラムあり — 無視
       }

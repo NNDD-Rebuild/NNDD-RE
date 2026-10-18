@@ -110,12 +110,12 @@ export const IpcChannel = {
   MYLIST_SERVER_REMOVE_ITEM: 'nndd:mylist:serverRemoveItem',
   /** ローカルとニコニコのサーバー側コメントNGを、前回同期時点との3者比較でマージ (削除も伝える)。引数 {force?: boolean} → NgSyncResult */
   NG_SERVER_SYNC: 'nndd:ng:serverSync',
-
-  // 動画
   /** あとで見る (サーバー側) の全件取得 → {items: MyListItem[], total: number}。項目に itemId を含む */
   WATCH_LATER_FETCH: 'nndd:watchLater:fetch',
   /** あとで見るから削除 ({itemIds: number[]}) → true。itemId は WATCH_LATER_FETCH の値 (動画IDではない) */
   WATCH_LATER_REMOVE: 'nndd:watchLater:remove',
+
+  // 動画
   VIDEO_GET_WATCH_INFO: 'nndd:video:getWatchInfo',
   VIDEO_GET_COMMENTS: 'nndd:video:getComments',
   VIDEO_GET_RELATED: 'nndd:video:getRelated',
@@ -151,6 +151,14 @@ export const IpcChannel = {
   PLAYLIST_ADD_VIDEO: 'nndd:playlist:addVideo',
   PLAYLIST_REMOVE_VIDEO: 'nndd:playlist:removeVideo',
   PLAYLIST_REORDER: 'nndd:playlist:reorder',
+  /** 同期中のプレイリストを、同期先のニコニコのマイリストごと削除する ({id}) → true。取り消せない。ニコニコ側を先に消し、成功したらプレイリストも消す */
+  PLAYLIST_REMOVE_WITH_SERVER: 'nndd:playlist:removeWithServer',
+  /** プレイリストのニコニコ同期を ON/OFF ({id, enabled}) → {ok:true, result?: PlaylistSyncResult, error?: string} | {ok:false, reason:'notLoggedIn'|'notSynced'}。ON は同名の非公開マイリストを作成して初回マージ */
+  PLAYLIST_SET_SYNC: 'nndd:playlist:setSync',
+  /** ニコニコ側に登録キー付きのマイリストがあれば、この PC のプレイリストとして取り込む (別の PC で作ったもの) → {id, name}[]。ローカルで削除・同期解除したものは取り込まない */
+  PLAYLIST_ADOPT_SERVER: 'nndd:playlist:adoptServer',
+  /** 同期中のプレイリストをニコニコ側マイリストとマージ ({id, force?}) → {ok:true, result: PlaylistSyncResult} | {ok:false, reason} */
+  PLAYLIST_SERVER_SYNC: 'nndd:playlist:serverSync',
   /** 動画が登録済みのプレイリストID一覧 (追加メニューのチェック表示用) */
   PLAYLIST_LIST_CONTAINING: 'nndd:playlist:listContaining',
 

@@ -69,6 +69,8 @@ export function ListSidebarRow({
   onCloseIconPicker,
   onIconChange,
   onRemove,
+  onContextMenu,
+  syncBadge,
   depth = 0,
   folder,
   drag
@@ -90,6 +92,10 @@ export function ListSidebarRow({
   onCloseIconPicker: () => void;
   onIconChange: (icon: string | null) => void;
   onRemove: () => void;
+  /** 指定すると右クリックでこれを呼ぶ (未指定なら名前編集を開始する従来動作) */
+  onContextMenu?: (e: React.MouseEvent) => void;
+  /** ニコニコ同期ONのとき表示するバッジの説明 */
+  syncBadge?: string;
   /** フォルダ内の階層の深さ (インデント用) */
   depth?: number;
   /** フォルダ行のとき指定。展開状態と開閉コールバック */
@@ -121,7 +127,8 @@ export function ListSidebarRow({
       }}
       onContextMenu={(e) => {
         e.preventDefault();
-        onStartEdit();
+        if (onContextMenu) onContextMenu(e);
+        else onStartEdit();
       }}
     >
       {folder && (
@@ -159,6 +166,9 @@ export function ListSidebarRow({
         />
       ) : (
         <span className="flex-1 truncate" title={title}>{name}</span>
+      )}
+      {syncBadge && !isEditing && (
+        <span className="shrink-0 text-[10px] text-nndd-accent" title={syncBadge}>🔄</span>
       )}
       <button
         onClick={(e) => { e.stopPropagation(); onRemove(); }}

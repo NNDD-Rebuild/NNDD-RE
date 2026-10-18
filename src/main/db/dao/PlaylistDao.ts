@@ -8,6 +8,8 @@ interface PlaylistRow {
   createdAt: number | null;
   updatedAt: number | null;
   icon: string | null;
+  serverMylistId: string | null;
+  syncKey: string | null;
 }
 
 interface PlaylistItemRow {
@@ -22,7 +24,7 @@ interface PlaylistItemRow {
 }
 
 /**
- * 自作プレイリスト DAO (ローカル完結、サーバー同期なし)
+ * 自作プレイリスト DAO (ローカル。serverMylistId があればニコニコ側のマイリストと同期)
  */
 export class PlaylistDao {
   constructor(private readonly db: NnddDatabase) {}
@@ -46,10 +48,99 @@ export class PlaylistDao {
     this.db.prepare(Q.UPDATE_PLAYLIST_ICON).run(icon, id);
   }
 
+  /** 削除。同期しているニコニコ側のマイリストは消さない (取り消せない操作なので別途明示的に行う) */
   remove(id: number): void {
     this.db.transaction(() => {
+      // 同期していたプレイリストの登録キーは「取り込み除外」にする (ニコニコ側に残ったマイリストから復活させない)
+      const key = this.getSyncKey(id);
+      if (key) this.dismissKey(key);
       this.db.prepare(Q.DELETE_PLAYLIST_ITEMS).run(id);
+      this.db.prepare(Q.DELETE_PLAYLIST_SYNC_BASE).run(id);
       this.db.prepare(Q.DELETE_PLAYLIST).run(id);
+    });
+  }
+
+  /** 同期先のニコニコ側マイリストと登録キーを結びつける。基準は作り直すので消す */
+  linkServer(id: number, mylistId: string, syncKey: string): void {
+    this.db.transaction(() => {
+      this.db.prepare('UPDATE playlist SET serverMylistId = ?, syncKey = ? WHERE id = ?').run(mylistId, syncKey, id);
+      this.db.prepare(Q.DELETE_PLAYLIST_SYNC_BASE).run(id);
+    });
+  }
+
+  /** 同期を解除する。登録キーは「取り込み除外」にして、ニコニコ側に残るマイリストから復活させない */
+  unlink(id: number): void {
+    this.db.transaction(() => {
+      const key = this.getSyncKey(id);
+      if (key) this.dismissKey(key);
+      this.db.prepare('UPDATE playlist SET serverMylistId = NULL, syncKey = NULL WHERE id = ?').run(id);
+      this.db.prepare(Q.DELETE_PLAYLIST_SYNC_BASE).run(id);
+    });
+  }
+
+  getSyncKey(id: number): string | null {
+    const row = this.db.prepare('SELECT syncKey FROM playlist WHERE id = ?').get(id) as
+      | { syncKey: string | null }
+      | undefined;
+    return row?.syncKey ?? null;
+  }
+
+  /** 登録キーだけ設定する (キー導入前に同期したプレイリストへの後付け) */
+  setSyncKey(id: number, syncKey: string): void {
+    this.db.prepare('UPDATE playlist SET syncKey = ? WHERE id = ?').run(syncKey, id);
+  }
+
+  /** ローカルのプレイリストが持つ登録キー一覧 */
+  listSyncKeys(): string[] {
+    const rows = this.db.prepare('SELECT syncKey FROM playlist WHERE syncKey IS NOT NULL').all() as {
+      syncKey: string;
+    }[];
+    return rows.map((r) => r.syncKey);
+  }
+
+  dismissKey(syncKey: string): void {
+    this.db.prepare('INSERT OR IGNORE INTO playlist_sync_dismissed (syncKey) VALUES (?)').run(syncKey);
+  }
+
+  listDismissedKeys(): string[] {
+    const rows = this.db.prepare('SELECT syncKey FROM playlist_sync_dismissed').all() as { syncKey: string }[];
+    return rows.map((r) => r.syncKey);
+  }
+
+  /** 別の PC で作られたニコニコ側マイリストを、プレイリストとして取り込む (動画は別途マージで取り込む) */
+  createLinked(name: string, mylistId: string, syncKey: string): Playlist {
+    const now = Date.now() / 1000;
+    const info = this.db
+      .prepare('INSERT INTO playlist (name, createdAt, updatedAt, serverMylistId, syncKey) VALUES (?, ?, ?, ?, ?)')
+      .run(name, now, now, mylistId, syncKey);
+    return {
+      id: Number(info.lastInsertRowid),
+      name,
+      createdAt: new Date(now * 1000),
+      updatedAt: new Date(now * 1000),
+      serverMylistId: mylistId,
+      syncKey
+    };
+  }
+
+  getServerMylistId(id: number): string | null {
+    const row = this.db.prepare('SELECT serverMylistId FROM playlist WHERE id = ?').get(id) as
+      | { serverMylistId: string | null }
+      | undefined;
+    return row?.serverMylistId ?? null;
+  }
+
+  /** 前回同期した時点の動画ID一覧。未同期なら空 */
+  getSyncBase(id: number): string[] {
+    const rows = this.db.prepare(Q.SELECT_PLAYLIST_SYNC_BASE).all(id) as { videoId: string }[];
+    return rows.map((r) => r.videoId);
+  }
+
+  setSyncBase(id: number, videoIds: string[]): void {
+    this.db.transaction(() => {
+      this.db.prepare(Q.DELETE_PLAYLIST_SYNC_BASE).run(id);
+      const insert = this.db.prepare(Q.INSERT_PLAYLIST_SYNC_BASE);
+      for (const videoId of videoIds) insert.run(id, videoId);
     });
   }
 
@@ -93,6 +184,8 @@ export class PlaylistDao {
 
   /** 全プレイリスト・全アイテムを削除 */
   clearAll(): void {
+    this.db.prepare('DELETE FROM playlist_sync_dismissed').run();
+    this.db.prepare(Q.DELETE_ALL_PLAYLIST_SYNC_BASE).run();
     this.db.prepare(Q.DELETE_ALL_PLAYLIST_ITEM).run();
     this.db.prepare(Q.DELETE_ALL_PLAYLIST).run();
   }
@@ -103,7 +196,9 @@ export class PlaylistDao {
       name: r.name,
       createdAt: new Date((r.createdAt ?? 0) * 1000),
       updatedAt: new Date((r.updatedAt ?? 0) * 1000),
-      icon: r.icon
+      icon: r.icon,
+      serverMylistId: r.serverMylistId,
+      syncKey: r.syncKey
     };
   }
 
