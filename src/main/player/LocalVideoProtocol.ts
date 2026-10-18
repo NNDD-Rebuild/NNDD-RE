@@ -30,6 +30,21 @@ export function setAllowedVideoRoots(roots: string[]): void {
   log.info('allowed video roots:', allowedRoots);
 }
 
+/**
+ * ライブラリ登録済み動画の保存フォルダ (本家NNDDから移行した動画など、許可ルート外にあるもの)。
+ * 動画・サムネ・コメントXMLをこの配下から配信できるようにする。
+ */
+let libraryVideoDirs: string[] = [];
+
+/** ライブラリ登録済み動画の URI 一覧から、保存フォルダの許可リストを作り直す */
+export function setLibraryVideoDirs(uris: string[]): void {
+  const dirs = new Set<string>();
+  for (const uri of uris) {
+    if (uri && path.isAbsolute(uri)) dirs.add(path.dirname(path.resolve(uri)));
+  }
+  libraryVideoDirs = [...dirs];
+}
+
 const MIME: Record<string, string> = {
   '.mp4': 'video/mp4', '.m4v': 'video/mp4',
   '.m4a': 'audio/mp4',
@@ -232,7 +247,7 @@ async function handleRequest(req: Request): Promise<Response> {
 function isAllowed(filePath: string): boolean {
   if (allowedRoots.length === 0) return false;
   const resolved = path.resolve(filePath);
-  return allowedRoots.some((root) => {
+  return [...allowedRoots, ...libraryVideoDirs].some((root) => {
     const rel = path.relative(root, resolved);
     return rel && !rel.startsWith('..') && !path.isAbsolute(rel);
   });

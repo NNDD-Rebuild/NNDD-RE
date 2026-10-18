@@ -6,6 +6,7 @@ import {
   type HonkeImportSource
 } from '@shared/types';
 import { HonkeImporter } from '../../import/HonkeImporter';
+import { setLibraryVideoDirs } from '../../player/LocalVideoProtocol';
 import type { IpcHandlerContext } from './context';
 
 function broadcast(channel: string, payload?: unknown): void {
@@ -33,6 +34,8 @@ export function registerHonkeImportHandlers(ctx: IpcHandlerContext): void {
   );
 
   ipcMain.handle(IpcChannel.HONKE_APPLY, (_e, selection: HonkeImportSelection) =>
-    createImporter().apply(selection)
+    createImporter()
+      .apply(selection)
+      .finally(() => setLibraryVideoDirs(ctx.library.videoDao.list().map((v) => v.uri)))
   );
 }

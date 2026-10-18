@@ -14,7 +14,8 @@ import { NicoHistoryClient } from './nicovideo';
 import {
   registerScheme,
   registerProtocolHandler,
-  autoConfigureAllowedRoots
+  autoConfigureAllowedRoots,
+  setLibraryVideoDirs
 } from './player/LocalVideoProtocol';
 import {
   startStreamServer,
@@ -241,6 +242,7 @@ app.whenReady().then(async () => {
   const extraPaths = [library.libraryDir, library.rootDir, library.videoDir];
   if (cacheRoot) extraPaths.push(path.join(String(cacheRoot), 'cache', 'movie'));
   autoConfigureAllowedRoots(extraPaths);
+  setLibraryVideoDirs(library.videoDao.list().map((v) => v.uri));
   registerProtocolHandler();
   await startStreamServer();
 
