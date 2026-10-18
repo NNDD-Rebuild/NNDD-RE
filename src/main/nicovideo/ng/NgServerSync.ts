@@ -62,7 +62,10 @@ function fromServerNg(item: ServerNgItem): NgListItem | null {
 
 const key = (item: { type: string; value: string }): string => `${item.type}\u0000${item.value}`;
 
-/** 上限到達エラーか。errorCode の具体名が未確認なので MAX / LIMIT を含むものを上限とみなす */
+/**
+ * 上限到達エラーか。実通信で、上限 (プレミアム会員で合計 400 件) に達した追加は HTTP 409 / errorCode `MAX_SETTINGS`。
+ * 一般会員の上限値は未検証なので、MAX / LIMIT を含むものを上限とみなす
+ */
 function isLimitError(e: unknown): boolean {
   return e instanceof NicoApiError && /MAX|LIMIT/i.test(e.errorCode ?? '');
 }
