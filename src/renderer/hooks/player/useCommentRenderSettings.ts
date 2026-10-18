@@ -55,17 +55,18 @@ export function useCommentRenderSettings({
 
   /** 過去コメント同時表示制限付きコメント配列をメモ化 (不要な rebuildEngine を防ぐ) */
   const renderedComments = useMemo<NNDDREComment[]>(() => {
-    if (!showComments) return [];
     const base = showPastComments
       ? limitSimultaneousComments(pastComments, pastCommentMaxCount)
       : comments;
     // owner コマンドコメント (@ジャンプ / ＠デフォルト / ＠CM / ニワン語 等) は画面に流さない
     // ＠デフォルト の既定色は本編の投稿者コメントから集めて適用する
     return applyDefaultColors(base.filter((c) => !isNicoScriptText(c.text ?? '')), comments);
-  }, [showComments, showPastComments, pastComments, pastCommentMaxCount, comments]);
+  }, [showPastComments, pastComments, pastCommentMaxCount, comments]);
 
   const commentConfig = useMemo<Partial<CommentRenderConfig>>(
     () => ({
+      // off はコメント配列を空にせず描画側で止める (配列を変えるとエンジン再構築でちらつく)
+      enabled: showComments,
       opacity: commentOpacity,
       sizeScale: commentSizeScale,
       showSecNaka: commentShowSec,
@@ -80,6 +81,7 @@ export function useCommentRenderSettings({
       ngList
     }),
     [
+      showComments,
       commentOpacity,
       commentSizeScale,
       commentShowSec,

@@ -120,6 +120,7 @@ export class CommentRenderer {
     const c = document.createElement('canvas');
     c.className = 'absolute inset-0 w-full h-full';
     c.style.opacity = String(this.config.opacity);
+    c.style.visibility = this.config.enabled ? 'visible' : 'hidden';
     return c;
   }
 
@@ -153,7 +154,10 @@ export class CommentRenderer {
     // enabled / NG が変化したらエンジン再起動 (既に流れる予定のコメントへも NG を反映するため)
     const ngChanged =
       prev.ngList !== this.config.ngList || prev.ngStrength !== this.config.ngStrength;
-    if (prev.enabled !== this.config.enabled || ngChanged) {
+    // on/off だけの切替はエンジンを作り直さず canvas の表示切替で済ませる (作り直すとちらつく)
+    this.canvas.style.visibility = this.config.enabled ? 'visible' : 'hidden';
+    const needsEngine = this.config.enabled && !this.nc;
+    if (ngChanged || (prev.enabled !== this.config.enabled && needsEngine)) {
       if (this.video) {
         this.rebuildEngine();
       }
@@ -267,7 +271,10 @@ export class CommentRenderer {
     this.lastVpos = -1;
 
     if (!this.config.enabled) {
-      this.clearCanvas();
+      // destroy() 済みの canvas は GL コンテキストがロスト状態で白く残るため、
+      // 空の新しい canvas に差し替えて消す
+      this.rebuildSeq++; // 待機中の createEngine を無効化
+      this.swapToFreshCanvas();
       return;
     }
 
@@ -347,6 +354,7 @@ export class CommentRenderer {
   }
 
   private tick(): void {
+    if (!this.config.enabled) return; // 非表示中は描画を止める (再表示時に現在位置から描き直す)
     if (!this.video || !this.nc) {
       if (!this.config.enabled) this.clearCanvas();
       return;
