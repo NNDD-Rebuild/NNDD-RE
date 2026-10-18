@@ -122,6 +122,10 @@ export const NicoEndpoint = {
   /** マイリストからの動画削除 (DELETE。itemIds はマイリスト内の itemId。動画IDではない) */
   myMylistDeleteItems: (mylistId: string | number, itemIds: (string | number)[]) =>
     `${NicoApi.NVAPI_BASE}/v1/users/me/mylists/${enc(String(mylistId))}/items?itemIds=${itemIds.map((i) => enc(String(i))).join(',')}`,
+  /** サーバー側の視聴者コメントNG (GET 取得 / POST 追加 (form: type, source)) */
+  ngCommentsClient: () => `${NicoApi.NVAPI_BASE}/v1/users/me/ng-comments/client`,
+  /** サーバー側の視聴者コメントNG削除 (DELETE。JSON: {targets:[{type,source}]}) */
+  ngCommentsClientItems: () => `${NicoApi.NVAPI_BASE}/v1/users/me/ng-comments/client/items`,
 
   /** 自分のユーザー情報 */
   me: () => `${NicoApi.NVAPI_BASE}/v1/users/me`,

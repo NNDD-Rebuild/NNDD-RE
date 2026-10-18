@@ -2,7 +2,8 @@ import { ipcMain, BrowserWindow } from 'electron';
 import { IpcChannel } from '@shared/types';
 import type { NgListItem, NNDDREComment, WatchPageInfo } from '@shared/types';
 import { getConfigStore } from '../../config/ConfigStore';
-import { WatchInfoHandler, CommentClient, CommentXmlReader, CommentDiffUpdater } from '../../nicovideo';
+import { WatchInfoHandler, CommentClient, CommentXmlReader, CommentDiffUpdater, NicoContext } from '../../nicovideo';
+import { mergeNgWithServer, pushNgAdd, pushNgRemove } from '../../nicovideo/ng/NgServerSync';
 import { CommentWindowManager } from '../../player/CommentWindowManager';
 import { createLogger } from '../../util/Logger';
 import type { IpcHandlerContext } from './context';
@@ -33,10 +34,19 @@ export function registerCommentHandlers(ctx: IpcHandlerContext): {
     }
   };
   const broadcastNgChanged = (): void => broadcast(IpcChannel.NG_COMMENT_CHANGED);
+  /** 自動同期が ON でログイン済みのときだけ、ローカルの NG 変更をサーバーへ反映する */
+  const serverSyncEnabled = async (): Promise<boolean> =>
+    getConfigStore().get('ngServerSync') === true && (await NicoContext.get().isLoggedIn());
   /** NG コメントを追加して全ウィンドウへ通知する。追加できたら true、登録済みなら false */
   const addNgComment = (item: NgListItem): boolean => {
     const added = library.ngListDao.addComment(item);
     broadcastNgChanged();
+    // ローカルを先に確定し、サーバー反映は失敗してもブロックしない (ログのみ)
+    if (added) {
+      void serverSyncEnabled().then((on) => {
+        if (on) return pushNgAdd(item);
+      });
+    }
     return added;
   };
   ipcMain.handle(IpcChannel.NG_ADD_COMMENT, (_e, item: NgListItem) => {
@@ -46,7 +56,28 @@ export function registerCommentHandlers(ctx: IpcHandlerContext): {
   ipcMain.handle(IpcChannel.NG_REMOVE_COMMENT, (_e, item: NgListItem) => {
     library.ngListDao.removeComment(item);
     broadcastNgChanged();
+    void serverSyncEnabled().then((on) => {
+      if (on) return pushNgRemove(item);
+    });
     return true;
+  });
+  // サーバー側NGとのマージ (手動の同期ボタン)。ローカルの変更は broadcast で他ウィンドウへ通知する
+  ipcMain.handle(IpcChannel.NG_SERVER_SYNC, async (_e, args?: { force?: boolean }) => {
+    const dao = library.ngListDao;
+    const result = await mergeNgWithServer(
+      {
+        list: () => dao.listComment(),
+        add: (item) => dao.addComment(item),
+        remove: (item) => dao.removeComment(item),
+        getBase: (account) => dao.getSyncBase(account),
+        setBase: (account, items) => dao.setSyncBase(account, items)
+      },
+      { force: args?.force === true }
+    );
+    if (result.pulled > 0 || result.deletedLocal > 0) {
+      if (!result.aborted) broadcastNgChanged();
+    }
+    return result;
   });
   ipcMain.handle(IpcChannel.NG_LIST_TAG, () => library.ngListDao.listTags());
   ipcMain.handle(IpcChannel.NG_ADD_TAG, (_e, tag: string) => {

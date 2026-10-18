@@ -1,9 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { NgListItem, NgListItemTypeValue } from '@shared/types';
-import { NgListItemType } from '@shared/types';
+import { IpcChannel, NgListItemType } from '@shared/types';
+import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
 import { useConfig } from '@renderer/hooks/useConfig';
 import { useNgList } from '@renderer/hooks/player/useNgList';
-import { Btn, Hint, PageTitle, Select, TextInput } from './common';
+import { useAppStore } from '@renderer/store/useAppStore';
+import type { NgSyncResult } from '@shared/types/ngSync';
+import { Btn, CheckRow, Hint, PageTitle, Select, StatusText, TextInput } from './common';
 
 const STRENGTH_OPTIONS: { value: 'weak' | 'medium' | 'strong'; label: string; desc: string }[] = [
   { value: 'weak', label: '弱', desc: 'NGワードは完全一致のみ適用' },
@@ -31,6 +34,42 @@ export function NgCommentSettings(): JSX.Element {
   );
   const { ngList, loaded, addNg, removeNg } = useNgList();
   const loading = !loaded;
+  const isLoggedIn = useAppStore((s) => s.isLoggedIn);
+  const [ngServerSync, setNgServerSync] = useConfig<boolean>('ngServerSync', false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<{ kind: 'ok' | 'warn' | 'error'; text: string } | null>(null);
+
+  /** 削除が大量で中断されたとき、確認のうえ削除を含めて再実行するための保持 */
+  const [pendingMassDelete, setPendingMassDelete] = useState(false);
+
+  const handleSync = async (force = false): Promise<void> => {
+    setSyncing(true);
+    setSyncMessage(null);
+    setPendingMassDelete(false);
+    try {
+      const r = await window.nndd.invoke<NgSyncResult>(IpcChannel.NG_SERVER_SYNC, { force });
+      if (r.aborted === 'massDelete') {
+        setPendingMassDelete(true);
+        setSyncMessage({
+          kind: 'warn',
+          text: `削除が多いため中断しました (ローカルから ${r.deletedLocal} 件、ニコニコ側から ${r.deletedServer} 件の削除予定)。内容を確認し、問題なければ下のボタンで実行してください`
+        });
+        return;
+      }
+      const parts = [
+        `追加: ニコニコ側から ${r.pulled} 件取り込み、ニコニコ側へ ${r.pushed} 件送信`,
+        `削除: ローカルから ${r.deletedLocal} 件、ニコニコ側から ${r.deletedServer} 件`
+      ];
+      if (r.localOnly > 0) parts.push(`ローカルのみ ${r.localOnly} 件`);
+      if (r.failed > 0) parts.push(`反映失敗 ${r.failed} 件 (次回の同期で再試行します)`);
+      if (r.limitReached) parts.push('ニコニコ側の登録上限に達したため残りは送れませんでした');
+      setSyncMessage({ kind: r.limitReached || r.failed > 0 ? 'warn' : 'ok', text: parts.join(' / ') });
+    } catch (e) {
+      setSyncMessage({ kind: 'error', text: `同期に失敗しました: ${toUserFriendlyErrorMessage(e)}` });
+    } finally {
+      setSyncing(false);
+    }
+  };
   const [kind, setKind] = useState<NgListItemTypeValue>(NgListItemType.WORD);
   const [matchExact, setMatchExact] = useState(false);
   const [input, setInput] = useState('');
@@ -73,6 +112,34 @@ export function NgCommentSettings(): JSX.Element {
           ))}
         </div>
         <Hint className="mt-1">{STRENGTH_OPTIONS.find((o) => o.value === ngStrength)?.desc}</Hint>
+      </div>
+
+      {/* ニコニコのサーバー側NGとの同期 */}
+      <div className="border border-nndd-border rounded p-3 space-y-2">
+        <div className="text-sm font-bold">ニコニコのNG設定と同期</div>
+        <CheckRow
+          checked={ngServerSync}
+          onChange={(v) => void setNgServerSync(v)}
+          disabled={!isLoggedIn}
+          label="追加・削除をニコニコ側にも反映する"
+          hint="ON の間、ここやプレイヤーで行った NG の追加・削除を、ニコニコのアカウントの NG 設定にもすぐ反映します。"
+        />
+        <div className="flex items-center gap-2 flex-wrap">
+          <Btn variant="primary" onClick={() => void handleSync()} disabled={!isLoggedIn || syncing}>
+            {syncing ? '同期中…' : '今すぐ同期'}
+          </Btn>
+          {pendingMassDelete && (
+            <Btn onClick={() => void handleSync(true)} disabled={syncing}>
+              削除を含めて同期する
+            </Btn>
+          )}
+          {syncMessage && <StatusText kind={syncMessage.kind}>{syncMessage.text}</StatusText>}
+        </div>
+        <Hint>
+          前回の同期との差分で、追加も削除も双方に反映します (どちらかで消した NG は、もう一方からも消えます)。初回は足し合わせるだけで、何も消えません。
+          対応するのは「NGワード (部分一致)」と「NGユーザーID」です。完全一致ワードとコマンドはこのアプリだけで保持します。
+          {!isLoggedIn && ' ログインすると使えます。'}
+        </Hint>
       </div>
 
       {/* 入力フォーム */}

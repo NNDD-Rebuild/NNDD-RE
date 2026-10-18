@@ -135,6 +135,8 @@ export interface NnddConfig {
   saveSearchHistory: boolean;
   /** マイリストのURLを履歴 (DB) に保存する */
   saveMyListHistory: boolean;
+  /** コメントNGの追加・削除をニコニコのサーバー側NGへ即時反映する (要ログイン)。全件マージは手動の同期ボタン */
+  ngServerSync: boolean;
 
   /** プレイヤー設定 */
   player: {
@@ -476,6 +478,7 @@ const DEFAULTS: NnddConfig = {
   externalPlayer: { enabled: false, path: '' },
   saveSearchHistory: true,
   saveMyListHistory: true,
+  ngServerSync: false,
   player: {
     volume: 1.0,
     streamingMode: 'native',

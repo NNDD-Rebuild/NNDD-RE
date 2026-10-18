@@ -108,6 +108,8 @@ export const IpcChannel = {
   MYLIST_SERVER_ADD_ITEM: 'nndd:mylist:serverAddItem',
   /** 自分のマイリストから項目を削除 ({url, itemIds}) → true。他人のマイリストはエラー。itemId は MYLIST_FETCH_PAGE の項目の itemId (動画IDではない) */
   MYLIST_SERVER_REMOVE_ITEM: 'nndd:mylist:serverRemoveItem',
+  /** ローカルとニコニコのサーバー側コメントNGを、前回同期時点との3者比較でマージ (削除も伝える)。引数 {force?: boolean} → NgSyncResult */
+  NG_SERVER_SYNC: 'nndd:ng:serverSync',
 
   // 動画
   /** あとで見る (サーバー側) の全件取得 → {items: MyListItem[], total: number}。項目に itemId を含む */

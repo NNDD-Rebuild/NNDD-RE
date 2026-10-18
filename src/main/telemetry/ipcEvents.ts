@@ -24,6 +24,7 @@ const EVENTS: Partial<Record<IpcChannelValue, EventDef>> = {
   [IpcChannel.MYLIST_DELETE_SERVER]: () => ['mylist_op', { op: 'delete_server' }],
   [IpcChannel.MYLIST_SERVER_ADD_ITEM]: () => ['mylist_op', { op: 'server_add_item' }],
   [IpcChannel.MYLIST_SERVER_REMOVE_ITEM]: () => ['mylist_op', { op: 'server_remove_item' }],
+  [IpcChannel.NG_SERVER_SYNC]: () => ['ng_server_sync'],
   [IpcChannel.LIBRARY_SCAN]: () => ['library_scan'],
   [IpcChannel.HONKE_APPLY]: () => ['honke_import_apply'],
   [IpcChannel.BACKUP_UPLOAD]: () => ['github_sync', { op: 'upload' }],

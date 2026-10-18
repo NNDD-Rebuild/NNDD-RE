@@ -31,7 +31,7 @@ export interface FeedResult {
 const TERMS = ['last-6-months', 'last-1-month'] as const;
 
 /** ユーザーID取得 */
-async function getMyUserId(): Promise<string> {
+export async function getMyUserId(): Promise<string> {
   const http = NicoContext.get().http;
   const res = await http.fetch(NicoEndpoint.me(), { timeoutMs: 8000 });
   if (!res.ok) throw new Error(`user info failed: HTTP ${res.status}`);
