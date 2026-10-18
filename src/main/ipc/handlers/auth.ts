@@ -1,6 +1,6 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import { IpcChannel } from '@shared/types';
-import { AuthManager, type SsoProvider } from '../../nicovideo';
+import { AuthManager, MyListClient, type SsoProvider } from '../../nicovideo';
 import { createLogger } from '../../util/Logger';
 import type { IpcHandlerContext } from './context';
 
@@ -37,6 +37,8 @@ export function registerAuthHandlers(): void {
 
   ipcMain.handle(IpcChannel.AUTH_LOGOUT, async () => {
     await AuthManager.logout();
+    // アカウントが変わると自分のマイリストも変わるので、所有確認のキャッシュを捨てる
+    MyListClient.clearOwnMylistCache();
     return true;
   });
 

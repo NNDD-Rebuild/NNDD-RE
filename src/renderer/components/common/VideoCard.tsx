@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { DownloadKind } from '@shared/types/download';
 import { AddToPlaylistMenuItem } from './AddToPlaylistMenuItem';
+import { AddToWatchLaterMenuItem } from './AddToWatchLaterMenuItem';
+import { AddToMylistMenuItem } from './AddToMylistMenuItem';
 
 /**
  * 検索結果・ランキング・マイリストで共通利用する動画カード。
@@ -96,7 +98,17 @@ export function VideoCard({
       {onNiconico && (
         <MenuItem onClick={() => { onNiconico(data.videoId); setCtxMenu(null); }}>🌐 ニコニコで開く</MenuItem>
       )}
+      <AddToWatchLaterMenuItem data={data} onDone={() => setCtxMenu(null)} />
+      <AddToMylistMenuItem data={data} onDone={() => setCtxMenu(null)} />
       <AddToPlaylistMenuItem data={data} />
+      {onRemove && (
+        <>
+          <div className="border-t border-nndd-border my-1" />
+          <MenuItem onClick={() => { onRemove(data.videoId); setCtxMenu(null); }}>
+            <span className="text-red-500 dark:text-red-400">🗑 削除</span>
+          </MenuItem>
+        </>
+      )}
     </ContextMenuPopup>
   );
 

@@ -98,8 +98,22 @@ export const IpcChannel = {
   MYLIST_MOVE: 'nndd:mylist:move',
   /** 動画をとりあえずマイリストに追加 → true */
   MYLIST_ADD_VIDEO_DEFLIST: 'nndd:mylist:addVideoDeflist',
+  /** ニコニコのアカウントにマイリストを新規作成し、RE にも登録する ({name, isPublic}) → MyList。要ログイン */
+  MYLIST_CREATE_SERVER: 'nndd:mylist:createServer',
+  /** 自分のマイリストをニコニコ上から削除し、RE の登録も外す ({url}) → true。取り消せない。他人のマイリストはエラー */
+  MYLIST_DELETE_SERVER: 'nndd:mylist:deleteServer',
+  /** 自分のマイリストのID一覧 → string[]。書き込み(追加・削除・名前変更)できるマイリストの判定に使う */
+  MYLIST_OWN_IDS: 'nndd:mylist:ownIds',
+  /** 自分のマイリストへ動画を追加 ({url, videoId}) → true。他人のマイリストはエラー */
+  MYLIST_SERVER_ADD_ITEM: 'nndd:mylist:serverAddItem',
+  /** 自分のマイリストから項目を削除 ({url, itemIds}) → true。他人のマイリストはエラー。itemId は MYLIST_FETCH_PAGE の項目の itemId (動画IDではない) */
+  MYLIST_SERVER_REMOVE_ITEM: 'nndd:mylist:serverRemoveItem',
 
   // 動画
+  /** あとで見る (サーバー側) の全件取得 → {items: MyListItem[], total: number}。項目に itemId を含む */
+  WATCH_LATER_FETCH: 'nndd:watchLater:fetch',
+  /** あとで見るから削除 ({itemIds: number[]}) → true。itemId は WATCH_LATER_FETCH の値 (動画IDではない) */
+  WATCH_LATER_REMOVE: 'nndd:watchLater:remove',
   VIDEO_GET_WATCH_INFO: 'nndd:video:getWatchInfo',
   VIDEO_GET_COMMENTS: 'nndd:video:getComments',
   VIDEO_GET_RELATED: 'nndd:video:getRelated',

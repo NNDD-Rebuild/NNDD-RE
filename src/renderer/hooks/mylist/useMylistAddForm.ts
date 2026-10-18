@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { MyList, RssTypeValue } from '@shared/types';
 import { IpcChannel, RssType } from '@shared/types';
 import { parseMylistSource } from '@shared/utils/parseMylistUrl';
+import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
 import { useMyListHistory } from '../useInputHistory';
 
 /**
@@ -10,16 +11,25 @@ import { useMyListHistory } from '../useInputHistory';
  */
 export function useMylistAddForm({
   fetchItems,
-  reloadMylists
+  reloadMylists,
+  isLoggedIn,
+  onCreated
 }: {
   fetchItems: (ml: MyList) => Promise<void>;
   reloadMylists: () => void;
+  isLoggedIn: boolean;
+  /** ニコニコに新規作成したマイリスト (RE にも登録済み) */
+  onCreated: (ml: MyList) => void;
 }) {
   const [newUrl, setNewUrl] = useState('');
   const [newName, setNewName] = useState('');
   const [newType, setNewType] = useState<RssTypeValue>(RssType.MY_LIST);
   const [urlError, setUrlError] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  // URL なしで表示名だけ入れて追加したときの「新規作成しますか?」確認 (公開/非公開の選択つき)
+  const [createPending, setCreatePending] = useState(false);
+  const [createPublic, setCreatePublic] = useState(false);
+  const [creating, setCreating] = useState(false);
   const { history: urlHistory, addHistory: addUrlHistory } = useMyListHistory();
 
   /** URL入力欄からフォーカスが外れた/Enterされた時: 種別自動判定してプレビュー表示 */
@@ -63,7 +73,18 @@ export function useMylistAddForm({
 
   const handleAdd = async (): Promise<void> => {
     const url = newUrl.trim();
-    if (!url) return;
+    if (!url) {
+      // URL なしで表示名だけ → ニコニコのアカウントに新規作成するか確認する
+      if (!newName.trim()) return;
+      if (!isLoggedIn) {
+        setUrlError('ログインすると新しいマイリストを作成できます');
+        return;
+      }
+      setUrlError(null);
+      setCreatePublic(false);
+      setCreatePending(true);
+      return;
+    }
     const parsed = parseMylistSource(url);
     if (!parsed) {
       setUrlError('マイリスト/チャンネル/ユーザー/シリーズのURLまたはIDを認識できませんでした');
@@ -93,7 +114,34 @@ export function useMylistAddForm({
     reloadMylists();
   };
 
+  /** 確認パネルで「作成」: ニコニコに作成し、RE にも登録して開く */
+  const handleConfirmCreate = async (): Promise<void> => {
+    setCreating(true);
+    try {
+      const ml = await window.nndd.invoke<MyList>(IpcChannel.MYLIST_CREATE_SERVER, {
+        name: newName.trim(),
+        isPublic: createPublic
+      });
+      setCreatePending(false);
+      setNewName('');
+      setUrlError(null);
+      reloadMylists();
+      onCreated(ml);
+    } catch (e) {
+      setUrlError(`マイリストを作成できませんでした: ${toUserFriendlyErrorMessage(e)}`);
+      setCreatePending(false);
+    } finally {
+      setCreating(false);
+    }
+  };
+
   return {
+    createPending,
+    createPublic,
+    setCreatePublic,
+    creating,
+    handleConfirmCreate,
+    handleCancelCreate: () => setCreatePending(false),
     newUrl,
     setNewUrl,
     newName,

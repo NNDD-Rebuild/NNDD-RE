@@ -57,6 +57,8 @@ export interface MyListItem {
   likeCount?: number;
   /** チャンネル動画かどうか (未加入だと再生できない場合がある) */
   isChannelVideo?: boolean;
+  /** ニコニコ側のリスト内項目ID (あとで見る・アカウントのマイリストの削除に使う。動画IDとは別) */
+  itemId?: number;
 }
 
 /**

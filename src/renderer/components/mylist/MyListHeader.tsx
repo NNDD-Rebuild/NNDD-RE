@@ -1,5 +1,5 @@
 import type { RefObject } from 'react';
-import type { Selected } from './mylistUtils';
+import { WATCH_LATER_NAME, type Selected } from './mylistUtils';
 
 /**
  * 右ペインのヘッダー: リスト名 / URL コピー / 選択解除 / 一時表示リストの登録 /
@@ -43,7 +43,11 @@ export function MyListHeader({
     <div className="shrink-0 p-2 border-b border-nndd-border bg-nndd-panel flex items-center gap-2 flex-wrap">
       <div className="flex-1 min-w-0">
         <div className="text-sm font-bold truncate">
-          {selected.kind === 'mylist' ? selected.mylist.myListName : selected.playlist.name}
+          {selected.kind === 'mylist'
+            ? selected.mylist.myListName
+            : selected.kind === 'playlist'
+              ? selected.playlist.name
+              : WATCH_LATER_NAME}
         </div>
         {selected.kind === 'mylist' && (
           <div
@@ -98,7 +102,14 @@ export function MyListHeader({
             <button
               onClick={() => {
                 setBulkMenuOpen(false);
-                const name = selected?.kind === 'mylist' ? selected.mylist.myListName : selected?.kind === 'playlist' ? selected.playlist.name : undefined;
+                const name =
+                  selected?.kind === 'mylist'
+                    ? selected.mylist.myListName
+                    : selected?.kind === 'playlist'
+                      ? selected.playlist.name
+                      : selected?.kind === 'watchLater'
+                        ? WATCH_LATER_NAME
+                        : undefined;
                 void onBulkDownload(name);
               }}
               className="block w-full px-3 py-1 text-left hover:bg-nndd-border"

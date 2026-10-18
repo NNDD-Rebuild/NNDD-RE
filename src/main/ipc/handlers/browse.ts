@@ -1,5 +1,7 @@
 import { ipcMain } from 'electron';
-import { IpcChannel } from '@shared/types';
+import { IpcChannel, RssType } from '@shared/types';
+import { extractMylistLikeId } from '@shared/utils/parseMylistUrl';
+import { mylistUrl } from '@shared/utils/nicoUrl';
 import type { RssTypeValue } from '@shared/types';
 import { NicoApi, NicoEndpoint, NicoHeaders } from '@shared/constants';
 import { getConfigStore } from '../../config/ConfigStore';
@@ -46,8 +48,65 @@ export function registerBrowseHandlers(ctx: IpcHandlerContext): void {
     return true;
   });
 
-  ipcMain.handle(IpcChannel.MYLIST_UPDATE_NAME, (_e, args: { url: string; name: string }) => {
+  /** 自分のマイリストなら ID を返す。他人のマイリスト・未ログイン・マイリスト以外 (フォルダ等) は null */
+  const ownMylistId = async (url: string): Promise<string | null> => {
+    const id = extractMylistLikeId(url, RssType.MY_LIST);
+    if (!id || !/^\d+$/.test(id)) return null;
+    if (!(await NicoContext.get().isLoggedIn())) return null;
+    return (await MyListClient.isOwnMylist(id)) ? id : null;
+  };
+
+  // 自分のマイリストは、先にサーバーへ反映する。失敗したらローカルも変えない (名前がずれるのを防ぐ)。
+  // 他人のマイリストやフォルダなど、サーバーに対応するものがない行はローカルの表示名だけ変える
+  ipcMain.handle(IpcChannel.MYLIST_UPDATE_NAME, async (_e, args: { url: string; name: string }) => {
+    const id = await ownMylistId(args.url);
+    if (id) await MyListClient.renameMylist(id, args.name);
     library.myListDao.updateName(args.url, args.name);
+    return true;
+  });
+
+  ipcMain.handle(IpcChannel.MYLIST_CREATE_SERVER, async (_e, args: { name: string; isPublic: boolean }) => {
+    const name = args.name.trim();
+    if (!name) throw new Error('マイリスト名を入力してください');
+    if (!(await NicoContext.get().isLoggedIn())) throw new Error('ログインすると新しいマイリストを作成できます');
+    const id = await MyListClient.createMylist(name, args.isPublic === true);
+    const ml: import('@shared/types').MyList = {
+      myListUrl: mylistUrl(id),
+      myListName: name,
+      type: RssType.MY_LIST,
+      isDir: false,
+      unPlayVideoCount: 0,
+      myListVideoIds: {}
+    };
+    library.myListDao.upsert(ml);
+    return ml;
+  });
+
+  ipcMain.handle(IpcChannel.MYLIST_DELETE_SERVER, async (_e, args: { url: string }) => {
+    const id = await ownMylistId(args.url);
+    if (!id) throw new Error('自分のマイリストではないため、ニコニコから削除できません');
+    await MyListClient.deleteMylist(id);
+    // ニコニコ側を消せたら RE の登録も外す (先に外すと、失敗したときに登録だけ消えてしまう)
+    library.myListDao.remove(args.url);
+    return true;
+  });
+
+  ipcMain.handle(IpcChannel.MYLIST_OWN_IDS, async () => {
+    if (!(await NicoContext.get().isLoggedIn())) return [];
+    return [...(await MyListClient.fetchOwnMylistIds())];
+  });
+
+  ipcMain.handle(IpcChannel.MYLIST_SERVER_ADD_ITEM, async (_e, args: { url: string; videoId: string }) => {
+    const id = await ownMylistId(args.url);
+    if (!id) throw new Error('自分のマイリストではないため、動画を追加できません');
+    await MyListClient.addItem(id, args.videoId);
+    return true;
+  });
+
+  ipcMain.handle(IpcChannel.MYLIST_SERVER_REMOVE_ITEM, async (_e, args: { url: string; itemIds: number[] }) => {
+    const id = await ownMylistId(args.url);
+    if (!id) throw new Error('自分のマイリストではないため、動画を削除できません');
+    await MyListClient.removeItems(id, args.itemIds);
     return true;
   });
 
@@ -85,7 +144,11 @@ export function registerBrowseHandlers(ctx: IpcHandlerContext): void {
   );
 
   ipcMain.handle(IpcChannel.MYLIST_FETCH_ACCOUNT, async () => {
-    return MyListClient.fetchAccountMylists();
+    // 同期中のプレイリストのマイリストは、普通のマイリストとして出さない
+    const linked = new Set(
+      library.playlistDao.list().flatMap((p) => (p.serverMylistId ? [p.serverMylistId] : []))
+    );
+    return MyListClient.fetchAccountMylists(linked);
   });
 
   ipcMain.handle(
@@ -160,6 +223,16 @@ export function registerBrowseHandlers(ctx: IpcHandlerContext): void {
       { watchId: videoId },
       { headers: { 'X-Frontend-Id': NicoHeaders.X_FRONTEND_ID, 'X-Frontend-Version': NicoHeaders.X_FRONTEND_VERSION, 'X-Request-With': NicoApi.WWW_BASE } }
     );
+    return true;
+  });
+
+  // あとで見る: サーバーを正とし、ローカルには保存しない
+  ipcMain.handle(IpcChannel.WATCH_LATER_FETCH, async () => {
+    return MyListClient.fetchWatchLater();
+  });
+
+  ipcMain.handle(IpcChannel.WATCH_LATER_REMOVE, async (_e, args: { itemIds: number[] }) => {
+    await MyListClient.removeWatchLater(args.itemIds);
     return true;
   });
 

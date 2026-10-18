@@ -1,4 +1,4 @@
-import { buildDefaultHeaders } from '@shared/constants';
+import { buildDefaultHeaders, NicoApi } from '@shared/constants';
 import { CookieStore } from './auth/CookieStore';
 import { createLogger } from '../util/Logger';
 import fs from 'node:fs';
@@ -166,6 +166,46 @@ export class NicoHttp {
     }
     
     return data;
+  }
+
+  /**
+   * nvapi の書き込み系 (POST/PUT/DELETE) 共通。Web 版と同じく Origin / X-Request-With を付ける。
+   * - form: application/x-www-form-urlencoded で送る (マイリスト作成・更新、NG 追加など)
+   * - json: application/json で送る (NG 削除など)
+   * - どちらも無ければボディなし (項目追加・削除などクエリだけで済むもの)
+   * 成功時のレスポンスが空 (201 + meta のみ等) でも例外にしない。
+   */
+  async send<T = unknown>(
+    method: 'POST' | 'PUT' | 'DELETE',
+    url: string,
+    opts: NicoHttpOptions & { form?: Record<string, string>; json?: unknown } = {}
+  ): Promise<T> {
+    const { form, json, ...rest } = opts;
+    const headers: Record<string, string> = {
+      Accept: 'application/json;charset=utf-8',
+      Origin: NicoApi.WWW_BASE,
+      'X-Request-With': NicoApi.WWW_BASE,
+      ...(rest.headers ?? {})
+    };
+    let body: string | undefined;
+    if (form) {
+      headers['Content-Type'] = 'application/x-www-form-urlencoded';
+      body = new URLSearchParams(form).toString();
+    } else if (json !== undefined) {
+      headers['Content-Type'] = 'application/json';
+      body = JSON.stringify(json);
+    }
+    const res = await this.fetch(url, { ...rest, method, headers, body });
+    if (!res.ok) {
+      throw await buildApiError(url, res, method);
+    }
+    const text = await res.text();
+    if (!text) return undefined as T;
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      return undefined as T;
+    }
   }
 
   /**

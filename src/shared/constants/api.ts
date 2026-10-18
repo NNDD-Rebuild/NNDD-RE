@@ -106,8 +106,22 @@ export const NicoEndpoint = {
   /** ウォッチレイター (追加 POST 用) */
   watchLater: () => `${NicoApi.NVAPI_BASE}/v1/users/me/watch-later`,
   /** ウォッチレイター一覧 */
-  watchLaterList: (pageSize: number) =>
-    `${NicoApi.NVAPI_BASE}/v1/users/me/watch-later?pageSize=${pageSize}&sortKey=addedAt&sortOrder=desc`,
+  watchLaterList: (pageSize: number, page = 1) =>
+    `${NicoApi.NVAPI_BASE}/v1/users/me/watch-later?pageSize=${pageSize}&page=${page}&sortKey=addedAt&sortOrder=desc`,
+  /** ウォッチレイター削除 (DELETE。itemIds は一覧の itemId。watchId ではない) */
+  watchLaterDelete: (itemIds: (string | number)[]) =>
+    `${NicoApi.NVAPI_BASE}/v1/users/me/watch-later?itemIds=${itemIds.map((i) => enc(String(i))).join(',')}`,
+  /** 自分のマイリストの軽量一覧 (id / name / isPublic のみ。所有確認用) */
+  myMylistsCompact: () => `${NicoApi.NVAPI_BASE}/v1/users/me/mylists/compact`,
+  /** 自分のマイリスト (POST 作成 / PUT 更新 / DELETE 削除。更新は5項目すべて送る) */
+  myMylistById: (mylistId: string | number) =>
+    `${NicoApi.NVAPI_BASE}/v1/users/me/mylists/${enc(String(mylistId))}`,
+  /** マイリストへの動画追加 (POST。ボディなし。itemId は動画ID) */
+  myMylistAddItem: (mylistId: string | number, videoId: string, description = '') =>
+    `${NicoApi.NVAPI_BASE}/v1/users/me/mylists/${enc(String(mylistId))}/items?itemId=${enc(videoId)}&description=${enc(description)}`,
+  /** マイリストからの動画削除 (DELETE。itemIds はマイリスト内の itemId。動画IDではない) */
+  myMylistDeleteItems: (mylistId: string | number, itemIds: (string | number)[]) =>
+    `${NicoApi.NVAPI_BASE}/v1/users/me/mylists/${enc(String(mylistId))}/items?itemIds=${itemIds.map((i) => enc(String(i))).join(',')}`,
 
   /** 自分のユーザー情報 */
   me: () => `${NicoApi.NVAPI_BASE}/v1/users/me`,

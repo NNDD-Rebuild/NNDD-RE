@@ -2,10 +2,14 @@ import type { MyList, MyListItem, Playlist, PlaylistItem, RssTypeValue } from '@
 import { RssType } from '@shared/types';
 import type { VideoCardData } from '../common/VideoCard';
 
-/** 右ペインに表示中のリスト (リモートマイリスト or ローカルプレイリスト) */
+/** 右ペインに表示中のリスト (リモートマイリスト / ローカルプレイリスト / サーバー側のあとで見る) */
 export type Selected =
   | { kind: 'mylist'; mylist: MyList }
-  | { kind: 'playlist'; playlist: Playlist };
+  | { kind: 'playlist'; playlist: Playlist }
+  | { kind: 'watchLater' };
+
+/** あとで見る (固定リスト) の表示名 */
+export const WATCH_LATER_NAME = 'あとで見る';
 
 /** マイリストのページサイズ (ページネーションはマイリストのみ) */
 export const PAGE_SIZE = 100;

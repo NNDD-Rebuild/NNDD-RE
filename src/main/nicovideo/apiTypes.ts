@@ -267,11 +267,21 @@ export interface NicoNvapiMylistResponse {
       id: string;
       name: string;
       description?: string;
+      /** 自分のマイリストのみ (更新 PUT は全項目を送り直す必要があるため読み取る) */
+      isPublic?: boolean;
+      defaultSortKey?: string;
+      defaultSortOrder?: string;
       items?: NicoNvapiMylistItem[];
       totalItemCount?: number;
     };
     // 一部レスポンスは items を data 直下に持つ
     items?: NicoNvapiMylistItem[];
+    // あとで見る (/v1/users/me/watch-later) は watchLater 配下に入る
+    watchLater?: {
+      items?: NicoNvapiMylistItem[];
+      totalCount?: number;
+      hasNext?: boolean;
+    };
   };
 }
 
@@ -279,6 +289,8 @@ export interface NicoNvapiMylistItem {
   watchId: string;
   itemId: number;
   description?: string;
+  /** あとで見るのメモ (マイリストの description に相当) */
+  memo?: string;
   video: {
     id: string;
     title: string;
@@ -286,6 +298,7 @@ export interface NicoNvapiMylistItem {
     thumbnail: { url: string };
     count: { view: number; comment: number; mylist: number; like?: number };
     registeredAt: string;
+    isChannelVideo?: boolean;
   };
 }
 
