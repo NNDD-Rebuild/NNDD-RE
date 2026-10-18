@@ -351,6 +351,31 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
     }
   }, [src, isHls]);
 
+  // 動画の読み込み後、映像の比に合わせてウィンドウの縦幅を調整し上下の黒帯をなくす。
+  // 幅は変えない (ユーザーが決めた幅と、横のコメント一覧の幅を尊重)。
+  // 全画面・最大化中は main 側で何もしない。音声のみ・PiP 中は対象外。
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || audioOnly) return;
+    const fit = (): void => {
+      const container = containerRef.current;
+      if (!container || pipWindowRef.current) return;
+      const { videoWidth: vw, videoHeight: vh } = video;
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      if (vw <= 0 || vh <= 0 || w <= 0 || h <= 0) return;
+      // 画面の作業領域を超えて伸ばさない
+      const room = window.screen.availHeight - window.outerHeight;
+      const delta = Math.min(Math.round((w * vh) / vw - h), Math.max(0, room));
+      if (Math.abs(delta) < 4) return;
+      void window.nndd
+        .invoke(window.nndd.channels.PLAYER_WINDOW_ADJUST_HEIGHT, delta)
+        .catch(() => {});
+    };
+    video.addEventListener('loadedmetadata', fit);
+    return () => video.removeEventListener('loadedmetadata', fit);
+  }, [audioOnly]);
+
   return (
     <div ref={containerRef} className={`relative bg-black ${className ?? ''}`}>
       <video

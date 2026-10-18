@@ -77,7 +77,34 @@ export const CommentOverlay = forwardRef<CommentOverlayHandle, Props>(
         });
       };
 
+      // コメント領域を、親 (動画の表示枠) の中で映像が実際に描画される矩形 (object-fit: contain 相当) に合わせる。
+      // 4:3 動画など枠と比が違う場合に、黒帯側へコメントが流れないようにする。
+      // メタデータ未取得 (videoWidth = 0) の間は枠全体を使う。
+      const fitToVideo = (): void => {
+        const parent = container.parentElement;
+        if (!parent) return;
+        const pw = parent.clientWidth;
+        const ph = parent.clientHeight;
+        const vw = video.videoWidth;
+        const vh = video.videoHeight;
+        let w = pw;
+        let h = ph;
+        if (vw > 0 && vh > 0 && pw > 0 && ph > 0) {
+          const scale = Math.min(pw / vw, ph / vh);
+          w = vw * scale;
+          h = vh * scale;
+        }
+        const s = container.style;
+        s.right = 'auto';
+        s.bottom = 'auto';
+        s.left = `${(pw - w) / 2}px`;
+        s.top = `${(ph - h) / 2}px`;
+        s.width = `${w}px`;
+        s.height = `${h}px`;
+      };
+
       const resize = (): void => {
+        fitToVideo();
         const rect = container.getBoundingClientRect();
         if (!started) {
           tryStart(rect.width, rect.height);
@@ -96,6 +123,11 @@ export const CommentOverlay = forwardRef<CommentOverlayHandle, Props>(
 
       const ro = new ResizeObserver(resize);
       ro.observe(container);
+      // 枠のサイズ変化 (コンテナ自身は映像矩形に追従するので親も監視する)
+      if (container.parentElement) ro.observe(container.parentElement);
+      // 動画の切替・解像度変化で映像の比が変わったら矩形を再計算
+      video.addEventListener('loadedmetadata', resize);
+      video.addEventListener('resize', resize);
 
       const onSeek = (): void => renderer.onSeek();
       video.addEventListener('seeking', onSeek);
@@ -105,6 +137,8 @@ export const CommentOverlay = forwardRef<CommentOverlayHandle, Props>(
         if (resizeTimer !== null) window.clearTimeout(resizeTimer);
         if (startRafId !== null) cancelAnimationFrame(startRafId);
         ro.disconnect();
+        video.removeEventListener('loadedmetadata', resize);
+        video.removeEventListener('resize', resize);
         video.removeEventListener('seeking', onSeek);
         video.removeEventListener('seeked', onSeek);
         renderer.stop();

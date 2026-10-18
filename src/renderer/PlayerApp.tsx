@@ -771,33 +771,40 @@ export default function PlayerApp(): JSX.Element {
                 'transition-opacity duration-200',
                 isFullscreen
                   ? 'absolute left-0 right-0 bottom-0 z-10'
-                  : 'static',
+                  : 'relative',
                 showControls || (!isFullscreen && controlsAlwaysVisible && !isMobileTouch)
                   ? 'opacity-100 pointer-events-auto'
                   : 'opacity-0 pointer-events-none'
               ].join(' ')}
             >
               {((commentListDisplay === 'window' && !isWebPlayer) || (isLocal && folderVideos.length > 1)) && (
-                <div className="flex items-center justify-end gap-2 px-2 py-0.5 bg-black/80" style={{ zoom: controlZoom }}>
-                  {isLocal && folderVideos.length > 1 && (
-                    <label className="flex items-center gap-1 text-xs text-nndd-subtext cursor-pointer select-none hover:text-nndd-text">
-                      <input
-                        type="checkbox"
-                        checked={autoNextFolder}
-                        onChange={(e) => onAutoNextFolderChange(e.target.checked)}
-                        className="cursor-pointer"
-                      />
-                      フォルダ連続再生
-                    </label>
-                  )}
-                  {commentListDisplay === 'window' && !isWebPlayer && (
-                    <button
-                      onClick={openCommentWindow}
-                      className="text-xs px-2 py-0.5 rounded border border-nndd-border text-nndd-subtext hover:text-nndd-text"
-                    >
-                      💬 コメント一覧
-                    </button>
-                  )}
+                <div
+                  className={[
+                    'absolute right-0 bottom-full transition-opacity duration-200',
+                    showControls ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+                  ].join(' ')}
+                >
+                  <div className="flex items-center justify-end gap-2 px-2 py-0.5 rounded-tl bg-black/70" style={{ zoom: controlZoom }}>
+                    {isLocal && folderVideos.length > 1 && (
+                      <label className="flex items-center gap-1 text-xs text-nndd-subtext cursor-pointer select-none hover:text-nndd-text">
+                        <input
+                          type="checkbox"
+                          checked={autoNextFolder}
+                          onChange={(e) => onAutoNextFolderChange(e.target.checked)}
+                          className="cursor-pointer"
+                        />
+                        フォルダ連続再生
+                      </label>
+                    )}
+                    {commentListDisplay === 'window' && !isWebPlayer && (
+                      <button
+                        onClick={openCommentWindow}
+                        className="text-xs px-2 py-0.5 rounded border border-nndd-border text-nndd-subtext hover:text-nndd-text"
+                      >
+                        💬 コメント一覧
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
               <VideoController
