@@ -361,7 +361,7 @@ export function MyListView(): JSX.Element {
     }
   };
 
-  // 一括更新: 全マイリストを再取得し、未DLの動画を自動でDLキューに追加する
+  // 一括更新: 全マイリストを再取得して未再生数を更新する (DLキューには追加しない)
   const handleRenewAll = async (): Promise<void> => {
     setRenewingAll(true);
     setAutoDlResult(null);
@@ -371,12 +371,12 @@ export function MyListView(): JSX.Element {
       const results = await window.nndd.invoke<
         Record<string, { fetched: number; queued: number; error?: string }>
       >(IpcChannel.MYLIST_AUTO_DOWNLOAD_ALL);
-      const queued = Object.values(results).reduce((a, r) => a + r.queued, 0);
+      const total = Object.keys(results).length;
       const errors = Object.values(results).filter((r) => r.error).length;
       setAutoDlResult(
         errors > 0
-          ? `${queued}件をDLキューに追加 (${errors}件のマイリストで取得失敗)`
-          : `${queued}件をDLキューに追加しました`
+          ? `${total - errors}件のマイリストを更新 (${errors}件で取得失敗)`
+          : `${total}件のマイリストを更新しました`
       );
       if (selected?.kind === 'mylist' && seqAtStart === itemsSeqRef.current) await fetchItems(selected.mylist);
       reloadMylists();

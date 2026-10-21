@@ -104,8 +104,8 @@ export function registerDownloadHandlers(ctx: IpcHandlerContext): void {
     return true;
   });
 
-  // マイリスト差分DL: 未登録の動画のみ DL キューに自動追加する
+  // マイリスト一括更新: 一覧の再取得と未再生数の更新のみ (DL キューには追加しない)
   ipcMain.handle(IpcChannel.MYLIST_AUTO_DOWNLOAD_ALL, async () => {
-    return autoDl.renewAll();
+    return autoDl.renewAll(false);
   });
 }

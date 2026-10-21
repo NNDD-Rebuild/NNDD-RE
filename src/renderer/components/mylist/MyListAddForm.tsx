@@ -196,7 +196,7 @@ export function MyListAddForm({
           onClick={onRenewAll}
           disabled={renewingAll}
           className="text-xs px-3 py-1 bg-nndd-border rounded hover:bg-nndd-accent disabled:opacity-50"
-          title="全マイリストを更新し、未DL動画を自動でDLキューに追加"
+          title="全マイリストを再取得して更新"
         >
           {renewingAll ? '更新中…' : '一括更新'}
         </button>

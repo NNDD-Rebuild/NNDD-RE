@@ -28,9 +28,10 @@ export class MyListAutoDownloader {
 
   /**
    * 1つのマイリストを更新し、新規動画があれば DL キューに追加する。
+   * @param enqueue false なら一覧の再取得と未再生数の更新だけ行い、DL キューには追加しない
    * @returns { fetched: 取得した動画数, queued: DLキューに追加した数 }
    */
-  async renew(myList: MyList): Promise<{ fetched: number; queued: number }> {
+  async renew(myList: MyList, enqueue = true): Promise<{ fetched: number; queued: number }> {
     const items = await this.fetchAllItems(myList);
     let queued = 0;
 
@@ -42,7 +43,7 @@ export class MyListAutoDownloader {
         .filter(Boolean)
     );
 
-    for (const item of items) {
+    for (const item of enqueue ? items : []) {
       if (knownKeys.has(item.videoId)) continue;
       this.downloader.enqueue({ videoId: item.videoId, source: 'mylist_auto' });
       queued++;
@@ -62,8 +63,9 @@ export class MyListAutoDownloader {
 
   /**
    * 全マイリストを順次更新。
+   * @param enqueue false なら DL キューには追加しない
    */
-  async renewAll(): Promise<
+  async renewAll(enqueue = true): Promise<
     Record<string, { fetched: number; queued: number; error?: string }>
   > {
     const out: Record<
@@ -73,7 +75,7 @@ export class MyListAutoDownloader {
     const mylists = this.library.myListDao.list().filter((m) => !m.isDir);
     for (const ml of mylists) {
       try {
-        const r = await this.renew(ml);
+        const r = await this.renew(ml, enqueue);
         out[ml.myListUrl] = r;
       } catch (e) {
         log.warn(`renew failed: ${ml.myListUrl}`, e);
