@@ -13,13 +13,14 @@ const log = createLogger('Scheduler');
  *
  * 元: src/org/mineap/nndd/download/ScheduleManager.as
  *
- * - 1分ごとに現在時刻と曜日をチェック
- * - 該当する有効なスケジュールがあれば対象種別(マイリスト/シリーズ/フォロー投稿者)に応じた
- *   更新+自動DLを発火
- * - 同じ分内で2回発火しないように lastRun を記録
+ * - 起動時と1分ごとに現在時刻と曜日をチェック
+ * - 前回実行以降に設定時刻を過ぎている有効なスケジュールがあれば、
+ *   対象種別(マイリスト/シリーズ/フォロー投稿者)に応じた更新+自動DLを1件ずつ順番に発火
+ * - 二重実行しないように lastRun を記録
  */
 export class ScheduleManager {
   private intervalId: NodeJS.Timeout | null = null;
+  private running = false;
 
   constructor(
     private readonly library: LibraryManager,
@@ -45,33 +46,40 @@ export class ScheduleManager {
   }
 
   private async tick(): Promise<void> {
-    const now = new Date();
-    const day = now.getDay(); // 0=日 .. 6=土
-    const hhmm = `${String(now.getHours()).padStart(2, '0')}:${String(
-      now.getMinutes()
-    ).padStart(2, '0')}`;
-    const schedules = this.library.scheduleDao.list();
-    for (const s of schedules) {
-      if (!s.enabled) continue;
-      if (!s.daysOfWeek.includes(day)) continue;
-      if (s.time !== hhmm) continue;
-      // 同じ分内では再実行しない
-      if (this.alreadyRanThisMinute(s, now)) continue;
-
-      await this.execute(s, now);
+    // 前回の tick が実行中なら重ねない (スケジュールは1件ずつ順番に処理する)
+    if (this.running) return;
+    this.running = true;
+    try {
+      const now = new Date();
+      const schedules = this.library.scheduleDao.list();
+      for (const s of schedules) {
+        if (!this.isDue(s, now)) continue;
+        await this.execute(s, now);
+      }
+    } finally {
+      this.running = false;
     }
   }
 
-  private alreadyRanThisMinute(s: Schedule, now: Date): boolean {
-    if (!s.lastRun) return false;
-    const a = new Date(s.lastRun);
-    return (
-      a.getFullYear() === now.getFullYear() &&
-      a.getMonth() === now.getMonth() &&
-      a.getDate() === now.getDate() &&
-      a.getHours() === now.getHours() &&
-      a.getMinutes() === now.getMinutes()
-    );
+  /**
+   * 実行すべきか判定する。
+   * - 直近の設定時刻 (対象曜日、現在時刻以前、最大7日前まで遡る) を求め、最終実行がそれより前なら実行する。
+   *   前回実行から今回までの間に設定時刻を過ぎていれば、何日空いていても1回だけ実行する
+   *   (起動していなかった・スリープ中だった分の取り逃がしを拾う)
+   * - 一度も実行していないスケジュールは、作成直後の誤発火を避けるため設定時刻ちょうどの分のみ
+   */
+  private isDue(s: Schedule, now: Date): boolean {
+    if (!s.enabled) return false;
+    const [h, m] = s.time.split(':').map(Number);
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return false;
+    let latest: Date | null = null;
+    for (let back = 0; back <= 7 && !latest; back++) {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - back, h, m, 0, 0);
+      if (d <= now && s.daysOfWeek.includes(d.getDay())) latest = d;
+    }
+    if (!latest) return false;
+    if (!s.lastRun) return now.getTime() - latest.getTime() < 60_000;
+    return new Date(s.lastRun) < latest;
   }
 
   private async execute(s: Schedule, now: Date): Promise<void> {
