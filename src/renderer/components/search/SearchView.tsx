@@ -7,6 +7,7 @@ import type {
 } from '@shared/types';
 import { NNDDRESearchType, NNDDRESearchSortType } from '@shared/types';
 import { VideoCard } from '../common/VideoCard';
+import { ErrorNotice } from '../common/ErrorNotice';
 import { VirtualizedItemList } from '../common/VirtualizedItemList';
 import { ContinuousPlayButton } from '../common/ContinuousPlayButton';
 import { useAppStore } from '@renderer/store/useAppStore';
@@ -450,7 +451,7 @@ export function SearchView(): JSX.Element {
 
         <div ref={scrollRef} className="flex-1 overflow-auto p-3">
           {error && (
-            <div className="text-red-500 dark:text-red-400 text-sm mb-3">エラー: {error}</div>
+            <ErrorNotice kind="video" className="text-sm mb-3">エラー: {error}</ErrorNotice>
           )}
           {!loading && results.length === 0 && !error && (
             <div className="text-nndd-subtext text-sm">

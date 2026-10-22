@@ -6,6 +6,7 @@ import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
 import { seriesUrl, watchUrl } from '@shared/utils/nicoUrl';
 import type { VideoCardData } from '../common/VideoCard';
 import { VirtualizedItemList } from '../common/VirtualizedItemList';
+import { ErrorNotice } from '../common/ErrorNotice';
 import { ContextMenuPopup, MenuItem } from '../common/VideoCard';
 import { useAppStore } from '../../store/useAppStore';
 import { useWatchedIds } from '@renderer/hooks/useWatchedIds';
@@ -964,7 +965,7 @@ export function MyListView(): JSX.Element {
               showToast={showToast}
             />
 
-            {error && <div className="text-red-500 dark:text-red-400 text-sm p-2">エラー: {error}</div>}
+            {error && <ErrorNotice kind="video" className="text-sm p-2">エラー: {error}</ErrorNotice>}
 
             {items.length > 0 && (
               <MyListFilterBar

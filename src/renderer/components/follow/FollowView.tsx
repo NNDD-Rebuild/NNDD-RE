@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import type { SearchResultItem, UserMylistSummary, UserSeriesSummary } from '@shared/types';
 import { IpcChannel } from '@shared/types';
 import { VideoCard } from '../common/VideoCard';
+import { ErrorNotice } from '../common/ErrorNotice';
 import type { VideoCardData } from '../common/VideoCard';
 import { VirtualizedItemList } from '../common/VirtualizedItemList';
 import { useAppStore } from '@renderer/store/useAppStore';
@@ -426,7 +427,7 @@ export function FollowView(): JSX.Element {
             <div className="text-xs text-nndd-subtext px-2 py-1">読込中…</div>
           )}
           {usersError && (
-            <div className="text-xs text-red-500 dark:text-red-400 px-2 py-1 break-all">{usersError}</div>
+            <ErrorNotice kind="video" className="text-xs px-2 py-1 break-all">{usersError}</ErrorNotice>
           )}
           {sortedFollowUsers.map((u) => (
             <button
@@ -557,9 +558,9 @@ export function FollowView(): JSX.Element {
           {userSubTab !== 'videos' ? (
             <>
               {subTabError && (
-                <div className="text-red-500 dark:text-red-400 text-sm mb-3 whitespace-pre-wrap">
+                <ErrorNotice kind="video" className="text-sm mb-3 whitespace-pre-wrap">
                   ⚠ {subTabError}
-                </div>
+                </ErrorNotice>
               )}
               {subTabLoading && (
                 <div className="text-nndd-subtext text-sm">読込中…</div>
@@ -607,10 +608,10 @@ export function FollowView(): JSX.Element {
           ) : (
             <>
               {displayError && (
-                <div className="text-red-500 dark:text-red-400 text-sm mb-3 whitespace-pre-wrap">
+                <ErrorNotice kind="video" className="text-sm mb-3 whitespace-pre-wrap">
                   ⚠ {displayError}
                   <span className="text-xs text-nndd-subtext ml-2">(ログイン確認)</span>
-                </div>
+                </ErrorNotice>
               )}
               {displayLoading && displayItems.length === 0 && (
                 <div className="text-nndd-subtext text-sm">読込中…</div>

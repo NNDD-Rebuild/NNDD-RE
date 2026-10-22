@@ -15,6 +15,7 @@ import { extractLiveIdFromInput } from '@shared/utils/liveId';
 import { useAppStore } from '@renderer/store/useAppStore';
 import { enqueueLiveDownload, enqueueLiveRecord } from '@renderer/util/enqueueDownload';
 import { VirtualizedItemList } from '../common/VirtualizedItemList';
+import { ErrorNotice } from '../common/ErrorNotice';
 import { TimeshiftBulkCancelDialog, type BulkCancelItem } from './TimeshiftBulkCancelDialog';
 
 type SubTab = 'followOnair' | 'followReserved' | 'ranking' | 'recent' | 'anime' | 'search' | 'timeshift' | 'recordReservations';
@@ -704,7 +705,7 @@ export function LiveView(): JSX.Element {
           視聴
         </button>
       </form>
-      {openError && <div className="px-3 pt-2 text-xs text-red-500">{openError}</div>}
+      {openError && <ErrorNotice kind="live" className="px-3 pt-2 text-xs">{openError}</ErrorNotice>}
       {tsMessage && (
         <div className={`px-3 pt-2 text-xs ${tsMessage.isError ? 'text-red-500' : 'text-green-500'}`}>
           {tsMessage.text}
@@ -952,7 +953,7 @@ export function LiveView(): JSX.Element {
             ログインが必要です。右上の「ログイン」からニコニコ動画にログインしてください。
           </div>
         )}
-        {!needsLogin && error && <div className="mb-2 text-xs text-red-500">{error}</div>}
+        {!needsLogin && error && <ErrorNotice kind="live" className="mb-2 text-xs">{error}</ErrorNotice>}
         {!needsLogin && !loading && !error && shown.length === 0 && (
           <div className="text-xs text-nndd-subtext">
             {subTab === 'search' && !searched ? 'キーワードを入力して検索してください。' : '番組がありません。'}

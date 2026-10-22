@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { RankingItem, RankingTermValue, RankingGenreInfo } from '@shared/types';
 import { RANKING_GENRES, RANKING_TERMS } from '@shared/constants';
 import { VideoCard } from '../common/VideoCard';
+import { ErrorNotice } from '../common/ErrorNotice';
 import { VirtualizedItemList } from '../common/VirtualizedItemList';
 import { useAppStore } from '@renderer/store/useAppStore';
 import { toUserFriendlyErrorMessage } from '@shared/utils/errorMessage';
@@ -178,7 +179,7 @@ export function RankingView(): JSX.Element {
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-auto p-3">
-        {error && <div className="text-red-500 dark:text-red-400 text-sm mb-3">エラー: {error}</div>}
+        {error && <ErrorNotice kind="video" className="text-sm mb-3">エラー: {error}</ErrorNotice>}
         {loading && <div className="text-nndd-subtext text-sm">読み込み中…</div>}
         {!loading && items.length === 0 && !error && (
           <div className="text-nndd-subtext text-sm">ランキングが取得できませんでした。</div>
