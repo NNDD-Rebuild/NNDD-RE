@@ -4,6 +4,7 @@ import { createLogger } from '../util/Logger';
 import fs from 'node:fs';
 import path from 'node:path';
 import type { NicoApiErrorBody } from './apiTypes';
+import { MaintenanceMonitor } from './MaintenanceMonitor';
 
 const log = createLogger('NicoHttp');
 
@@ -101,6 +102,8 @@ export class NicoHttp {
           await this.cookieStore.save();
         }
       }
+
+      await MaintenanceMonitor.observe(url, res);
 
       return res;
     } finally {

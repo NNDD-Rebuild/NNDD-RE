@@ -44,6 +44,12 @@ export const IpcChannel = {
   /** ログイン中に2段階認証コードが必要になった通知 (main→renderer) → { error?: string }。応答は AUTH_LOGIN_MFA の { code } (空文字=キャンセル) */
   AUTH_MFA_REQUEST: 'nndd:auth:mfaRequest',
 
+  // メンテナンス検知
+  /** 現在のメンテナンス状態を取得 → MaintenanceState */
+  MAINTENANCE_GET: 'nndd:maintenance:get',
+  /** メンテナンス状態の変化通知 (main→renderer) → MaintenanceState */
+  MAINTENANCE_CHANGED: 'nndd:maintenance:changed',
+
   // ダウンロード
   DOWNLOAD_ENQUEUE: 'nndd:download:enqueue',
   DOWNLOAD_CANCEL: 'nndd:download:cancel',
@@ -321,6 +327,11 @@ export const IpcChannel = {
    * 全画面・最大化中は変更せず 0 を返す。ユーザーニコ割の帯を動画に被せないために使う
    */
   PLAYER_WINDOW_ADJUST_HEIGHT: 'nndd:player:window:adjustHeight',
+  /**
+   * 窓が最小化・非表示でも描画とタイマーを止めない (enabled: boolean)。
+   * PiP 中、メイン窓を最小化してもコメント合成が止まらないようにするために使う
+   */
+  PLAYER_WINDOW_KEEP_ACTIVE: 'nndd:player:window:keepActive',
 
   // 更新
   UPDATE_CHECK: 'nndd:update:check',

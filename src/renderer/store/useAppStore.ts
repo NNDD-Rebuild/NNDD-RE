@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import type { MaintenanceState } from '@shared/types';
 import type { SubTab } from '../components/settings/SettingsView';
 
 /**
@@ -88,6 +89,10 @@ interface AppState {
 
   toastMessage: string | null;
   showToast: (msg: string, durationMs?: number) => void;
+
+  /** ニコニコのメンテナンス状態 (動画系 / 生放送系は別判定) */
+  maintenance: MaintenanceState;
+  setMaintenance: (state: MaintenanceState) => void;
 }
 
 export const useAppStore = create<AppState>((set) => ({
@@ -122,4 +127,6 @@ export const useAppStore = create<AppState>((set) => ({
     set({ toastMessage: msg });
     setTimeout(() => set({ toastMessage: null }), durationMs);
   },
+  maintenance: { video: false, live: false },
+  setMaintenance: (state) => set({ maintenance: state }),
 }));

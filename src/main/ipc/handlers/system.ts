@@ -2,6 +2,8 @@ import path from 'node:path';
 import { ipcMain, dialog, shell, app, BrowserWindow } from 'electron';
 import { IpcChannel } from '@shared/types';
 import { ConnectionDiag } from '../../nicovideo';
+import { NicoContext } from '../../nicovideo/NicoContext';
+import { MaintenanceMonitor } from '../../nicovideo/MaintenanceMonitor';
 import { YtDlpStreamer } from '../../nicovideo/video/YtDlpStreamer';
 import { BinaryInstaller } from '../../util/BinaryInstaller';
 import { getUpdateManager } from '../../update/UpdateManager';
@@ -105,6 +107,18 @@ export function registerSystemHandlers(ctx: IpcHandlerContext): void {
     browserWin.show();
     return true;
   });
+
+  // --- メンテナンス検知 ---
+  MaintenanceMonitor.setProbe((url) =>
+    NicoContext.get().http.fetch(url, { timeoutMs: 15000 })
+  );
+  MaintenanceMonitor.onChange((state) => {
+    const mainWin = mainWindowGetter?.();
+    if (mainWin && !mainWin.isDestroyed()) {
+      mainWin.webContents.send(IpcChannel.MAINTENANCE_CHANGED, state);
+    }
+  });
+  ipcMain.handle(IpcChannel.MAINTENANCE_GET, () => MaintenanceMonitor.get());
 
   // --- 接続診断 ---
   ipcMain.handle(IpcChannel.DIAG_RUN, async () => {

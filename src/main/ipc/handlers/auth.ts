@@ -1,6 +1,7 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import { IpcChannel } from '@shared/types';
 import { AuthManager, MyListClient, type SsoProvider } from '../../nicovideo';
+import { MaintenanceMonitor } from '../../nicovideo/MaintenanceMonitor';
 import { createLogger } from '../../util/Logger';
 import type { IpcHandlerContext } from './context';
 
@@ -92,6 +93,8 @@ export function startSessionCheck(ctx: IpcHandlerContext): void {
       try {
         const ok = await AuthManager.checkLoggedIn();
         if (ok) return;
+        // メンテ中は 503 でログイン確認に失敗するだけ。期限切れ扱いで再ログインや通知を出さない
+        if (MaintenanceMonitor.isActive('video')) return;
         const result = await AuthManager.autoRelogin();
         if (result.ok) {
           log.info('session expired, auto relogin succeeded');

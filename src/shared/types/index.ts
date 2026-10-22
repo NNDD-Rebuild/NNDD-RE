@@ -16,3 +16,4 @@ export * from './ipc';
 export * from './honkeImport';
 export * from './libraryScan';
 export * from './telemetry';
+export * from './maintenance';

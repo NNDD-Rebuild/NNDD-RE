@@ -13,6 +13,7 @@ import { StatsView } from './components/stats/StatsView';
 import { SettingsView } from './components/settings/SettingsView';
 import { LoginArea } from './components/common/LoginArea';
 import { StatusBar } from './components/common/StatusBar';
+import { MaintenanceBanner } from './components/common/MaintenanceBanner';
 import { OpenVideoDialog } from './components/common/OpenVideoDialog';
 import { TelemetryConsentDialog } from './components/telemetry/TelemetryConsentDialog';
 import { trackRenderer } from './util/telemetry';
@@ -179,6 +180,7 @@ export default function App(): JSX.Element {
         ))}
         <LoginArea />
       </div>
+      <MaintenanceBanner />
       <div className="flex-1 overflow-hidden relative">
         {MAIN_TABS.map((tab) => (
           <div
