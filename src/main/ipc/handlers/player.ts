@@ -145,6 +145,10 @@ export function registerPlayerHandlers(): void {
     });
   });
 
+  ipcMain.handle(IpcChannel.PLAYER_WINDOW_KEEP_ACTIVE, (e, enabled: boolean) => {
+    e.sender.setBackgroundThrottling(!enabled);
+  });
+
   ipcMain.handle(IpcChannel.PLAYER_WINDOW_ADJUST_HEIGHT, (e, deltaPx: number) => {
     const win = BrowserWindow.fromWebContents(e.sender);
     const delta = Math.round(Number(deltaPx) || 0);

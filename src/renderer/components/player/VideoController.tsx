@@ -19,10 +19,10 @@ const isLinux = window.electron?.process?.platform === 'linux';
 
 interface Props {
   video: HTMLVideoElement | null;
-  /** 現在Document Picture-in-Picture中かどうか (VideoPlayer の onPipChange で更新した値を渡す) */
-  docPipActive?: boolean;
-  /** Document Picture-in-Picture の開始/終了 (VideoPlayerHandle.togglePip を呼ぶ) */
-  onToggleDocPip?: () => void;
+  /** 現在コメント合成 Picture-in-Picture 中かどうか */
+  pipActive?: boolean;
+  /** コメント合成 Picture-in-Picture の開始/終了。指定時は標準 Picture-in-Picture の代わりにこちらを使う */
+  onTogglePip?: () => void;
   showComments: boolean;
   onToggleComments: () => void;
   onToggleFullscreen?: () => void;
@@ -80,8 +80,8 @@ interface Props {
  */
 export function VideoController({
   video,
-  docPipActive,
-  onToggleDocPip,
+  pipActive,
+  onTogglePip,
   showComments,
   onToggleComments,
   onToggleFullscreen,
@@ -132,9 +132,8 @@ export function VideoController({
   keepRateRef.current = keepRate;
   const lastRateRef = useRef<number | null>(null);
   const [inPip, setInPip] = useState(false);
-  const docPipSupported = typeof window !== 'undefined' && 'documentPictureInPicture' in window;
   const pipSupported =
-    docPipSupported || (typeof document !== 'undefined' && document.pictureInPictureEnabled);
+    !!onTogglePip || (typeof document !== 'undefined' && document.pictureInPictureEnabled);
   const [volumeNormalize] = useConfig<boolean>('player.volumeNormalize', false);
   const [defaultVolume, , defaultVolumeLoading] = useConfig<number>('player.volume', 1);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -368,7 +367,7 @@ export function VideoController({
     if (!isLiveRef.current) lastRateRef.current = r;
   };
 
-  // 標準 video Picture-in-Picture (コメント非対応環境向けフォールバック)
+  // 標準 video Picture-in-Picture (コメント非対応。onTogglePip 未指定の画面向けフォールバック)
   const toggleStandardPip = async (): Promise<void> => {
     if (!video) return;
     try {
@@ -383,14 +382,14 @@ export function VideoController({
   };
 
   const togglePip = (): void => {
-    if (docPipSupported && onToggleDocPip) {
-      onToggleDocPip();
+    if (onTogglePip) {
+      onTogglePip();
       return;
     }
     toggleStandardPip().catch(console.error);
   };
 
-  const displayInPip = docPipSupported && onToggleDocPip ? !!docPipActive : inPip;
+  const displayInPip = onTogglePip ? !!pipActive : inPip;
 
   // シークバーの範囲: 通常は 0〜duration、生放送 (追っかけ再生) はシーク可能範囲
   const barStart = live ? seekStart : 0;
@@ -630,7 +629,7 @@ export function VideoController({
       {!audioOnly && pipSupported && !hidePip && (
         <Btn
           onClick={togglePip}
-          title={docPipSupported && onToggleDocPip ? 'ミニプレイヤー (コメント表示対応)' : 'ミニプレイヤー (Picture-in-Picture)'}
+          title={onTogglePip ? 'ミニプレイヤー (コメント表示対応)' : 'ミニプレイヤー (Picture-in-Picture)'}
         >
           {displayInPip ? '🗗' : '🗖'}
         </Btn>

@@ -104,14 +104,9 @@ export class PlayerManager {
 
     // 概要欄等のリンクを新規BrowserWindowで開こうとするとハンドラ未設定でクラッシュしうるため、
     // 既定の新規ウィンドウ生成を拒否し外部ブラウザで開く。
-    // ただし Document Picture-in-Picture (ミニプレイヤー) は disposition: 'picture-in-picture' で
-    // 来るため、これは許可しないと about:blank が外部ブラウザで開いてしまう。
+    // about:blank 等 (Document Picture-in-Picture は Electron 非対応) は外部に渡さない。
     win.webContents.setWindowOpenHandler((details) => {
-      // Electronの型定義が Document Picture-in-Picture の disposition 値に未対応のためキャスト
-      if ((details.disposition as string) === 'picture-in-picture') {
-        return { action: 'allow' };
-      }
-      void shell.openExternal(details.url);
+      if (/^https?:/i.test(details.url)) void shell.openExternal(details.url);
       return { action: 'deny' };
     });
 

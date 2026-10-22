@@ -1,11 +1,4 @@
-import React, {
-  forwardRef,
-  useEffect,
-  useImperativeHandle,
-  useLayoutEffect,
-  useRef,
-  useState
-} from 'react';
+import React, { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import Hls from 'hls.js';
 import mpegts from 'mpegts.js';
 import type { NNDDREComment } from '@shared/types';
@@ -31,7 +24,7 @@ interface Props {
   onEnded?: () => void;
   /** 音声のみ再生モード (映像非表示) */
   audioOnly?: boolean;
-  /** ミニプレイヤー (Document Picture-in-Picture) のON/OFF通知 */
+  /** コメント合成 Picture-in-Picture のON/OFF通知 */
   onPipChange?: (inPip: boolean) => void;
   /** video要素クリック時のカスタム処理。指定時はデフォルトの再生/一時停止トグルの代わりに呼ばれる
    * (スマホブラウザ版: 1回目のタップで操作バー表示、2回目のタップで再生/一時停止) */
@@ -39,11 +32,12 @@ interface Props {
 }
 
 export interface VideoPlayerHandle {
-  /** Document Picture-in-Picture 対応環境かどうか */
-  pipSupported: boolean;
-  /** video + コメントオーバーレイをまとめてミニプレイヤー化/解除する */
+  /** 映像+コメントを合成した Picture-in-Picture を開始/終了する */
   togglePip: () => Promise<void>;
 }
+
+/** PiP 用に合成する映像の最大幅 (px)。大きいほど綺麗だが合成コストが上がる */
+const PIP_MAX_WIDTH = 1280;
 
 /**
  * 動画プレイヤー本体。
@@ -53,25 +47,22 @@ export interface VideoPlayerHandle {
  *  - mp4/flv のローカル/HTTPは <video> 直接
  *  - 上に CommentOverlay を被せる
  */
-export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer(
-  {
-    src,
-    isHls,
-    comments,
-    commentConfig,
-    loading,
-    videoRefCallback,
-    pendingSeekRef,
-    videoId,
-    className,
-    onVideoError,
-    onEnded,
-    audioOnly,
-    onPipChange,
-    onVideoClick
-  },
-  ref
-) {
+export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPlayer({
+  src,
+  isHls,
+  comments,
+  commentConfig,
+  loading,
+  videoRefCallback,
+  pendingSeekRef,
+  videoId,
+  className,
+  onVideoError,
+  onEnded,
+  audioOnly,
+  onPipChange,
+  onVideoClick
+}: Props, ref) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -83,87 +74,138 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
   onEndedRef.current = onEnded;
   const onPipChangeRef = useRef(onPipChange);
   onPipChangeRef.current = onPipChange;
+  // PiP 中は本画面を「PiP 中」表示にして二重表示を避ける
+  const [inPip, setInPip] = useState(false);
 
-  // Document Picture-in-Picture: containerRef (video + コメントcanvas) をまるごと
-  // 別ウィンドウへ移動する。ノードを移動するだけなので再生状態・WebGLコンテキストは維持される。
-  const pipWindowRef = useRef<Window | null>(null);
-  const pipPlaceholderRef = useRef<Comment | null>(null);
-
-  const restoreFromPip = (closeWindow: boolean): void => {
-    const container = containerRef.current;
-    const placeholder = pipPlaceholderRef.current;
-    if (container && placeholder?.parentNode) {
-      placeholder.parentNode.replaceChild(container, placeholder);
-    }
-    pipPlaceholderRef.current = null;
-    const pipWindow = pipWindowRef.current;
-    pipWindowRef.current = null;
-    if (closeWindow) pipWindow?.close();
-    onPipChangeRef.current?.(false);
-  };
+  // コメント合成 Picture-in-Picture:
+  // Electron は Document PiP を扱えない (ウィンドウが即破棄される) ため、
+  // 映像とコメント canvas を1枚の canvas へ毎フレーム合成し、captureStream した
+  // 非表示 <video> を Chromium 標準の PiP に載せる。音声は元の video がそのまま鳴らす。
+  const pipCleanupRef = useRef<(() => void) | null>(null);
 
   useImperativeHandle(
     ref,
     () => ({
-      pipSupported: typeof window !== 'undefined' && 'documentPictureInPicture' in window,
       togglePip: async () => {
-        const container = containerRef.current;
-        const dpip = window.documentPictureInPicture;
-        if (!container || !dpip) return;
-        if (pipWindowRef.current) {
-          restoreFromPip(true);
+        if (pipCleanupRef.current) {
+          // 終了は proxy の leavepictureinpicture で後始末される
+          if (document.pictureInPictureElement) await document.exitPictureInPicture();
+          else pipCleanupRef.current();
           return;
         }
-        const rect = container.getBoundingClientRect();
-        const pipWindow = await dpip.requestWindow({
-          width: Math.max(240, Math.round(rect.width) || 480),
-          height: Math.max(135, Math.round(rect.height) || 270)
-        });
+        const video = videoRef.current;
+        const container = containerRef.current;
+        if (!video || !container) return;
 
-        // Tailwind等のスタイルをコピーしないと、コメントオーバーレイの絶対配置が崩れる
-        [...document.styleSheets].forEach((styleSheet) => {
-          try {
-            const cssRules = [...styleSheet.cssRules].map((rule) => rule.cssText).join('');
-            const style = pipWindow.document.createElement('style');
-            style.textContent = cssRules;
-            pipWindow.document.head.appendChild(style);
-          } catch {
-            if (styleSheet.href) {
-              const link = pipWindow.document.createElement('link');
-              link.rel = 'stylesheet';
-              link.type = styleSheet.type;
-              link.media = styleSheet.media.mediaText;
-              link.href = styleSheet.href;
-              pipWindow.document.head.appendChild(link);
-            }
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+        const fitSize = (): void => {
+          const vw = video.videoWidth || 1280;
+          const vh = video.videoHeight || 720;
+          const scale = Math.min(1, PIP_MAX_WIDTH / vw);
+          const w = Math.round(vw * scale);
+          const h = Math.round(vh * scale);
+          if (canvas.width !== w || canvas.height !== h) {
+            canvas.width = w;
+            canvas.height = h;
           }
-        });
-        pipWindow.document.body.style.margin = '0';
-        pipWindow.document.body.style.overflow = 'hidden';
-        pipWindow.document.body.style.background = '#000';
+        };
+        fitSize();
 
-        const placeholder = document.createComment('nndd-pip-placeholder');
-        container.parentNode?.insertBefore(placeholder, container);
-        pipPlaceholderRef.current = placeholder;
-        pipWindow.document.body.append(container);
-        pipWindowRef.current = pipWindow;
+        let stopped = false;
+        let rafId: number | null = null;
+        const draw = (): void => {
+          if (stopped) return;
+          fitSize();
+          ctx.fillStyle = '#000';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          if (!audioOnly && video.readyState >= 2) {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          }
+          // コメント canvas は映像の描画矩形に合わせて配置されているため、全面に重ねればよい
+          container.querySelectorAll('canvas').forEach((c) => {
+            if (c.style.visibility === 'hidden' || c.width === 0 || c.height === 0) return;
+            ctx.globalAlpha = parseFloat(c.style.opacity || '1') || 1;
+            try {
+              ctx.drawImage(c, 0, 0, canvas.width, canvas.height);
+            } catch {
+              /* コンテキストロスト中などは次フレームで再試行 */
+            }
+            ctx.globalAlpha = 1;
+          });
+          // コメントの WebGL canvas は描画と同じフレーム内でないと読めないことがあるため rAF で回す
+          rafId = requestAnimationFrame(draw);
+        };
+
+        const proxy = document.createElement('video');
+        proxy.muted = true;
+        proxy.playsInline = true;
+        // PiP に載せるだけで画面には出さない
+        proxy.style.cssText =
+          'position:fixed;left:0;top:0;width:2px;height:2px;opacity:0;pointer-events:none;';
+
+        const session = 'mediaSession' in navigator ? navigator.mediaSession : null;
+        const syncState = (): void => {
+          if (session) session.playbackState = video.paused ? 'paused' : 'playing';
+        };
+        const cleanup = (): void => {
+          if (stopped) return;
+          stopped = true;
+          if (rafId !== null) cancelAnimationFrame(rafId);
+          video.removeEventListener('play', syncState);
+          video.removeEventListener('pause', syncState);
+          if (session) {
+            session.setActionHandler('play', null);
+            session.setActionHandler('pause', null);
+            session.playbackState = 'none';
+          }
+          proxy.srcObject = null;
+          proxy.remove();
+          pipCleanupRef.current = null;
+          void window.nndd.invoke(window.nndd.channels.PLAYER_WINDOW_KEEP_ACTIVE, false).catch(() => {});
+          setInPip(false);
+          onPipChangeRef.current?.(false);
+        };
+        pipCleanupRef.current = cleanup;
+
+        try {
+          // メイン窓を最小化しても合成・コメント描画が止まらないようにする
+          await window.nndd.invoke(window.nndd.channels.PLAYER_WINDOW_KEEP_ACTIVE, true);
+          draw();
+          proxy.srcObject = canvas.captureStream(30);
+          document.body.appendChild(proxy);
+          await proxy.play();
+          proxy.addEventListener('leavepictureinpicture', cleanup, { once: true });
+          await proxy.requestPictureInPicture();
+        } catch (e) {
+          const err = e as { name?: string; message?: string };
+          console.warn(`Picture-in-Picture failed: ${err.name}: ${err.message}`);
+          cleanup();
+          return;
+        }
+
+        // PiP 窓の再生/一時停止ボタンを元の video に繋ぐ
+        if (session) {
+          session.setActionHandler('play', () => { void video.play(); });
+          session.setActionHandler('pause', () => { video.pause(); });
+          video.addEventListener('play', syncState);
+          video.addEventListener('pause', syncState);
+          syncState();
+        }
+        setInPip(true);
         onPipChangeRef.current?.(true);
-
-        pipWindow.addEventListener('pagehide', () => restoreFromPip(false), { once: true });
       }
     }),
-    []
+    [audioOnly]
   );
 
-  // アンマウント時、PiP中なら物理DOM位置を先に元へ戻してからReact側の削除を通す。
-  // useLayoutEffect のクリーンアップはReactが自身のDOM除去処理を行う前に同期実行されるため、
-  // これを怠ると「PiPウィンドウにある要素を、実際の親ではない場所からremoveChildしようとして
-  // 例外になる」事故を防げる。
-  useLayoutEffect(() => {
+  // アンマウント時に PiP を閉じる
+  useEffect(() => {
     return () => {
-      if (pipWindowRef.current) restoreFromPip(true);
+      pipCleanupRef.current?.();
+      if (document.pictureInPictureElement) void document.exitPictureInPicture().catch(() => {});
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- アンマウント時に一度だけ実行するクリーンアップ
   }, []);
 
   useEffect(() => {
@@ -353,13 +395,13 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
 
   // 動画の読み込み後、映像の比に合わせてウィンドウの縦幅を調整し上下の黒帯をなくす。
   // 幅は変えない (ユーザーが決めた幅と、横のコメント一覧の幅を尊重)。
-  // 全画面・最大化中は main 側で何もしない。音声のみ・PiP 中は対象外。
+  // 全画面・最大化・ミニモード中は main 側で何もしない。音声のみは対象外。
   useEffect(() => {
     const video = videoRef.current;
     if (!video || audioOnly) return;
     const fit = (): void => {
       const container = containerRef.current;
-      if (!container || pipWindowRef.current) return;
+      if (!container) return;
       const { videoWidth: vw, videoHeight: vh } = video;
       const w = container.clientWidth;
       const h = container.clientHeight;
@@ -383,6 +425,9 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
         className="w-full h-full bg-black"
         style={audioOnly ? { display: 'none' } : undefined}
         playsInline
+        // ローカル再生 (ループバックHTTP配信) は crossOrigin が無いと canvas が tainted になり、
+        // PiP 用の合成 canvas を captureStream できない。StreamServer が CORS 許可を返す。
+        crossOrigin={/^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])[:/]/i.test(src) ? 'anonymous' : undefined}
         autoPlay
         controls={false}
         onClick={() => {
@@ -404,6 +449,18 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
       {(loading || error) && (
         <div className="absolute inset-0 flex items-center justify-center text-white bg-black/70 text-sm">
           {error ?? '読み込み中...'}
+        </div>
+      )}
+      {inPip && (
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-black text-nndd-subtext">
+          <div className="text-sm">ピクチャーインピクチャーで再生中</div>
+          <button
+            type="button"
+            onClick={() => { void document.exitPictureInPicture().catch(() => {}); }}
+            className="px-3 py-1 text-xs rounded border border-nndd-border hover:text-nndd-text"
+          >
+            ここに戻す
+          </button>
         </div>
       )}
     </div>

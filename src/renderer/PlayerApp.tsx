@@ -86,7 +86,7 @@ export default function PlayerApp(): JSX.Element {
     setVideo(el);
   };
   const videoPlayerRef = useRef<VideoPlayerHandle>(null);
-  const [docPipActive, setDocPipActive] = useState(false);
+  const [pipActive, setPipActive] = useState(false);
   const [isLocal, setIsLocal] = useState(false);
   const isLocalRef = useRef(false);
   const [localCommentXmlPath, setLocalCommentXmlPath] = useState<string | undefined>(undefined);
@@ -750,7 +750,7 @@ export default function PlayerApp(): JSX.Element {
                   commentConfig={commentConfig}
                   ref={videoPlayerRef}
                   videoRefCallback={setVideoWithRef}
-                  onPipChange={setDocPipActive}
+                  onPipChange={setPipActive}
                   pendingSeekRef={pendingSeekRef}
                   loading={loading && !src}
                   videoId={watch?.videoId ?? playInfoRef.current?.videoId}
@@ -810,8 +810,8 @@ export default function PlayerApp(): JSX.Element {
               <VideoController
                 video={video}
                 isLocal={isLocal}
-                docPipActive={docPipActive}
-                onToggleDocPip={() => { videoPlayerRef.current?.togglePip().catch(console.error); }}
+                pipActive={pipActive}
+                onTogglePip={isWebPlayer ? undefined : () => { videoPlayerRef.current?.togglePip().catch(console.error); }}
                 showComments={showComments}
                 onToggleComments={() => setShowComments((v) => !v)}
                 onToggleFullscreen={toggleFullscreen}
