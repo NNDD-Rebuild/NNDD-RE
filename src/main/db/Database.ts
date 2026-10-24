@@ -144,6 +144,22 @@ export class NnddDatabase {
         // 既にカラムあり — 無視
       }
     }
+    // v14 → v15: nico_watch_history を (videoId, watchedAt) 単位に変更 (同じ動画を複数回見た履歴を本家と同じく別項目で持つ)。
+    // 本家は保存期間 (一般30日 / プレミアム180日) を過ぎた履歴を消すので、ローカルにしか無い古い履歴を失わないよう既存行は引き継ぐ
+    if (Number(from) <= 14) {
+      const cols = this.db.prepare(`PRAGMA table_info(nico_watch_history);`).all() as { name: string }[];
+      if (cols.length > 0 && !cols.some((c) => c.name === 'id')) {
+        this.db.exec(`ALTER TABLE nico_watch_history RENAME TO nico_watch_history_old;`);
+        const create = CREATE_TABLES.find((sql) => sql.includes('CREATE TABLE IF NOT EXISTS nico_watch_history'));
+        if (create) this.db.exec(create);
+        this.db.exec(
+          `INSERT OR IGNORE INTO nico_watch_history (videoId, title, thumbnailUrl, watchedAt, fetchedAt)
+           SELECT videoId, title, thumbnailUrl, COALESCE(watchedAt, 0), fetchedAt FROM nico_watch_history_old;`
+        );
+        this.db.exec(`DROP TABLE nico_watch_history_old;`);
+        log.info('migrated nico_watch_history to (videoId, watchedAt) key');
+      }
+    }
   }
 
   /** プリペアドステートメントの取得 */

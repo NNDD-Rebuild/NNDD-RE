@@ -131,6 +131,11 @@ export function registerLibraryHandlers(ctx: IpcHandlerContext): void {
     return library.historyDao.list(limit ?? 1000);
   });
 
+  ipcMain.handle(IpcChannel.HISTORY_REMOVE, (_e, id: number) => {
+    library.historyDao.remove(id);
+    return true;
+  });
+
   ipcMain.handle(IpcChannel.HISTORY_CLEAR, () => {
     library.historyDao.clear();
     return true;
@@ -162,12 +167,23 @@ export function registerLibraryHandlers(ctx: IpcHandlerContext): void {
 
   // --- ニコニコ動画本家 視聴履歴 ---
   ipcMain.handle(IpcChannel.NICO_HISTORY_LIST, () => {
-    return library.nicoWatchHistoryDao.list(1000);
+    return library.nicoWatchHistoryDao.list(3000);
   });
 
   ipcMain.handle(IpcChannel.NICO_HISTORY_SYNC, async () => {
-    await NicoHistoryClient.syncOnStartup(library.nicoWatchHistoryDao);
-    return library.nicoWatchHistoryDao.list(1000);
+    await NicoHistoryClient.syncFull(library.nicoWatchHistoryDao);
+    return library.nicoWatchHistoryDao.list(3000);
+  });
+
+  ipcMain.handle(IpcChannel.NICO_HISTORY_REMOVE, async (_e, videoId: string) => {
+    try {
+      await NicoHistoryClient.removeItem(videoId);
+    } catch (e) {
+      // ブラウザ等で既に消されている場合は本家側が無い扱いなので、ローカルだけ消して続行する
+      if ((e as { httpStatus?: number }).httpStatus !== 404) throw e;
+    }
+    library.nicoWatchHistoryDao.remove(videoId);
+    return library.nicoWatchHistoryDao.list(3000);
   });
 
   ipcMain.handle(IpcChannel.WATCHED_CHECK_BATCH, (_e, videoIds: string[]) => {

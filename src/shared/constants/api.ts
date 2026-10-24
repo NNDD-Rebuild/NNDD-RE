@@ -145,6 +145,9 @@ export const NicoEndpoint = {
   videosByIds: (ids: string) => `${NicoApi.NVAPI_BASE}/v1/videos?ids=${enc(ids)}`,
   /** 視聴履歴 */
   watchHistory: (query: Query) => `${NicoApi.NVAPI_BASE}/v2/users/me/watch/history?${query}`,
+  /** 視聴履歴の1件削除 (DELETE、ボディなし)。ブラウザ版の「視聴履歴から削除」と同じ */
+  watchHistoryDelete: (videoId: string) =>
+    `${NicoApi.NVAPI_BASE}/v2/users/me/watch/history?target=${enc(videoId)}`,
   /** シリーズ (動画一覧つき) */
   series: (seriesId: string, pageSize: number, page: number) =>
     `${NicoApi.NVAPI_BASE}/v2/series/${enc(seriesId)}?pageSize=${pageSize}&page=${page}`,

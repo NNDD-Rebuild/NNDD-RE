@@ -22,6 +22,7 @@ export class HistoryDao {
   list(limit = 1000): HistoryItem[] {
     const rows = this.db.prepare(Q.SELECT_HISTORY).all(limit) as HistoryRow[];
     return rows.map((r) => ({
+      id: r.id,
       videoId: r.videoId,
       title: r.title,
       thumbnailUrl: r.thumbnailUrl,
@@ -55,6 +56,11 @@ export class HistoryDao {
         item.isLocal ? 1 : 0,
         item.watchSeconds ?? 0
       );
+  }
+
+  /** 1件削除 (history.id 指定) */
+  remove(id: number): void {
+    this.db.prepare(Q.DELETE_HISTORY_BY_ID).run(id);
   }
 
   clear(): void {

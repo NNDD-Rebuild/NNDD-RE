@@ -139,11 +139,15 @@ export const IpcChannel = {
   HISTORY_LIST: 'nndd:history:list',
   HISTORY_ADD: 'nndd:history:add',
   HISTORY_CLEAR: 'nndd:history:clear',
+  /** アプリ内履歴を1件削除 (history.id 指定) */
+  HISTORY_REMOVE: 'nndd:history:remove',
 
   // ニコニコ動画本家 視聴履歴
   NICO_HISTORY_LIST: 'nndd:nicoHistory:list',
   /** 本家APIへ差分取得しに行きDBへ反映してから最新件数を返す (履歴タブの手動更新ボタン用) */
   NICO_HISTORY_SYNC: 'nndd:nicoHistory:sync',
+  /** 本家APIで視聴履歴を1件削除し、成功したらローカルキャッシュからも消す */
+  NICO_HISTORY_REMOVE: 'nndd:nicoHistory:remove',
   /** アプリ内history + ニコ動本家履歴の両方をORで判定するバッチ照合 (再生済みバッジ用) */
   WATCHED_CHECK_BATCH: 'nndd:nicoHistory:watchedCheckBatch',
 

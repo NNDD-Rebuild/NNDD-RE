@@ -6,7 +6,7 @@
  * 既存のオフライン NNDD ライブラリ DB をそのまま読み込めるようにする。
  */
 
-export const DB_SCHEMA_VERSION = '14';
+export const DB_SCHEMA_VERSION = '15';
 
 export const CREATE_TABLES = [
   /* NNDDREVideo - 動画本体 */
@@ -193,11 +193,13 @@ export const CREATE_TABLES = [
 
   /* ニコニコ動画本家 (公式サイト) 側の視聴履歴。アプリ内history (自前計測) とは別出所 */
   `CREATE TABLE IF NOT EXISTS nico_watch_history (
-    videoId TEXT PRIMARY KEY,
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    videoId TEXT NOT NULL,
     title TEXT,
     thumbnailUrl TEXT,
-    watchedAt REAL,
-    fetchedAt REAL
+    watchedAt REAL NOT NULL DEFAULT 0,
+    fetchedAt REAL,
+    UNIQUE (videoId, watchedAt)
   );`
 ];
 
@@ -293,6 +295,7 @@ export const Q = {
     INSERT INTO history (videoId, title, thumbnailUrl, watchedAt, isLocal, watchSeconds)
     VALUES (?, ?, ?, ?, ?, ?);`,
   DELETE_HISTORY: `DELETE FROM history;`,
+  DELETE_HISTORY_BY_ID: `DELETE FROM history WHERE id = ?;`,
 
   // スケジュール
   SELECT_SCHEDULES: `SELECT * FROM schedule;`,
@@ -383,10 +386,15 @@ export const Q = {
 
   // ニコニコ動画本家 視聴履歴
   SELECT_NICO_WATCH_HISTORY: `SELECT * FROM nico_watch_history ORDER BY watchedAt DESC LIMIT ?;`,
-  SELECT_NICO_WATCH_HISTORY_VIDEO_IDS: `SELECT videoId FROM nico_watch_history;`,
+  SELECT_NICO_WATCH_HISTORY_KEYS: `SELECT id, videoId, watchedAt FROM nico_watch_history;`,
   SELECT_NICO_WATCH_HISTORY_EXISTS: `SELECT 1 FROM nico_watch_history WHERE videoId = ?;`,
   UPSERT_NICO_WATCH_HISTORY: `
-    INSERT OR REPLACE INTO nico_watch_history (videoId, title, thumbnailUrl, watchedAt, fetchedAt)
-    VALUES (?, ?, ?, ?, ?);`,
-  DELETE_NICO_WATCH_HISTORY: `DELETE FROM nico_watch_history;`
+    INSERT INTO nico_watch_history (videoId, title, thumbnailUrl, watchedAt, fetchedAt)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT (videoId, watchedAt) DO UPDATE SET
+      title = excluded.title, thumbnailUrl = excluded.thumbnailUrl, fetchedAt = excluded.fetchedAt;`,
+  DELETE_NICO_WATCH_HISTORY: `DELETE FROM nico_watch_history;`,
+  DELETE_NICO_WATCH_HISTORY_BY_VIDEO_ID: `DELETE FROM nico_watch_history WHERE videoId = ?;`,
+  /** 本家の履歴に無くなった項目の掃除用 */
+  DELETE_NICO_WATCH_HISTORY_BY_ID: `DELETE FROM nico_watch_history WHERE id = ?;`
 } as const;

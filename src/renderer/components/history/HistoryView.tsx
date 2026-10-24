@@ -3,8 +3,18 @@ import type { HistoryItem, NicoWatchHistoryItem, ResumePosition } from '@shared/
 import { IpcChannel } from '@shared/types';
 import { watchUrl } from '@shared/utils/nicoUrl';
 import { useAppStore } from '@renderer/store/useAppStore';
+import { ContextMenuPopup, MenuItem } from '@renderer/components/common/VideoCard';
 
 type HistorySource = 'app' | 'nico';
+
+interface HistoryMenu {
+  x: number;
+  y: number;
+  videoId: string;
+  /** アプリ内履歴の行ID。ニコ動履歴では undefined */
+  id?: number;
+  source: HistorySource;
+}
 
 /**
  * 履歴タブ。
@@ -19,6 +29,7 @@ export function HistoryView(): JSX.Element {
   const [resumes, setResumes] = useState<Record<string, ResumePosition>>({});
   const [nicoItems, setNicoItems] = useState<NicoWatchHistoryItem[]>([]);
   const [nicoLoaded, setNicoLoaded] = useState(false);
+  const [menu, setMenu] = useState<HistoryMenu | null>(null);
 
   const reload = (): void => {
     window.nndd
@@ -65,6 +76,30 @@ export function HistoryView(): JSX.Element {
   const handleClear = async (): Promise<void> => {
     await window.nndd.invoke(window.nndd.channels.HISTORY_CLEAR);
     reload();
+  };
+
+  const handleContextMenu = (e: React.MouseEvent, m: Omit<HistoryMenu, 'x' | 'y'>): void => {
+    e.preventDefault();
+    setMenu({ x: e.clientX, y: e.clientY, ...m });
+  };
+
+  const handleRemove = async (m: HistoryMenu): Promise<void> => {
+    setMenu(null);
+    if (m.source === 'app') {
+      if (m.id === undefined) return;
+      await window.nndd.invoke(window.nndd.channels.HISTORY_REMOVE, m.id);
+      reload();
+      return;
+    }
+    try {
+      const list = await window.nndd.invoke<NicoWatchHistoryItem[]>(
+        window.nndd.channels.NICO_HISTORY_REMOVE,
+        m.videoId
+      );
+      setNicoItems(list);
+    } catch (err) {
+      window.alert(`ニコ動履歴の削除に失敗しました: ${err instanceof Error ? err.message : String(err)}`);
+    }
   };
 
   const handlePlay = (videoId: string): void => {
@@ -135,7 +170,12 @@ export function HistoryView(): JSX.Element {
                 {items.map((it, i) => {
                   const resume = resumes[it.videoId];
                   return (
-                  <tr key={i} onDoubleClick={() => handlePlay(it.videoId)} className="cursor-pointer">
+                  <tr
+                    key={i}
+                    onDoubleClick={() => handlePlay(it.videoId)}
+                    onContextMenu={(e) => handleContextMenu(e, { videoId: it.videoId, id: it.id, source: 'app' })}
+                    className="cursor-pointer"
+                  >
                     <td>
                       {it.title}
                       {resume && resume.durationSec > 0 && (
@@ -194,7 +234,12 @@ export function HistoryView(): JSX.Element {
             </thead>
             <tbody>
               {nicoItems.map((it, i) => (
-                <tr key={i} onDoubleClick={() => handlePlay(it.videoId)} className="cursor-pointer">
+                <tr
+                  key={i}
+                  onDoubleClick={() => handlePlay(it.videoId)}
+                  onContextMenu={(e) => handleContextMenu(e, { videoId: it.videoId, source: 'nico' })}
+                  className="cursor-pointer"
+                >
                   <td>{it.title}</td>
                   <td>{it.videoId}</td>
                   <td>{it.watchedAt ? new Date(it.watchedAt).toLocaleString('ja-JP') : '-'}</td>
@@ -222,6 +267,15 @@ export function HistoryView(): JSX.Element {
           </table>
         )}
       </div>
+      {menu && (
+        <ContextMenuPopup x={menu.x} y={menu.y} onClose={() => setMenu(null)}>
+          <MenuItem onClick={() => { setMenu(null); handlePlay(menu.videoId); }}>▶ 再生</MenuItem>
+          <MenuItem onClick={() => { setMenu(null); handleOpenNiconico(menu.videoId); }}>ニコニコ動画で開く</MenuItem>
+          <MenuItem onClick={() => void handleRemove(menu)}>
+            {menu.source === 'app' ? '履歴から削除' : 'ニコ動履歴から削除'}
+          </MenuItem>
+        </ContextMenuPopup>
+      )}
     </div>
   );
 }

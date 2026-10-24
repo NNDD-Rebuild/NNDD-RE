@@ -24,6 +24,8 @@ export interface PlayListItem {
  * 視聴履歴項目
  */
 export interface HistoryItem {
+  /** history テーブルの行ID (DBから取得した項目のみ) */
+  id?: number;
   videoId: string;
   title: string;
   thumbnailUrl: string;
