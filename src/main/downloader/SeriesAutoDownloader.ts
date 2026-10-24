@@ -22,10 +22,12 @@ export class SeriesAutoDownloader {
    * 指定シリーズを更新し、新規動画があれば DL キューに追加する。
    * @param seriesId シリーズID (数字文字列またはURL)
    * @param saveDir DL完了後の保存先サブディレクトリ (省略時はデフォルト)
+   * @param makeSubfolder true ならシリーズ名のサブフォルダに保存する
    */
   async renew(
     seriesId: string,
-    saveDir?: string
+    saveDir?: string,
+    makeSubfolder = false
   ): Promise<{ fetched: number; queued: number }> {
     const { items, name } = await SeriesClient.fetchAllVideos(seriesId);
     let queued = 0;
@@ -39,7 +41,12 @@ export class SeriesAutoDownloader {
 
     for (const item of items) {
       if (knownKeys.has(item.videoId)) continue;
-      this.downloader.enqueue({ videoId: item.videoId, saveDir, source: 'series_auto' });
+      this.downloader.enqueue({
+        videoId: item.videoId,
+        saveDir,
+        subDir: makeSubfolder ? name : undefined,
+        source: 'series_auto'
+      });
       queued++;
     }
 

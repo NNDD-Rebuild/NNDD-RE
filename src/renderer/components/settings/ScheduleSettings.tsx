@@ -55,6 +55,7 @@ export function ScheduleSettings(): JSX.Element {
       daysOfWeek: [1, 2, 3, 4, 5], // 月-金
       time: '03:00',
       enabled: true,
+      makeSubfolder: false,
       lastRun: null
     });
   };
@@ -246,6 +247,12 @@ export function ScheduleSettings(): JSX.Element {
               className="bg-nndd-bg border border-nndd-border rounded px-2 py-1 text-sm"
             />
           </Row>
+          <CheckRow
+            checked={editing.makeSubfolder}
+            onChange={(v) => setEditing({ ...editing, makeSubfolder: v })}
+            label="対象の名前でフォルダを作成して保存"
+            hint="マイリスト名 / シリーズ名 / 投稿者名のサブフォルダに保存します"
+          />
           <CheckRow
             checked={editing.enabled}
             onChange={(v) => setEditing({ ...editing, enabled: v })}

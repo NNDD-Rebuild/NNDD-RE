@@ -12,6 +12,7 @@ interface ScheduleRow {
   time: string;
   enabled: number;
   lastRun: number | null;
+  makeSubfolder: number | null;
 }
 
 /**
@@ -32,6 +33,7 @@ export class ScheduleDao {
       daysOfWeek: r.daysOfWeek.split(',').filter((x) => x).map(Number),
       time: r.time,
       enabled: r.enabled === 1,
+      makeSubfolder: r.makeSubfolder === 1,
       lastRun: r.lastRun ? new Date(r.lastRun * 1000) : null
     }));
   }
@@ -48,7 +50,8 @@ export class ScheduleDao {
         s.daysOfWeek.join(','),
         s.time,
         s.enabled ? 1 : 0,
-        s.lastRun ? s.lastRun.getTime() / 1000 : null
+        s.lastRun ? s.lastRun.getTime() / 1000 : null,
+        s.makeSubfolder ? 1 : 0
       );
   }
 

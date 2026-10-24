@@ -4,6 +4,7 @@ import { LibraryManager } from '../db/LibraryManager';
 import { MyListAutoDownloader } from './MyListAutoDownloader';
 import { SeriesAutoDownloader } from './SeriesAutoDownloader';
 import { FollowUserAutoDownloader } from './FollowUserAutoDownloader';
+import { FollowFeedClient } from '../nicovideo/follow/FollowFeedClient';
 import { createLogger } from '../util/Logger';
 
 const log = createLogger('Scheduler');
@@ -82,6 +83,16 @@ export class ScheduleManager {
     return new Date(s.lastRun) < latest;
   }
 
+  /** フォロー中ユーザーの表示名を取得する (取れなければユーザーIDを返す) */
+  private async resolveUserName(userId: string): Promise<string> {
+    try {
+      const users = await FollowFeedClient.fetchUsers(100);
+      return users.find((u) => u.id === userId)?.nickname || userId;
+    } catch {
+      return userId;
+    }
+  }
+
   private async execute(s: Schedule, now: Date): Promise<void> {
     const targetType = s.targetType || ScheduleTargetType.MYLIST;
     log.info(`executing schedule: ${s.name} (${targetType})`);
@@ -93,7 +104,7 @@ export class ScheduleManager {
             log.warn(`schedule target series id missing: ${s.name}`);
             return;
           }
-          const r = await this.seriesDownloader.renew(s.targetId);
+          const r = await this.seriesDownloader.renew(s.targetId, undefined, s.makeSubfolder);
           log.info(`schedule done: ${s.name} fetched=${r.fetched} queued=${r.queued}`);
           return;
         }
@@ -102,7 +113,12 @@ export class ScheduleManager {
             log.warn(`schedule target user id missing: ${s.name}`);
             return;
           }
-          const r = await this.followUserDownloader.renew(s.targetId);
+          const r = await this.followUserDownloader.renew(
+            s.targetId,
+            undefined,
+            undefined,
+            s.makeSubfolder ? await this.resolveUserName(s.targetId) : undefined
+          );
           log.info(`schedule done: ${s.name} fetched=${r.fetched} queued=${r.queued}`);
           return;
         }
@@ -115,7 +131,7 @@ export class ScheduleManager {
             log.warn(`schedule target mylist not found: ${s.targetMyListUrl}`);
             return;
           }
-          const r = await this.mylistDownloader.renew(myList);
+          const r = await this.mylistDownloader.renew(myList, true, s.makeSubfolder);
           log.info(`schedule done: ${s.name} fetched=${r.fetched} queued=${r.queued}`);
           return;
         }

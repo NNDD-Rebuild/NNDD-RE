@@ -122,6 +122,8 @@ export interface Schedule {
   time: string;
   /** 有効か */
   enabled: boolean;
+  /** true なら保存先に対象の名前 (マイリスト名/シリーズ名/投稿者名) のサブフォルダを作る */
+  makeSubfolder: boolean;
   /** 最終実行 */
   lastRun: Date | null;
 }

@@ -194,7 +194,8 @@ export class BackupManager {
         targetId: s.targetId,
         daysOfWeek: s.daysOfWeek,
         time: s.time,
-        enabled: s.enabled
+        enabled: s.enabled,
+        makeSubfolder: s.makeSubfolder
       }));
     }
 
@@ -305,6 +306,7 @@ export class BackupManager {
             daysOfWeek: s.daysOfWeek,
             time: s.time,
             enabled: s.enabled,
+            makeSubfolder: s.makeSubfolder ?? false,
             lastRun: null
           });
         }

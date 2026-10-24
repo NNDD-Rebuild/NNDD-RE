@@ -160,6 +160,15 @@ export class NnddDatabase {
         log.info('migrated nico_watch_history to (videoId, watchedAt) key');
       }
     }
+    // v15 → v16: schedule に makeSubfolder カラム追加 (自動DLで対象名のサブフォルダを作る)
+    if (Number(from) <= 15) {
+      try {
+        this.db.exec(`ALTER TABLE schedule ADD COLUMN makeSubfolder INTEGER DEFAULT 0;`);
+        log.info('added schedule.makeSubfolder column');
+      } catch {
+        // 既にカラムあり — 無視
+      }
+    }
   }
 
   /** プリペアドステートメントの取得 */

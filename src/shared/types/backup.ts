@@ -96,6 +96,7 @@ export interface BackupPayload {
     daysOfWeek: number[];
     time: string;
     enabled: boolean;
+    makeSubfolder?: boolean;
   }>;
   /** 保存検索 */
   savedSearch?: SearchItem[];

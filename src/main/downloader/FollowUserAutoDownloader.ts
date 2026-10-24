@@ -21,11 +21,13 @@ export class FollowUserAutoDownloader {
    * @param userId ニコニコユーザーID
    * @param limit 取得件数 (新着上位N件を確認)
    * @param saveDir DL完了後の保存先サブディレクトリ (省略時はデフォルト)
+   * @param subDir saveDir 配下に作るサブフォルダ名 (投稿者名など。省略時は作らない)
    */
   async renew(
     userId: string,
     limit = 20,
-    saveDir?: string
+    saveDir?: string,
+    subDir?: string
   ): Promise<{ fetched: number; queued: number }> {
     const user: FollowingUser = { id: userId, nickname: userId, iconUrl: '' };
     const { items } = await FollowFeedClient.fetchFeed(limit, undefined, user, 1);
@@ -40,7 +42,7 @@ export class FollowUserAutoDownloader {
 
     for (const item of items) {
       if (knownKeys.has(item.videoId)) continue;
-      this.downloader.enqueue({ videoId: item.videoId, saveDir, source: 'follow_auto' });
+      this.downloader.enqueue({ videoId: item.videoId, saveDir, subDir, source: 'follow_auto' });
       queued++;
     }
 

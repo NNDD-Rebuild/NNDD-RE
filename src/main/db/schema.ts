@@ -6,7 +6,7 @@
  * 既存のオフライン NNDD ライブラリ DB をそのまま読み込めるようにする。
  */
 
-export const DB_SCHEMA_VERSION = '15';
+export const DB_SCHEMA_VERSION = '16';
 
 export const CREATE_TABLES = [
   /* NNDDREVideo - 動画本体 */
@@ -90,7 +90,8 @@ export const CREATE_TABLES = [
     daysOfWeek TEXT,
     time TEXT,
     enabled INTEGER,
-    lastRun REAL
+    lastRun REAL,
+    makeSubfolder INTEGER DEFAULT 0
   );`,
 
   /* 保存検索 */
@@ -301,8 +302,8 @@ export const Q = {
   SELECT_SCHEDULES: `SELECT * FROM schedule;`,
   INSERT_SCHEDULE: `
     INSERT OR REPLACE INTO schedule
-      (id, name, targetType, targetMyListUrl, targetId, daysOfWeek, time, enabled, lastRun)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+      (id, name, targetType, targetMyListUrl, targetId, daysOfWeek, time, enabled, lastRun, makeSubfolder)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
   DELETE_SCHEDULE: `DELETE FROM schedule WHERE id = ?;`,
   DELETE_ALL_SCHEDULE: `DELETE FROM schedule;`,
 

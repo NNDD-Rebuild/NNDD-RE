@@ -29,9 +29,10 @@ export class MyListAutoDownloader {
   /**
    * 1つのマイリストを更新し、新規動画があれば DL キューに追加する。
    * @param enqueue false なら一覧の再取得と未再生数の更新だけ行い、DL キューには追加しない
+   * @param makeSubfolder true ならマイリスト名のサブフォルダに保存する
    * @returns { fetched: 取得した動画数, queued: DLキューに追加した数 }
    */
-  async renew(myList: MyList, enqueue = true): Promise<{ fetched: number; queued: number }> {
+  async renew(myList: MyList, enqueue = true, makeSubfolder = false): Promise<{ fetched: number; queued: number }> {
     const items = await this.fetchAllItems(myList);
     let queued = 0;
 
@@ -45,7 +46,11 @@ export class MyListAutoDownloader {
 
     for (const item of enqueue ? items : []) {
       if (knownKeys.has(item.videoId)) continue;
-      this.downloader.enqueue({ videoId: item.videoId, source: 'mylist_auto' });
+      this.downloader.enqueue({
+        videoId: item.videoId,
+        subDir: makeSubfolder ? myList.myListName : undefined,
+        source: 'mylist_auto'
+      });
       queued++;
     }
 
