@@ -6,10 +6,16 @@ import { userUrl, watchUrl } from '@shared/utils/nicoUrl';
 import { ContextMenuPopup, MenuItem } from '../../common/VideoCard';
 import { descriptionLinkUrl, openDescriptionUrl, sanitizeDescription } from './description';
 
+interface CopyMenu {
+  x: number;
+  y: number;
+  items: { label: string; text?: string; onClick?: () => void }[];
+}
+
 /** 動画情報タブ: タイトル・投稿者・チャンネル・タグ・説明文 */
 export function InfoContent({ watch, ichibaHtmlPath }: { watch: WatchPageInfo | null; ichibaHtmlPath?: string }): JSX.Element {
   const [openVideoLinkInPlayer] = useConfig<boolean>('player.openVideoLinkInPlayer', false);
-  const [ownerCtxMenu, setOwnerCtxMenu] = useState<{ x: number; y: number } | null>(null);
+  const [ctxMenu, setCtxMenu] = useState<CopyMenu | null>(null);
 
   if (!watch) {
     return (
@@ -29,9 +35,19 @@ export function InfoContent({ watch, ichibaHtmlPath }: { watch: WatchPageInfo | 
 
   const nicoUrl = watchUrl(watch.videoId);
 
+  const openCopyMenu = (e: React.MouseEvent, items: CopyMenu['items']): void => {
+    e.preventDefault();
+    setCtxMenu({ x: e.clientX, y: e.clientY, items });
+  };
+
   return (
     <div className="overflow-auto h-full p-3 text-sm text-nndd-text">
-      <h1 className="text-base font-bold mb-1">{watch.title}</h1>
+      <h1
+        className="text-base font-bold mb-1"
+        onContextMenu={(e) => openCopyMenu(e, [{ label: '📋 タイトルをコピー', text: watch.title }])}
+      >
+        {watch.title}
+      </h1>
       <div className="text-xs text-nndd-subtext mb-1">
         投稿: {watch.registeredAt} ・ 再生 {watch.count.view.toLocaleString()} ・
         コメ {watch.count.comment.toLocaleString()} ・ マイリス{' '}
@@ -43,6 +59,10 @@ export function InfoContent({ watch, ichibaHtmlPath }: { watch: WatchPageInfo | 
           onClick={() => window.nndd.invoke(window.nndd.channels.SYS_OPEN_PATH, nicoUrl)}
           className="text-nndd-accent underline hover:opacity-80"
           title={nicoUrl}
+          onContextMenu={(e) => openCopyMenu(e, [
+            { label: '📋 動画IDをコピー', text: watch.videoId },
+            { label: '📋 動画URLをコピー', text: nicoUrl }
+          ])}
         >
           {watch.videoId} →ニコニコで見る
         </button>
@@ -80,33 +100,21 @@ export function InfoContent({ watch, ichibaHtmlPath }: { watch: WatchPageInfo | 
               })
             }
             onContextMenu={(e) => {
-              e.preventDefault();
-              setOwnerCtxMenu({ x: e.clientX, y: e.clientY });
+              openCopyMenu(e, [
+                { label: '📋 ユーザー名をコピー', text: watch.owner!.nickname },
+                { label: '📋 ユーザーIDをコピー', text: String(watch.owner!.id) },
+                {
+                  label: '🌐 ユーザーページを開く',
+                  onClick: () =>
+                    window.nndd.invoke(window.nndd.channels.SYS_OPEN_PATH, userUrl(watch.owner!.id))
+                }
+              ]);
             }}
             className="text-sm hover:text-nndd-accent hover:underline"
             title="クリック: フォロー中タブでこの投稿者の動画を表示 (右クリックでメニュー)"
           >
             {watch.owner.nickname}
           </button>
-          {ownerCtxMenu && (
-            <ContextMenuPopup
-              x={ownerCtxMenu.x}
-              y={ownerCtxMenu.y}
-              onClose={() => setOwnerCtxMenu(null)}
-            >
-              <MenuItem
-                onClick={() => {
-                  window.nndd.invoke(
-                    window.nndd.channels.SYS_OPEN_PATH,
-                    userUrl(watch.owner!.id)
-                  );
-                  setOwnerCtxMenu(null);
-                }}
-              >
-                🌐 ユーザーページを開く
-              </MenuItem>
-            </ContextMenuPopup>
-          )}
         </div>
       )}
 
@@ -129,6 +137,7 @@ export function InfoContent({ watch, ichibaHtmlPath }: { watch: WatchPageInfo | 
                 key={t}
                 className="px-2 py-0.5 bg-nndd-border rounded text-xs cursor-pointer hover:bg-nndd-accent hover:text-white transition-colors"
                 onDoubleClick={() => window.nndd.invoke(IpcChannel.NAV_SEARCH_TAG, t)}
+                onContextMenu={(e) => openCopyMenu(e, [{ label: '📋 タグをコピー', text: t }])}
               >
                 {t}
               </span>
@@ -146,8 +155,28 @@ export function InfoContent({ watch, ichibaHtmlPath }: { watch: WatchPageInfo | 
             __html: sanitizeDescription(watch.description)
           }}
           onClick={handleDescClick}
+          onContextMenu={(e) => {
+            const text = e.currentTarget.innerText;
+            openCopyMenu(e, [{ label: '📋 説明文をコピー', text }]);
+          }}
         />
       </div>
+      {ctxMenu && (
+        <ContextMenuPopup x={ctxMenu.x} y={ctxMenu.y} onClose={() => setCtxMenu(null)}>
+          {ctxMenu.items.map((it) => (
+            <MenuItem
+              key={it.label}
+              onClick={() => {
+                if (it.text !== undefined) void navigator.clipboard.writeText(it.text);
+                it.onClick?.();
+                setCtxMenu(null);
+              }}
+            >
+              {it.label}
+            </MenuItem>
+          ))}
+        </ContextMenuPopup>
+      )}
     </div>
   );
 }
