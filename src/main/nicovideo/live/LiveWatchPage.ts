@@ -74,6 +74,33 @@ function toSupplier(s: NicoLiveSupplierNode | null | undefined): LiveSupplier | 
 /** 秒 (unix) → ms。値が無ければ 0 */
 const secToMs = (v: unknown): number => (typeof v === 'number' ? v * 1000 : 0);
 
+async function getWatchHtml(id: string): Promise<string> {
+  return NicoContext.get().http.getText(`${LIVE_ORIGIN}/watch/${id}`, {
+    headers: { Referer: `${LIVE_ORIGIN}/` }
+  });
+}
+
+/** チャンネルページで放送中の番組 */
+export interface ChannelOnairProgram {
+  /** lv + 数字 */
+  id: string;
+  title: string;
+}
+
+/** チャンネルページ (ch.nicovideo.jp/chN) から放送中の番組を探す (ページ上の並び順)。取得失敗・無しは空配列 */
+export async function findChannelOnairPrograms(chId: string): Promise<ChannelOnairProgram[]> {
+  try {
+    const html = await NicoContext.get().http.getText(`https://ch.nicovideo.jp/${chId}`);
+    const ids = [...new Set([...html.matchAll(/data-live_id="(\d+)"\s+data-live_status="onair"/g)].map((m) => m[1]))];
+    return ids.map((n) => {
+      const t = html.match(new RegExp(`g-live-lv${n}[\\s\\S]*?g-live-title">\\s*<a[^>]*>\\s*([^<]*?)\\s*</a>`));
+      return { id: `lv${n}`, title: t ? decodeHtmlEntities(t[1]) : `lv${n}` };
+    });
+  } catch {
+    return [];
+  }
+}
+
 /**
  * `live.nicovideo.jp/watch/{id}` を取得し、`#embedded-data` の data-props を解析する。
  * co/ch ID を渡した場合は現在の放送にリダイレクトされる。
@@ -81,17 +108,22 @@ const secToMs = (v: unknown): number => (typeof v === 'number' ? v * 1000 : 0);
 export async function fetchLiveWatchPage(id: string): Promise<LiveWatchPageInfo> {
   let html: string;
   try {
-    html = await NicoContext.get().http.getText(`${LIVE_ORIGIN}/watch/${id}`, {
-      headers: { Referer: `${LIVE_ORIGIN}/` }
-    });
+    html = await getWatchHtml(id);
   } catch (e) {
     // ch/co の URL は、放送中または直近の番組が無い (公式番組の ch 等も含む) と 404 になる
     if (e instanceof NicoApiError && e.httpStatus === 404 && /^(?:ch|co)\d+$/i.test(id)) {
-      throw new LiveUnavailableError(
-        `${id} の放送中・視聴可能な番組が見つかりません (放送前、または番組ID/URLで開く必要があります)`
-      );
+      // チャンネルは /watch/chN が 404 でも、チャンネルページに放送中の番組があることがある
+      const lv = /^ch\d+$/i.test(id) ? ((await findChannelOnairPrograms(id))[0]?.id ?? null) : null;
+      if (lv) {
+        html = await getWatchHtml(lv);
+      } else {
+        throw new LiveUnavailableError(
+          `${id} の放送中・視聴可能な番組が見つかりません (放送前、または番組ID/URLで開く必要があります)`
+        );
+      }
+    } else {
+      throw e;
     }
-    throw e;
   }
   // embedded-data は外部データなので必要なフィールドだけ防御的に読む
   const props = parseEmbeddedData(html);

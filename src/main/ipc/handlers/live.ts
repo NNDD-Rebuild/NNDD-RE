@@ -18,6 +18,7 @@ import {
   activateTimeshift,
   cancelTimeshiftReservations,
   fetchLiveWatchPage,
+  findChannelOnairPrograms,
   normalizeLiveId,
   reserveTimeshift
 } from '../../nicovideo/live/LiveWatchPage';
@@ -90,9 +91,29 @@ export function registerLiveHandlers(recordScheduler: LiveRecordScheduler): void
     return { programs, total: programs.length };
   });
 
-  ipcMain.handle(IpcChannel.LIVE_OPEN_PLAYER, (_e, input: string) => {
-    const id = normalizeLiveId(String(input ?? ''));
+  ipcMain.handle(IpcChannel.LIVE_OPEN_PLAYER, async (_e, input: string) => {
+    let id = normalizeLiveId(String(input ?? ''));
     if (!id) throw new Error('番組ID (lv/co/ch) または生放送URLを指定してください');
+    // チャンネルは /watch/chN が 404 になりうるので、放送中の番組をチャンネルページから引く (複数なら選ばせる)
+    if (/^ch\d+$/i.test(id)) {
+      const programs = await findChannelOnairPrograms(id);
+      if (programs.length === 1) {
+        id = programs[0].id;
+      } else if (programs.length > 1) {
+        const win = BrowserWindow.getFocusedWindow();
+        const opts = {
+          type: 'question' as const,
+          title: '放送中の番組を選択',
+          message: `${id} は複数の番組が放送中です。開く番組を選んでください`,
+          buttons: [...programs.map((p) => `${p.title} (${p.id})`), 'キャンセル'],
+          cancelId: programs.length,
+          noLink: true
+        };
+        const { response } = win ? await dialog.showMessageBox(win, opts) : await dialog.showMessageBox(opts);
+        if (response >= programs.length) return;
+        id = programs[response].id;
+      }
+    }
     LivePlayerManager.get().open(id);
   });
   ipcMain.handle(IpcChannel.LIVE_START, (e, programId: string) =>
