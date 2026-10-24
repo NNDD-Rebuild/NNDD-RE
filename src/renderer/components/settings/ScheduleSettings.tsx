@@ -98,7 +98,7 @@ export function ScheduleSettings(): JSX.Element {
       )}
 
       {/* 一覧 */}
-      <table className="nndd-datagrid mb-4">
+      <table className="nndd-datagrid mb-4 whitespace-nowrap !w-max min-w-full">
         <thead>
           <tr>
             <th className="w-12">有効</th>
@@ -124,7 +124,7 @@ export function ScheduleSettings(): JSX.Element {
               <td>{s.enabled ? '✓' : ''}</td>
               <td>{s.name}</td>
               <td>{targetTypeLabel(s.targetType)}</td>
-              <td className="truncate" title={targetLabel(s, mylists, followUsers)}>
+              <td title={targetLabel(s, mylists, followUsers)}>
                 {targetLabel(s, mylists, followUsers)}
               </td>
               <td>{daysToStr(s.daysOfWeek)}</td>
