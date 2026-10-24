@@ -7,9 +7,10 @@ import {
 } from 'react';
 import type { NNDDREComment, NgListItem } from '@shared/types';
 import { NgListItemType, IpcChannel } from '@shared/types';
-import { compileNgList, matchesNg } from '@shared/utils/ngMatch';
+import { compileNgList, detectSpamUsers, matchesNg } from '@shared/utils/ngMatch';
 import { mylistUrl, watchUrl } from '@shared/utils/nicoUrl';
 import { NgListDialog } from './NgListDialog';
+import { useConfig } from '../../hooks/useConfig';
 
 // ── 列幅型 ──────────────────────────────────────────────
 interface ColWidths {
@@ -259,15 +260,25 @@ export function CommentList({
   const activeComment = activeIndex >= 0 ? sorted[activeIndex] : null;
 
   const compiledNg = useMemo(() => compileNgList(ngList), [ngList]);
+  // 流れるコメント (CommentRenderer) と同じ強度で照合する
+  const [ngStrength] = useConfig<'weak' | 'medium' | 'strong'>('player.ngStrength', 'medium');
 
-  const ngCount = useMemo(
-    () => sorted.filter((c) => matchesNg(c, compiledNg)).length,
-    [sorted, compiledNg]
+  // 流れるコメントと同じ判定: 非表示 (isShow=false)・strong の連投スパム・NG リスト一致
+  const spamUserIds = useMemo(
+    () => (ngStrength === 'strong' ? detectSpamUsers(comments) : null),
+    [comments, ngStrength]
+  );
+  const isNgComment = useCallback(
+    (c: NNDDREComment) =>
+      !c.isShow || !!spamUserIds?.has(c.userId) || matchesNg(c, compiledNg, ngStrength),
+    [spamUserIds, compiledNg, ngStrength]
   );
 
+  const ngCount = useMemo(() => sorted.filter(isNgComment).length, [sorted, isNgComment]);
+
   const visibleRows = useMemo(
-    () => (showNg ? sorted : sorted.filter((c) => !matchesNg(c, compiledNg))),
-    [sorted, compiledNg, showNg]
+    () => (showNg ? sorted : sorted.filter((c) => !isNgComment(c))),
+    [sorted, isNgComment, showNg]
   );
 
   // visibleRows 内での activeComment の行番号
@@ -453,7 +464,7 @@ export function CommentList({
             {/* 表示行 */}
             {rowsSlice.map((c) => {
               const isActive = c === activeComment;
-              const isNg = matchesNg(c, compiledNg);
+              const isNg = isNgComment(c);
               return (
                 <tr
                   key={`${c.thread}-${c.fork ?? ''}-${c.no}`}

@@ -68,3 +68,34 @@ export function matchesNg(
   }
   return false;
 }
+
+const SPAM_WINDOW_MS = 10_000;
+const SPAM_THRESHOLD = 5;
+
+/**
+ * strong モード用: 同一ユーザーが SPAM_WINDOW_MS 以内に SPAM_THRESHOLD 件以上
+ * 投稿している場合、そのユーザーの全コメントを連投スパムとして扱う。
+ */
+export function detectSpamUsers(comments: readonly { userId: string; vposMs: number }[]): Set<string> {
+  const byUser = new Map<string, number[]>();
+  for (const c of comments) {
+    let arr = byUser.get(c.userId);
+    if (!arr) {
+      arr = [];
+      byUser.set(c.userId, arr);
+    }
+    arr.push(c.vposMs);
+  }
+  const spam = new Set<string>();
+  for (const [userId, times] of byUser) {
+    if (times.length < SPAM_THRESHOLD) continue;
+    times.sort((x, y) => x - y);
+    for (let i = 0; i + SPAM_THRESHOLD - 1 < times.length; i++) {
+      if (times[i + SPAM_THRESHOLD - 1] - times[i] <= SPAM_WINDOW_MS) {
+        spam.add(userId);
+        break;
+      }
+    }
+  }
+  return spam;
+}
