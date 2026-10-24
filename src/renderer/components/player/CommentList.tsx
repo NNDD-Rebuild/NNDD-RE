@@ -599,7 +599,7 @@ function ResizableTh({
 
 // ── コンテキストメニュー ──────────────────────────────────
 
-function ContextMenuPopup({
+export function ContextMenuPopup({
   x, y, comment, ngList, onAddNg, onRemoveNg, onClose
 }: {
   x: number; y: number; comment: NNDDREComment; ngList: NgListItem[];

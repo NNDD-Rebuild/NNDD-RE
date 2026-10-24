@@ -18,6 +18,8 @@ export interface CommentOverlayHandle {
   setConfig: (cfg: Partial<CommentRenderConfig>) => void;
   /** seek 時に呼ぶ */
   notifySeek: () => void;
+  /** 画面座標にある流れているコメントを返す (無ければ null) */
+  hitTest: (clientX: number, clientY: number) => NNDDREComment | null;
 }
 
 interface Props {
@@ -163,7 +165,8 @@ export const CommentOverlay = forwardRef<CommentOverlayHandle, Props>(
         setComments: (c: NNDDREComment[]) =>
           rendererRef.current?.setComments(c),
         setConfig: (cfg) => rendererRef.current?.setConfig(cfg),
-        notifySeek: () => rendererRef.current?.onSeek()
+        notifySeek: () => rendererRef.current?.onSeek(),
+        hitTest: (x, y) => rendererRef.current?.hitTest(x, y) ?? null
       }),
       []
     );

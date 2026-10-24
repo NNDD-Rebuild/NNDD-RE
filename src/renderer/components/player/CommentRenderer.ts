@@ -73,6 +73,12 @@ export const DEFAULT_RENDER_CONFIG: CommentRenderConfig = {
   ngStrength: 'medium'
 };
 
+/** niconicomments 内部の描画アイテム (hitTest 用の最小限の形) */
+interface HitItem {
+  pos: { x: number; y: number };
+  comment: { id: number; vpos: number; width: number; height: number; invisible?: boolean };
+}
+
 export class CommentRenderer {
   /**
    * アスペクト比維持のための基準仮想高さ (ライブラリ標準相当)。
@@ -351,6 +357,46 @@ export class CommentRenderer {
     });
 
     this.canvas.style.opacity = String(this.config.opacity);
+  }
+
+  /**
+   * 画面上の座標 (clientX/Y) にある流れているコメントを返す。無ければ null。
+   * niconicomments は公開の当たり判定 API を持たないため、内部の timeline と描画位置 (pos) を読む
+   * (v0.3.1 で確認。内部構造が変わったら null を返すだけで他は壊れない)。
+   */
+  hitTest(clientX: number, clientY: number): NNDDREComment | null {
+    if (!this.nc || !this.video) return null;
+    try {
+      const rect = this.canvas.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return null;
+      // 仮想キャンバス (高さ NORMAL_VIRTUAL_HEIGHT) 座標へ換算
+      const scale = CommentRenderer.NORMAL_VIRTUAL_HEIGHT / rect.height;
+      const x = (clientX - rect.left) * scale;
+      const y = (clientY - rect.top) * scale;
+      const vpos = Math.floor(this.currentVpos(this.video));
+      const timeline = (this.nc as unknown as { timeline?: Record<number, HitItem[] | undefined> }).timeline;
+      const items = timeline?.[vpos];
+      if (!items) return null;
+      const tol = 6;
+      for (let i = items.length - 1; i >= 0; i--) {
+        const it = items[i];
+        const c = it?.comment;
+        if (!it || !c || c.invisible) continue;
+        if (
+          x >= it.pos.x - tol && x <= it.pos.x + c.width + tol &&
+          y >= it.pos.y - tol && y <= it.pos.y + c.height + tol
+        ) {
+          return (
+            this.comments.find((m) => m.no === c.id && Math.floor(m.vposMs / 10) === c.vpos) ??
+            this.comments.find((m) => m.no === c.id) ??
+            null
+          );
+        }
+      }
+    } catch {
+      /* 内部構造の差異は無視 */
+    }
+    return null;
   }
 
   private tick(): void {

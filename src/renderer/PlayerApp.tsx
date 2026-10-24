@@ -3,6 +3,7 @@ import type { NNDDREComment, WatchPageInfo, DomandStreamCandidate, NicowariConte
 import { IpcChannel } from '@shared/types';
 import { buildLocalUrl, isLocalMediaUrl } from '@shared/constants';
 import { VideoPlayer, type VideoPlayerHandle } from './components/player/VideoPlayer';
+import { ContextMenuPopup as CommentNgMenu } from './components/player/CommentList';
 import { VideoController } from './components/player/VideoController';
 import { VideoInfoView } from './components/player/VideoInfoView';
 import { HistoryBlockedDialog } from './components/player/HistoryBlockedDialog';
@@ -160,6 +161,8 @@ export default function PlayerApp(): JSX.Element {
   const defaultQualityRef = useRef(defaultQuality);
   defaultQualityRef.current = defaultQuality;
   const { ngList, addNg, removeNg } = useNgList();
+  // 動画上に流れているコメントの右クリックメニュー (NG 追加/解除)
+  const [commentMenu, setCommentMenu] = useState<{ comment: NNDDREComment; x: number; y: number } | null>(null);
   const { renderedComments, commentConfig } = useCommentRenderSettings({
     ngList,
     comments,
@@ -742,6 +745,24 @@ export default function PlayerApp(): JSX.Element {
               className="flex-1 relative min-h-0"
               onDoubleClick={toggleFullscreen}
             >
+              {commentMenu && (
+                <>
+                  <div
+                    className="fixed inset-0 z-[9998]"
+                    onClick={() => setCommentMenu(null)}
+                    onContextMenu={(e) => { e.preventDefault(); setCommentMenu(null); }}
+                  />
+                  <CommentNgMenu
+                    x={commentMenu.x}
+                    y={commentMenu.y}
+                    comment={commentMenu.comment}
+                    ngList={ngList}
+                    onAddNg={(item) => { addNg(item); setCommentMenu(null); }}
+                    onRemoveNg={(item) => { removeNg(item); setCommentMenu(null); }}
+                    onClose={() => setCommentMenu(null)}
+                  />
+                </>
+              )}
               {src ? (
                 <VideoPlayer
                   src={src}
@@ -759,6 +780,7 @@ export default function PlayerApp(): JSX.Element {
                   audioOnly={audioOnly}
                   onEnded={() => { consecutiveSkipRef.current = 0; advanceToNextVideo(); }}
                   onVideoClick={isMobileTouch ? handleVideoTap : undefined}
+                  onCommentContextMenu={(comment, x, y) => setCommentMenu({ comment, x, y })}
                 />
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-nndd-subtext">

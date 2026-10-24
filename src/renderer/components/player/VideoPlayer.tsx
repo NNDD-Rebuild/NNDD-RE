@@ -3,7 +3,7 @@ import Hls from 'hls.js';
 import mpegts from 'mpegts.js';
 import type { NNDDREComment } from '@shared/types';
 import { IpcChannel } from '@shared/types';
-import { CommentOverlay } from './CommentOverlay';
+import { CommentOverlay, type CommentOverlayHandle } from './CommentOverlay';
 import type { CommentRenderConfig } from './CommentRenderer';
 
 interface Props {
@@ -29,6 +29,8 @@ interface Props {
   /** video要素クリック時のカスタム処理。指定時はデフォルトの再生/一時停止トグルの代わりに呼ばれる
    * (スマホブラウザ版: 1回目のタップで操作バー表示、2回目のタップで再生/一時停止) */
   onVideoClick?: () => void;
+  /** 流れているコメントの上で右クリックされたとき (座標は clientX/Y) */
+  onCommentContextMenu?: (comment: NNDDREComment, x: number, y: number) => void;
 }
 
 export interface VideoPlayerHandle {
@@ -61,8 +63,10 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
   onEnded,
   audioOnly,
   onPipChange,
-  onVideoClick
+  onVideoClick,
+  onCommentContextMenu
 }: Props, ref) {
+  const overlayRef = useRef<CommentOverlayHandle>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const hlsRef = useRef<Hls | null>(null);
@@ -430,6 +434,13 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
         crossOrigin={/^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])[:/]/i.test(src) ? 'anonymous' : undefined}
         autoPlay
         controls={false}
+        onContextMenu={(e) => {
+          if (!onCommentContextMenu) return;
+          const hit = overlayRef.current?.hitTest(e.clientX, e.clientY);
+          if (!hit) return;
+          e.preventDefault();
+          onCommentContextMenu(hit, e.clientX, e.clientY);
+        }}
         onClick={() => {
           if (onVideoClick) {
             onVideoClick();
@@ -442,6 +453,7 @@ export const VideoPlayer = forwardRef<VideoPlayerHandle, Props>(function VideoPl
         }}
       />
       <CommentOverlay
+        ref={overlayRef}
         videoRef={videoRef}
         comments={comments}
         config={commentConfig}
