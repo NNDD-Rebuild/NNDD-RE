@@ -96,6 +96,7 @@ export default function LivePlayerApp(): JSX.Element {
       program: programRef.current,
       statistics: statisticsRef.current,
       canSeek: isTimeshiftRef.current || chasePlayAvailableRef.current,
+      selfUserId: selfUserIdRef.current,
       ssngList: [...ssngMapRef.current.values()]
     });
   });
@@ -124,6 +125,9 @@ export default function LivePlayerApp(): JSX.Element {
   const [program, setProgram] = useState<LiveProgramInfo | null>(null);
   /** ニコ生ゲーム (クルーズの行き先投票など)。有効な番組だけ映像の上にゲームを重ねる */
   const [akashicInfo, setAkashicInfo] = useState<LiveAkashicInfo | null>(null);
+  /** 自分のユーザーID。コメントリストで自分のコメントを塗るのに使う */
+  const [selfUserId, setSelfUserId] = useState<string | undefined>(undefined);
+  const selfUserIdRef = useRef<string | undefined>(undefined);
   const akashicBusRef = useRef(createAkashicBus());
   const [state, setState] = useState<LiveConnectionState>('connecting');
   const [stateMessage, setStateMessage] = useState('');
@@ -349,6 +353,9 @@ export default function LivePlayerApp(): JSX.Element {
         setArchiveLoading(r.commentFetchMode === 'all');
         setProgram(r.program);
         setAkashicInfo(r.akashic.enabled ? r.akashic : null);
+        rendererRef.current?.setMyUserId(r.selfUserId ?? null);
+        selfUserIdRef.current = r.selfUserId;
+        setSelfUserId(r.selfUserId);
         document.title = `${r.program.title} - NNDD-RE Live`;
         // 番組情報より先にコメントウィンドウが開いていたら、番組情報込みで送り直す
         if (commentWindowOpenRef.current) sendSnapshotRef.current();
@@ -813,6 +820,7 @@ export default function LivePlayerApp(): JSX.Element {
         positionMs={positionMs}
         onAddNg={handleAddNg}
         onRemoveNg={handleRemoveNg}
+        myUserId={selfUserId}
         ncvLinked={ncvLinked}
         programInfo={
           <ProgramInfo

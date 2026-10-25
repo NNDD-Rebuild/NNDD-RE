@@ -198,7 +198,8 @@ export class LiveSession {
       chasePlay: this.chasePlay,
       chasePlayAvailable: this.chasePlayAvailable,
       commentFetchMode: this.commentFetchMode,
-      akashic: this.akashicInfo
+      akashic: this.akashicInfo,
+      selfUserId: this.akashicInfo.account?.id
     };
   }
 

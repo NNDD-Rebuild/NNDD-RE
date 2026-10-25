@@ -49,6 +49,8 @@ interface Props {
   currentTimeMs?: number;
   onAddNg: (item: NgListItem) => void;
   onRemoveNg: (item: NgListItem) => void;
+  /** 自分のユーザーID。一致する (非184の) コメントの行を薄い黄色で塗る */
+  myUserId?: string;
   /** コメント再取得。戻り値は結果メッセージ (例: "+1234 件追加") */
   onRefetchComments?: () => Promise<string | undefined>;
 }
@@ -95,6 +97,7 @@ export function CommentList({
   currentTimeMs,
   onAddNg,
   onRemoveNg,
+  myUserId,
   onRefetchComments
 }: Props): JSX.Element {
   const [sortKey, setSortKey] = useState<SortKey>('vposMs');
@@ -465,6 +468,7 @@ export function CommentList({
             {rowsSlice.map((c) => {
               const isActive = c === activeComment;
               const isNg = isNgComment(c);
+              const isMine = !!myUserId && !c.isAnonymity && c.userId === myUserId;
               return (
                 <tr
                   key={`${c.thread}-${c.fork ?? ''}-${c.no}`}
@@ -473,7 +477,7 @@ export function CommentList({
                   onContextMenu={(e) => handleContextMenu(e, c)}
                   className={[
                     'cursor-pointer border-b border-nndd-border/30 hover:bg-nndd-border/40',
-                    isActive ? 'bg-nndd-accent/20' : '',
+                    isActive ? 'bg-nndd-accent/20' : isMine ? 'bg-yellow-400/20' : '',
                     isNg ? 'opacity-40 line-through' : ''
                   ].join(' ')}
                   title={`${c.text}\nユーザーID: ${c.userId}\n投稿: ${formatDate(c.date)}`}

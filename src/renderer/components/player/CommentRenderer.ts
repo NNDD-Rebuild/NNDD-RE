@@ -107,6 +107,12 @@ export class CommentRenderer {
   private rebuildSeq = 0;
   /** 生放送用: video.currentTime の代わりに描画位置 (1/100秒) を返す関数 */
   private vposProvider: (() => number) | null = null;
+  /** 自分のユーザーID。一致する (非184の) コメントを黄色い枠で囲む */
+  private myUserId: string | null = null;
+  /** 自分のコメントの目印 (`no-vpos`)。タイムラインの描画アイテムとの照合に使う */
+  private mineKeys = new Set<string>();
+  /** 自分のコメントの枠を描く 2D canvas (コメント本体は WebGL2 なので別 canvas に描く) */
+  private markCanvas: HTMLCanvasElement | null = null;
 
   /**
    * @param container コメント canvas を配置するコンテナ要素。
@@ -119,6 +125,86 @@ export class CommentRenderer {
     container.querySelectorAll('canvas').forEach((c) => c.remove());
     this.canvas = this.newCanvasElement();
     container.appendChild(this.canvas);
+  }
+
+  private static mineKey(no: number, vpos: number): string {
+    return `${no}-${vpos}`;
+  }
+
+  private isMine(c: NNDDREComment): boolean {
+    return this.myUserId !== null && !c.isAnonymity && c.userId === this.myUserId;
+  }
+
+  private rememberMine(comments: NNDDREComment[]): void {
+    if (this.myUserId === null) return;
+    for (const c of comments) {
+      if (this.isMine(c)) this.mineKeys.add(CommentRenderer.mineKey(c.no, Math.floor(c.vposMs / 10)));
+    }
+  }
+
+  /** 自分のユーザーIDを設定する (null で枠表示なし) */
+  setMyUserId(id: string | null): void {
+    this.myUserId = id;
+    this.mineKeys.clear();
+    this.rememberMine(this.comments);
+    if (id === null) this.clearMarks();
+  }
+
+  private clearMarks(): void {
+    const c = this.markCanvas;
+    if (c) c.getContext('2d')?.clearRect(0, 0, c.width, c.height);
+  }
+
+  /** 画面に出ている自分のコメントを黄色い枠で囲む */
+  private drawMarks(vpos: number): void {
+    if (this.mineKeys.size === 0 || !this.nc) {
+      this.clearMarks();
+      return;
+    }
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    if (w <= 0 || h <= 0) return;
+    let mark = this.markCanvas;
+    if (!mark || !mark.isConnected) {
+      mark = document.createElement('canvas');
+      mark.className = 'absolute inset-0 w-full h-full pointer-events-none';
+      this.container.appendChild(mark);
+      this.markCanvas = mark;
+    }
+    if (mark.width !== w || mark.height !== h) {
+      mark.width = w;
+      mark.height = h;
+    }
+    mark.style.opacity = String(this.config.opacity);
+    mark.style.visibility = this.config.enabled ? 'visible' : 'hidden';
+    const ctx = mark.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, w, h);
+    try {
+      const timeline = (this.nc as unknown as { timeline?: Record<number, HitItem[] | undefined> }).timeline;
+      const items = timeline?.[Math.floor(vpos)];
+      if (!items) return;
+      // 仮想キャンバス (高さ NORMAL_VIRTUAL_HEIGHT) → 実 canvas の倍率
+      const scale = h / CommentRenderer.NORMAL_VIRTUAL_HEIGHT;
+      ctx.strokeStyle = '#ffff00';
+      ctx.lineWidth = Math.max(2, 2 * scale);
+      for (const it of items) {
+        const c = it?.comment;
+        if (!it || !c || c.invisible) continue;
+        if (!this.mineKeys.has(CommentRenderer.mineKey(c.id, c.vpos))) continue;
+        const pad = 4 * scale;
+        // 文字の上には行間の余白があるので、上辺だけ下げる (下辺は pad のまま)
+        const topTrim = 8 * scale;
+        ctx.strokeRect(
+          it.pos.x * scale - pad,
+          it.pos.y * scale - pad + topTrim,
+          c.width * scale + pad * 2,
+          c.height * scale + pad * 2 - topTrim
+        );
+      }
+    } catch {
+      /* 内部構造の差異は無視 (枠が出ないだけ) */
+    }
   }
 
   /** コンテナ内に配置する新しい canvas 要素を生成する (DOM 追加はしない) */
@@ -174,6 +260,8 @@ export class CommentRenderer {
   setComments(comments: NNDDREComment[]): void {
     if (comments === this.comments) return; // 同一参照 → スキップ
     this.comments = comments;
+    this.mineKeys.clear();
+    this.rememberMine(comments);
     if (this.video) {
       this.rebuildEngine();
     }
@@ -196,6 +284,7 @@ export class CommentRenderer {
     if (comments.length === 0) return;
     const merged = [...this.comments, ...comments];
     this.comments = merged.length > keepLast ? merged.slice(merged.length - keepLast) : merged;
+    this.rememberMine(comments);
     // エンジン未生成 (再構築待ち) の場合は生成時に this.comments ごと読み込まれる
     if (this.nc) {
       const formatted = this.toFormattedComments(this.filterComments(comments));
@@ -231,6 +320,7 @@ export class CommentRenderer {
     this.video = null;
     this.lastVpos = -1;
     this.clearCanvas();
+    this.clearMarks();
   }
 
   /** seek されたら呼ぶ */
@@ -239,6 +329,7 @@ export class CommentRenderer {
       const vpos = this.currentVpos(this.video);
       this.nc.drawCanvas(vpos, true);
       this.lastVpos = vpos;
+      this.drawMarks(vpos);
     }
   }
 
@@ -400,7 +491,11 @@ export class CommentRenderer {
   }
 
   private tick(): void {
-    if (!this.config.enabled) return; // 非表示中は描画を止める (再表示時に現在位置から描き直す)
+    if (!this.config.enabled) {
+      // 非表示中は描画を止める (再表示時に現在位置から描き直す)
+      this.clearMarks();
+      return;
+    }
     if (!this.video || !this.nc) {
       if (!this.config.enabled) this.clearCanvas();
       return;
@@ -408,6 +503,7 @@ export class CommentRenderer {
     const vpos = this.currentVpos(this.video);
     this.nc.drawCanvas(vpos);
     this.lastVpos = vpos;
+    this.drawMarks(vpos);
   }
 
   /**

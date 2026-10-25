@@ -221,6 +221,8 @@ export interface LiveStartResult {
   commentFetchMode: 'all' | 'seek';
   /** ニコ生ゲーム (クルーズの行き先投票など) の実行に必要な情報 */
   akashic: LiveAkashicInfo;
+  /** ログイン中の自分のユーザーID (未ログインなら無し)。自分のコメントを枠で囲むのに使う */
+  selfUserId?: string;
   /**
    * NCV を起動した (起動予定の) か。NCV 連携 ON で開いた場合だけ入る。
    * タイムシフトでは設定 live.ncvTimeshift が OFF なら起動しない
@@ -353,6 +355,8 @@ export type LiveCommentWindowMessage =
       program: LiveProgramInfo | null;
       statistics: LiveStatistics | null;
       canSeek: boolean;
+      /** 自分のユーザーID (未ログインなら無し) */
+      selfUserId?: string;
       /** 放送者が登録した NG (SSNG)。コメントウィンドウでも自分の NG リストに足して適用する */
       ssngList: NgListItem[];
     }

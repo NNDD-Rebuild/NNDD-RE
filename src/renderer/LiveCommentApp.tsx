@@ -35,6 +35,7 @@ export default function LiveCommentApp(): JSX.Element {
   const [program, setProgram] = useState<LiveProgramInfo | null>(null);
   const [statistics, setStatistics] = useState<LiveStatistics | null>(null);
   const [canSeek, setCanSeek] = useState(false);
+  const [selfUserId, setSelfUserId] = useState<string | undefined>(undefined);
   const { ngList, addNg: handleAddNg, removeNg: handleRemoveNg } = useNgList();
   const [ssngList, setSsngList] = useState<NgListItem[]>([]);
   const [tab, setTab] = useState<Tab>('comments');
@@ -66,6 +67,7 @@ export default function LiveCommentApp(): JSX.Element {
           setProgram(msg.program);
           setStatistics(msg.statistics);
           setCanSeek(msg.canSeek);
+          setSelfUserId(msg.selfUserId);
           setSsngList(msg.ssngList);
           if (msg.program) document.title = `コメント一覧 — ${msg.program.title}`;
           break;
@@ -157,6 +159,7 @@ export default function LiveCommentApp(): JSX.Element {
             currentTimeMs={positionMs}
             onAddNg={handleAddNg}
             onRemoveNg={handleRemoveNg}
+            myUserId={selfUserId}
           />
         ) : (
           <div className="h-full overflow-auto text-xs">

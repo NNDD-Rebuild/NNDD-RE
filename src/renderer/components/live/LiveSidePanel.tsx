@@ -19,6 +19,7 @@ export function LiveSidePanel({
   positionMs,
   onAddNg,
   onRemoveNg,
+  myUserId,
   programInfo,
   ncvLinked
 }: {
@@ -35,6 +36,8 @@ export function LiveSidePanel({
   positionMs: number;
   onAddNg: (item: NgListItem) => Promise<void>;
   onRemoveNg: (item: NgListItem) => Promise<void>;
+  /** 自分のユーザーID (コメントリストで自分のコメントを塗る) */
+  myUserId?: string;
   /** 「番組情報」タブの中身 */
   programInfo: ReactNode;
   /** NCV にコメント表示を任せているか (true になった時点で「番組情報」タブを開く) */
@@ -85,6 +88,7 @@ export function LiveSidePanel({
               currentTimeMs={positionMs}
               onAddNg={onAddNg}
               onRemoveNg={onRemoveNg}
+              myUserId={myUserId}
             />
           ) : sideTab === 'notices' && showSideComments ? (
             <div className="h-full overflow-auto text-xs">
