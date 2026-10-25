@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://nndd-rebuild.github.io/NNDD-RE/sitemap.xml
