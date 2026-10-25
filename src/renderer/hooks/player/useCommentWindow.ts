@@ -68,7 +68,8 @@ export function useCommentWindow({
       IpcChannel.PLAYER_PAST_COMMENTS,
       (cs: NNDDREComment[] | null) => {
         if (cs === null || cs.length === 0) {
-          setPastComments([]);
+          // 既に空なら参照を変えない (ウィンドウを開いた時の null 通知でコメント描画エンジンが再構築されるのを防ぐ)
+          setPastComments((prev) => (prev.length === 0 ? prev : []));
           setShowPastComments(false);
         } else {
           setPastComments(cs);
