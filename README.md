@@ -2,7 +2,7 @@
 
 MineAP氏作のNNDD（Adobe AIR/ActionScript）を **Electron + TypeScript + React** で再実装した精神的後継プロジェクト
 
-オリジナル `NNDD-master/` の機能・デザインを再現しつつ、動画ダウンロードは**新ニコニコAPI (V3 DMS)** に対応しています。
+オリジナル `NNDD-master/` との互換性を目指しつつ、動画ダウンロードは**新ニコニコAPI (V3 DMS)** に対応しています。
 
 ## ドキュメント
 

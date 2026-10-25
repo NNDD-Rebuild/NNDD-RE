@@ -1,5 +1,6 @@
 ---
 title: NNDD-RE
+description: NNDD-RE はニコニコ動画のダウンローダー兼プレイヤー。MineAP氏作 NNDD を Electron + TypeScript + React で再実装し、新ニコニコAPI (V3 DMS) に対応。
 nav_order: 1
 ---
 
@@ -7,7 +8,15 @@ nav_order: 1
 
 MineAP氏作の NNDD（Adobe AIR/ActionScript）を **Electron + TypeScript + React** で再実装した精神的後継プロジェクトです。
 
-オリジナル NNDD の機能・デザインを再現しつつ、動画ダウンロードは**新ニコニコAPI（V3 DMS）**に対応しています。
+本家NNDDとの互換性を目指しつつ、動画ダウンロードは**新ニコニコAPI（V3 DMS）**に対応しています。
+
+## NNDD-RE を作った経緯
+
+NNDD は、ニコニコ動画の動画をダウンロードしてライブラリとして管理できるソフトでした。しかし、Adobe AIR 製の従来の NNDD は、ニコニコ動画側の **新ニコニコAPI（V3 DMS）** への移行に対応しきれませんでした。
+
+NNDD-RE は、この新APIに対応するため、Electron + TypeScript + React で一から作り直したものです。NNDD本体の改修ではなく、本家NNDDと互換性があることを目指した、「精神的後継」と呼んでいます。見た目や操作感を完全に再現したものではありません。
+
+「NNDDが新しいニコニコ動画で使えなくなって困っている」という方は、[使い方ガイド](/NNDD-RE/usage-guide/)から始めてください。
 
 ## クイックリンク
 
