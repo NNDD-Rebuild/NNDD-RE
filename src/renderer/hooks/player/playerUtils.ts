@@ -88,7 +88,8 @@ export function limitSimultaneousComments(comments: NNDDREComment[], maxCount: n
  * コメントXMLが無い場合は null (コメントを更新しない)。
  */
 export async function readLocalComments(
-  files: InitParams['localFiles']
+  files: InitParams['localFiles'],
+  isLive = false
 ): Promise<NNDDREComment[] | null> {
   if (!files?.commentXml) return null;
   const cs = await window.nndd.invoke<NNDDREComment[]>(
@@ -114,7 +115,8 @@ export async function readLocalComments(
   }
   const MAX_COMMENTS = 1000;
   const sorted = [...cs].sort((a, b) => a.vposMs - b.vposMs);
-  const sampled = sorted.length <= MAX_COMMENTS
+  // 生放送は過去コメ/今コメの区別がないので間引かず全件出す
+  const sampled = isLive || sorted.length <= MAX_COMMENTS
     ? sorted
     : Array.from(
         { length: MAX_COMMENTS },

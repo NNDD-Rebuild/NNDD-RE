@@ -8,6 +8,7 @@ import { TabButton } from './videoInfo/TabButton';
 import { InfoContent } from './videoInfo/InfoContent';
 import { SeriesTabContent } from './videoInfo/SeriesTabContent';
 import { RelatedTabContent } from './videoInfo/RelatedTabContent';
+import { isLiveProgramId } from '@shared/utils/liveId';
 import { PastCommentsPanel } from './videoInfo/PastCommentsPanel';
 
 // 説明文ヘルパーは LiveProgramInfo などが従来どおりこのファイルから import できるよう再 export する
@@ -87,6 +88,8 @@ export function VideoInfoView({
   onRemoveNg
 }: Props): JSX.Element {
   const [tab, setTab] = useState<Tab>('info');
+  // 生放送は過去コメ/今コメの区別がなく、コメントリストに全件出すので過去コメントタブは出さない
+  const isLiveVideo = !!videoId && isLiveProgramId(videoId);
   const [controlUiSize] = useConfig<'small' | 'normal' | 'large'>('player.controlUiSize', 'small');
   const tabZoom = controlUiSize === 'large' ? 1.5 : controlUiSize === 'normal' ? 1.3 : 1;
   const [currentTimeMs, setCurrentTimeMs] = useState(0);
@@ -125,7 +128,8 @@ export function VideoInfoView({
   // showCommentTab が false になったらコメント系タブを 'info' に戻す
   useEffect(() => {
     if (!showCommentTab && (tab === 'comments' || tab === 'pastComments')) setTab('info');
-  }, [showCommentTab, tab]);
+    if (isLiveVideo && tab === 'pastComments') setTab('comments');
+  }, [showCommentTab, isLiveVideo, tab]);
 
   // シリーズ無しの動画に切り替わった時、シリーズタブを 'info' に戻す
   useEffect(() => {
@@ -356,7 +360,7 @@ export function VideoInfoView({
               onClick={() => setTab('comments')}
             />
           )}
-          {showCommentTab && (
+          {showCommentTab && !isLiveVideo && (
             <TabButton
               label={`過去コメント${pastComments.length > 0 ? ` (${pastComments.length.toLocaleString()})` : ''}`}
               active={tab === 'pastComments'}

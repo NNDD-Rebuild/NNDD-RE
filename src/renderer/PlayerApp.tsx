@@ -495,7 +495,7 @@ export default function PlayerApp(): JSX.Element {
 
     // コメントXML と ThumbInfo XML を並列ロード (setSrc 後なので再生を塞がない)
     const loadComments = async (): Promise<void> => {
-      const cs = await readLocalComments(files);
+      const cs = await readLocalComments(files, extractedId !== null && isLiveProgramId(extractedId));
       if (cs) setComments(cs);
     };
 

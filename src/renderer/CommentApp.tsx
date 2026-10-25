@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { NNDDREComment } from '@shared/types';
 import { IpcChannel } from '@shared/types';
 import { CommentList } from './components/player/CommentList';
+import { isLiveProgramId } from '@shared/utils/liveId';
 import { ensureCommandResolved } from './util/commentCommands';
 import { useNgList } from './hooks/player/useNgList';
 
@@ -136,10 +137,9 @@ export default function CommentApp(): JSX.Element {
       IpcChannel.COMMENT_READ_LOCAL,
       localXmlPath
     );
-    const recent = [...cs]
-      .sort((a, b) => b.no - a.no)
-      .slice(0, 1000)
-      .sort((a, b) => a.vposMs - b.vposMs);
+    const byNo = [...cs].sort((a, b) => b.no - a.no);
+    // 生放送は全件出す
+    const recent = (isLiveProgramId(videoId) ? byNo : byNo.slice(0, 1000)).sort((a, b) => a.vposMs - b.vposMs);
     setComments(recent.map(ensureCommandResolved));
     return `+${result.added} 件追加`;
   }, [videoId, localXmlPath]);
@@ -285,12 +285,15 @@ export default function CommentApp(): JSX.Element {
           active={tab === 'comments'}
           onClick={() => setTab('comments')}
         />
-        <TabButton
-          label={`過去コメント${pastComments.length > 0 ? ` (${pastComments.length.toLocaleString()})` : ''}`}
-          active={tab === 'pastComments'}
-          onClick={() => setTab('pastComments')}
-          tooltip="タブが開いている間は動画にも過去コメントが描画されます"
-        />
+        {/* 生放送は過去コメ/今コメの区別がなく、コメントリストに全件出すので過去コメントタブは出さない */}
+        {!isLiveProgramId(videoId) && (
+          <TabButton
+            label={`過去コメント${pastComments.length > 0 ? ` (${pastComments.length.toLocaleString()})` : ''}`}
+            active={tab === 'pastComments'}
+            onClick={() => setTab('pastComments')}
+            tooltip="タブが開いている間は動画にも過去コメントが描画されます"
+          />
+        )}
       </div>
 
       <div className="flex-1 min-h-0 overflow-hidden">
