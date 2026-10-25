@@ -1,5 +1,6 @@
 ---
 title: 設定
+description: NNDD-RE の設定リファレンス。保存先、プレイヤー、検索API、通知など各設定項目の意味と使い方。
 nav_order: 13
 ---
 

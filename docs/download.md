@@ -1,5 +1,6 @@
 ---
 title: DLリスト
+description: NNDD-RE のDLリストタブ。ニコニコ動画のダウンロードキューへの追加、進捗確認、管理の方法。
 nav_order: 7
 ---
 

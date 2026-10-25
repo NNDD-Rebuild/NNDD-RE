@@ -1,5 +1,6 @@
 ---
 title: GitHub同期・バックアップ
+description: NNDD-RE の設定・マイリスト・スケジュールを、非公開のGitHub Gistで複数端末間で同期・バックアップする方法。
 nav_order: 15
 ---
 

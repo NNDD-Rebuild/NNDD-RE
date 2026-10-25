@@ -1,5 +1,6 @@
 ---
 title: Discord連携・Webhook通知
+description: NNDD-RE のDiscord連携。Rich Presenceで再生中の動画を表示し、Webhookで通知を送る設定方法。
 nav_order: 16
 ---
 

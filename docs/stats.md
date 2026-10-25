@@ -1,5 +1,6 @@
 ---
 title: 統計
+description: NNDD-RE の統計タブ。ライブラリと視聴履歴を集計し、ダッシュボードで表示する。
 nav_order: 10
 ---
 

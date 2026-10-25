@@ -1,5 +1,6 @@
 ---
 title: 検索
+description: NNDD-RE の検索タブ。キーワードやタグでニコニコ動画を検索する。スナップショット検索と nvapi 検索を切り替えられる。
 nav_order: 4
 ---
 

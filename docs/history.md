@@ -1,5 +1,6 @@
 ---
 title: 履歴
+description: NNDD-RE の履歴タブ。アプリ内で再生した動画の履歴と、ニコニコ動画の視聴履歴を確認できる。
 nav_order: 9
 ---
 

@@ -1,5 +1,6 @@
 ---
 title: 内蔵HTTPサーバー・LAN共有
+description: NNDD-RE の内蔵HTTPサーバーとLAN共有。他アプリやブラウザとの連携、同一LAN上の別NNDD/NNDD-REとのライブラリ共有の設定方法。
 nav_order: 14
 ---
 

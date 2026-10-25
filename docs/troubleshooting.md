@@ -1,5 +1,6 @@
 ---
 title: トラブルシューティング
+description: NNDD-RE のトラブルシューティング。動画の再生・ダウンロードの不具合、yt-dlp / FFmpeg が必要になる場合などの対処法。
 nav_order: 17
 ---
 
