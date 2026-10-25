@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, type MutableRefObject } from 'react';
 import type { WatchPageInfo } from '@shared/types';
 import type { PlayInfo } from './playerUtils';
 
-/** 視聴履歴記録: 再生開始から 10 秒経過した時点で 1 度だけ書き込む */
+/** 視聴履歴記録: 実視聴時間がこの秒数以上のとき、動画切替・ウィンドウクローズ時に 1 度だけ書き込む */
 const HISTORY_RECORD_THRESHOLD_SEC = 10;
 
 /**

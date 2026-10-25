@@ -255,7 +255,7 @@ export interface NnddConfig {
     jumpCommand: 'ask' | 'auto' | 'off';
     /**
      * ウィンドウ表示 (非フルスクリーン) 時、下部コントロールバーを常時表示する。
-     * OFF (デフォルト) 時は従来通りマウス操作なしで一定時間後に自動的にフェードアウトする。
+     * ON (デフォルト) 時は常に表示する。OFF 時はマウス操作なしで一定時間後に自動的にフェードアウトする。
      * フルスクリーン時の自動非表示挙動には影響しない。
      */
     controlsAlwaysVisible: boolean;
