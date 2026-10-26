@@ -79,6 +79,20 @@ function fromFollowApiProgram(p: NicoLiveFollowProgram): LiveProgramSummary {
 }
 
 /**
+ * ニコニコニュース (ch2525) 配下の「ニコニコ実況」枠。ON_AIR で返るが、視聴ページは
+ * site.nicovideo.jp/jk/ へ転送され通常の視聴ページ (#embedded-data) が無いため再生できない
+ */
+function isJikkyoGateProgram(p: {
+  title?: string;
+  socialGroup?: { id?: string; name?: string };
+  supplier?: { name?: string };
+}): boolean {
+  if (p.title !== 'ニコニコ実況') return false;
+  // 放送予定 (埋め込みデータ) の形式は socialGroup.id が無い場合に備え、名前でも判定する
+  return p.socialGroup?.id === 'ch2525' || p.socialGroup?.name === 'ニコニコニュース' || p.supplier?.name === 'ニコニコニュース';
+}
+
+/**
  * フォロー中の番組。
  * - onair: live.nicovideo.jp/follow が使う API
  * - reserved (放送予定): API の status 指定では取れないため、/follow ページの埋め込みデータ
@@ -93,8 +107,11 @@ export async function fetchFollowingPrograms(
   const json = await NicoContext.get().http.getJson<NicoLiveFollowResponse>(url, {
     headers: LIVE_HEADERS
   });
-  const programs = (json.data?.programs ?? []).map(fromFollowApiProgram);
-  return { programs, total: num(json.data?.total) ?? programs.length };
+  const raw = json.data?.programs ?? [];
+  const visible = raw.filter((p) => !isJikkyoGateProgram(p));
+  const programs = visible.map(fromFollowApiProgram);
+  const total = num(json.data?.total);
+  return { programs, total: total === undefined ? programs.length : total - (raw.length - visible.length) };
 }
 
 async function fetchFollowingComingSoon(): Promise<LiveProgramListResult> {
@@ -105,6 +122,7 @@ async function fetchFollowingComingSoon(): Promise<LiveProgramListResult> {
     // ランキング等と同じ { type, value } 形式と、API と同じ形式の両方に対応する
     .map((item) => item?.value ?? item)
     .filter((v) => v && (v.nicoliveProgramId || v.id))
+    .filter((v) => !isJikkyoGateProgram(v))
     .map((v) => (v.nicoliveProgramId ? fromEmbeddedProgram(v) : fromFollowApiProgram(v)))
     // 放送予定は開始が近い順
     .sort((a, b) => a.beginAtMs - b.beginAtMs);

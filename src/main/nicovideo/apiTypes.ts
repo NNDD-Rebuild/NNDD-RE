@@ -344,7 +344,7 @@ export interface NicoLiveFollowProgram {
   beginAt?: number;
   endAt?: number;
   statistics?: { watchCount?: number; commentCount?: number };
-  socialGroup?: { name?: string; thumbnailUrl?: string };
+  socialGroup?: { id?: string; name?: string; thumbnailUrl?: string };
   programProvider?: { name?: string; icon?: string };
   providerType?: string;
   isFollowerOnly?: boolean;
@@ -395,7 +395,7 @@ export interface NicoLiveEmbeddedProgram {
   endTime?: unknown;
   statistics?: { watchCount?: number; commentCount?: number };
   supplier?: { name?: string; icons?: { uri50x50?: string; uri150x150?: string } };
-  socialGroup?: { name?: string; thumbnailUrl?: string };
+  socialGroup?: { id?: string; name?: string; thumbnailUrl?: string };
   providerType?: string;
   isFollowerOnly?: boolean;
   payment?: unknown;
