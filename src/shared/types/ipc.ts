@@ -44,6 +44,16 @@ export const IpcChannel = {
   /** ログイン中に2段階認証コードが必要になった通知 (main→renderer) → { error?: string }。応答は AUTH_LOGIN_MFA の { code } (空文字=キャンセル) */
   AUTH_MFA_REQUEST: 'nndd:auth:mfaRequest',
 
+  // アカウント (マルチアカウント)
+  /** 登録済みアカウント一覧とアクティブID → AccountsState */
+  ACCOUNT_LIST: 'nndd:account:list',
+  /** アカウント切替 ({ id }) → { ok, error? } */
+  ACCOUNT_SWITCH: 'nndd:account:switch',
+  /** アカウント削除 ({ id }) → boolean。Cookie・保存パスワードも破棄 */
+  ACCOUNT_REMOVE: 'nndd:account:remove',
+  /** アカウント一覧/アクティブ/プロフィール変化通知 (main→renderer) → AccountsState */
+  ACCOUNT_CHANGED: 'nndd:account:changed',
+
   // メンテナンス検知
   /** 現在のメンテナンス状態を取得 → MaintenanceState */
   MAINTENANCE_GET: 'nndd:maintenance:get',
@@ -545,6 +555,23 @@ export const IpcChannel = {
 } as const;
 
 export type IpcChannelValue = typeof IpcChannel[keyof typeof IpcChannel];
+
+/** ニコニコ側アカウント (UI 表示用。認証情報は含まない) */
+export interface NicoAccount {
+  /** ニコニコのユーザーID */
+  id: string;
+  nickname: string;
+  iconUrl?: string;
+  isPremium: boolean;
+  /** 保存済みパスワードがあるか */
+  hasCredentials: boolean;
+}
+
+export interface AccountsState {
+  accounts: NicoAccount[];
+  /** ログイン中 (Cookie 有効) のアクティブアカウント。未ログインなら null */
+  activeId: string | null;
+}
 
 export interface AutoReloginResult {
   ok: boolean;

@@ -377,7 +377,22 @@ export interface NnddConfig {
     apiDumpTargets?: Array<'watch' | 'session' | 'comment'>;
   };
 
-  /** 保存済み認証情報 (safeStorage で暗号化) */
+  /** ニコニコのマルチアカウント。Cookie は userData/accounts/<id>.json に別保存 */
+  accounts: {
+    list: Array<{
+      id: string;
+      nickname: string;
+      iconUrl?: string;
+      isPremium: boolean;
+      email?: string;
+      /** base64 encoded encrypted password (safeStorage) */
+      passwordEnc?: string;
+    }>;
+    /** 最後に使ったアカウント (起動時に復元) */
+    activeId?: string;
+  };
+
+  /** 旧単一アカウント時代の保存済み認証情報 (safeStorage で暗号化)。accounts へ移行済みなら空 */
   auth: {
     savedEmail?: string;
     /** base64 encoded encrypted password */
@@ -578,6 +593,7 @@ const DEFAULTS: NnddConfig = {
     apiDumpPath: undefined,
     apiDumpTargets: ['watch']
   },
+  accounts: { list: [] },
   auth: {},
   githubSync: {
     profiles: [],

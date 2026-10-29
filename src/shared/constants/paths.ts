@@ -17,8 +17,10 @@ export const NnddPaths = {
   DB_FILE_NAME: 'library.db',
   /** 設定ファイル */
   CONFIG_FILE_NAME: 'config.json',
-  /** Cookie保存ファイル */
+  /** Cookie保存ファイル (旧単一アカウント時代。アカウント登録後は ACCOUNT_COOKIE_DIR_NAME 配下) */
   COOKIE_FILE_NAME: 'cookies.json',
+  /** アカウント別 Cookie 保存ディレクトリ (userData 直下。<userId>.json) */
+  ACCOUNT_COOKIE_DIR_NAME: 'accounts',
   /** 2段階認証の信頼済みデバイストークン保存ファイル (アカウント別) */
   MFA_TRUST_FILE_NAME: 'mfa-trust.json',
   /** デフォルトのダウンロード保存先ディレクトリ名 */

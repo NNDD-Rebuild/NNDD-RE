@@ -2,7 +2,10 @@ import { BrowserWindow, safeStorage, session } from 'electron';
 import { NicoApi, NicoEndpoint } from '@shared/constants';
 import type { AutoReloginResult } from '@shared/types';
 import { NicoContext } from '../NicoContext';
-import { LoginWindow, type SsoProvider } from './LoginWindow';
+import { LoginWindow, type LoginWindowOptions, type SsoProvider } from './LoginWindow';
+import { AccountManager } from './AccountManager';
+import { CookieStore } from './CookieStore';
+import { tempLoginCookiePath } from './accountPaths';
 import { getConfigStore } from '../../config/ConfigStore';
 import { createLogger } from '../../util/Logger';
 
@@ -88,9 +91,68 @@ export class AuthManager {
    * ここでは復元しない (ID/Pass ログインは LoginWindow 側でアカウント別に復元する)。
    */
   static async login(parent?: BrowserWindow, ssoProvider?: SsoProvider): Promise<boolean> {
-    const ctx = NicoContext.get();
     await session.fromPartition('persist:nndd-login').clearStorageData();
-    return LoginWindow.openAndCaptureCookie(ctx.cookieStore, { parent, ssoProvider });
+    return this.captureAndAdopt({ parent, ssoProvider });
+  }
+
+  /**
+   * ログインウィンドウで取得した Cookie を、現在のアカウントを壊さないよう一時 CookieStore に受け、
+   * ユーザーID確定後にアカウントとして登録・アクティブ化する (別アカウントの追加ログインも同じ経路)。
+   */
+  private static async captureAndAdopt(opts: LoginWindowOptions): Promise<boolean> {
+    const temp = await CookieStore.load(tempLoginCookiePath());
+    const ok = await LoginWindow.openAndCaptureCookie(temp, opts);
+    if (!ok) {
+      await temp.clear();
+      return false;
+    }
+    const adopted = await AccountManager.adopt(temp);
+    if (!adopted) {
+      await temp.clear();
+      return false;
+    }
+    this._loggedOut = false;
+    return true;
+  }
+
+  /** アクティブアカウントの保存済み認証情報 (アカウント未登録なら旧形式) */
+  private static getSavedCredentials(): { email: string; enc: string } | null {
+    const active = AccountManager.getActive();
+    if (active) {
+      return active.email && active.passwordEnc
+        ? { email: active.email, enc: active.passwordEnc }
+        : null;
+    }
+    const auth = getConfigStore().get('auth');
+    return auth.savedEmail && auth.savedPasswordEnc
+      ? { email: auth.savedEmail, enc: auth.savedPasswordEnc }
+      : null;
+  }
+
+  /** 登録済みアカウントへ切り替え、セッションが切れていれば保存パスワードで再ログインを試みる */
+  static async switchAccount(id: string): Promise<{
+    ok: boolean;
+    needLogin?: boolean;
+    mfaRequired?: boolean;
+    mfaSubmitUrl?: string;
+    error?: string;
+  }> {
+    if (!(await AccountManager.activate(id))) {
+      return { ok: false, error: 'アカウントが見つかりません' };
+    }
+    this._loggedOut = false;
+    const result = await this.autoRelogin();
+    if (result.ok) {
+      void AccountManager.refreshActiveProfile();
+      return { ok: true };
+    }
+    return {
+      ok: false,
+      needLogin: true,
+      mfaRequired: result.mfaRequired,
+      mfaSubmitUrl: result.mfaSubmitUrl,
+      error: result.noCredentials ? undefined : result.error
+    };
   }
 
   /**
@@ -126,16 +188,13 @@ export class AuthManager {
       requestMfaCode?: (error?: string) => Promise<string | null>;
     }
   ): Promise<boolean> {
-    const ctx = NicoContext.get();
-    const ok = await LoginWindow.openAndCaptureCookie(ctx.cookieStore, {
+    return this.captureAndAdopt({
       credentials,
       show: opts.show,
       parent: opts.parent,
       timeoutMs: opts.show ? undefined : SILENT_RELOGIN_TIMEOUT_MS,
       requestMfaCode: opts.requestMfaCode
     });
-    if (ok) this._loggedOut = false;
-    return ok;
   }
 
   /**
@@ -157,7 +216,10 @@ export class AuthManager {
     }
     try {
       const enc = safeStorage.encryptString(password).toString('base64');
-      getConfigStore().set('auth', { savedEmail: email, savedPasswordEnc: enc });
+      // ログイン直後に呼ばれるので、保存先は今ログインしたアクティブアカウント
+      if (!AccountManager.setCredentials(email, enc)) {
+        getConfigStore().set('auth', { savedEmail: email, savedPasswordEnc: enc });
+      }
       log.debug('credentials saved for:', email);
       return { ok: true };
     } catch (e) {
@@ -168,6 +230,7 @@ export class AuthManager {
 
   /** 保存済み認証情報を削除 */
   static clearCredentials(): void {
+    AccountManager.clearCredentials();
     const store = getConfigStore();
     store.delete('auth.savedEmail' as never);
     store.delete('auth.savedPasswordEnc' as never);
@@ -176,13 +239,12 @@ export class AuthManager {
 
   /** 保存済み認証情報が存在するか */
   static hasCredentials(): boolean {
-    const auth = getConfigStore().get('auth');
-    return !!(auth.savedEmail && auth.savedPasswordEnc);
+    return this.getSavedCredentials() !== null;
   }
 
   /** 保存済みメールアドレスを返す */
   static getSavedEmail(): string | null {
-    return getConfigStore().get('auth').savedEmail ?? null;
+    return this.getSavedCredentials()?.email ?? null;
   }
 
   /**
@@ -203,10 +265,9 @@ export class AuthManager {
   private static async doAutoRelogin(): Promise<AutoReloginResult> {
     if (await this.checkLoggedIn()) return { ok: true };
 
-    const auth = getConfigStore().get('auth');
-    const email = auth.savedEmail;
-    const enc = auth.savedPasswordEnc;
-    if (!email || !enc) return { ok: false, noCredentials: true };
+    const saved = this.getSavedCredentials();
+    if (!saved) return { ok: false, noCredentials: true };
+    const { email, enc } = saved;
 
     let password: string;
     try {
@@ -236,12 +297,11 @@ export class AuthManager {
 
   /** 保存済み認証情報でログイン (モーダルから呼ばれる。実ブラウザウィンドウを表示) */
   static async loginWithSavedCredentials(parent?: BrowserWindow): Promise<FormLoginResult> {
-    const auth = getConfigStore().get('auth');
-    const email = auth.savedEmail;
-    const enc = auth.savedPasswordEnc;
-    if (!email || !enc) {
+    const saved = this.getSavedCredentials();
+    if (!saved) {
       return { ok: false, error: '保存済みの認証情報がありません' };
     }
+    const { email, enc } = saved;
     let password: string;
     try {
       password = safeStorage.decryptString(Buffer.from(enc, 'base64'));

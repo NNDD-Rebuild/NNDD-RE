@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { MaintenanceState } from '@shared/types';
+import type { AccountsState, MaintenanceState } from '@shared/types';
 import type { SubTab } from '../components/settings/SettingsView';
 
 /**
@@ -37,6 +37,10 @@ interface AppState {
 
   isLoggedIn: boolean;
   setLoggedIn: (v: boolean) => void;
+
+  /** 登録済みアカウントとアクティブID (main の AccountManager が正) */
+  accounts: AccountsState;
+  setAccounts: (s: AccountsState) => void;
 
   statusMessage: string;
   setStatusMessage: (s: string) => void;
@@ -100,6 +104,9 @@ export const useAppStore = create<AppState>((set) => ({
   setActiveTab: (tab) => set({ activeTab: tab }),
   isLoggedIn: false,
   setLoggedIn: (v) => set({ isLoggedIn: v }),
+
+  accounts: { accounts: [], activeId: null },
+  setAccounts: (s) => set({ accounts: s }),
   statusMessage: '',
   setStatusMessage: (s) => set({ statusMessage: s }),
   pendingMylistId: null,

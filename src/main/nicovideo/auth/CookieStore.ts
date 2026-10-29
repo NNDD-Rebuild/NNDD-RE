@@ -18,26 +18,44 @@ export class CookieStore {
 
   private constructor(
     jar: CookieJar,
-    private readonly filePath: string
+    private filePath: string
   ) {
     this.jar = jar;
   }
 
   static async load(filePath: string): Promise<CookieStore> {
-    let jar: CookieJar;
+    return new CookieStore(await CookieStore.readJar(filePath), filePath);
+  }
+
+  private static async readJar(filePath: string): Promise<CookieJar> {
     if (fs.existsSync(filePath)) {
       try {
         const raw = fs.readFileSync(filePath, 'utf-8');
-        jar = await CookieJar.deserialize(JSON.parse(raw));
+        const jar = await CookieJar.deserialize(JSON.parse(raw));
         log.verbose('Cookie jar loaded:', filePath);
+        return jar;
       } catch (e) {
         log.warn('Failed to load cookie jar, creating new one:', e);
-        jar = new CookieJar();
       }
-    } else {
-      jar = new CookieJar();
     }
-    return new CookieStore(jar, filePath);
+    return new CookieJar();
+  }
+
+  /**
+   * 参照先ファイルを差し替えて Jar を読み直す (アカウント切替用)。
+   * NicoHttp などが保持している CookieStore 参照をそのまま使い続けられる。
+   */
+  async switchFile(filePath: string): Promise<void> {
+    this.jar = await CookieStore.readJar(filePath);
+    this.filePath = filePath;
+  }
+
+  /** 保存先を移して即保存する (旧ファイルは削除) */
+  async relocate(filePath: string): Promise<void> {
+    const old = this.filePath;
+    this.filePath = filePath;
+    await this.save();
+    if (old !== filePath && fs.existsSync(old)) fs.unlinkSync(old);
   }
 
   /** Jar をJSON化して保存 */

@@ -15,6 +15,8 @@ interface Props {
   initialStage?: 'credentials' | 'mfa';
   /** MFA-only起動時の送信先URL */
   initialMfaSubmitUrl?: string;
+  /** 別アカウントの追加ログイン。アクティブアカウントの保存メール/パスワードを引き継がない */
+  addAccount?: boolean;
 }
 
 type Stage = 'credentials' | 'mfa';
@@ -35,7 +37,13 @@ const SSO_BUTTONS: { id: SsoProvider; label: string }[] = [
  * ② 2段階認証コード入力 (必要時のみ)
  * ③ 「ブラウザでログイン」も併設
  */
-export function LoginModal({ onClose, onLoggedIn, initialStage, initialMfaSubmitUrl }: Props): JSX.Element {
+export function LoginModal({
+  onClose,
+  onLoggedIn,
+  initialStage,
+  initialMfaSubmitUrl,
+  addAccount
+}: Props): JSX.Element {
   const showToast = useAppStore((s) => s.showToast);
   const [stage, setStage] = useState<Stage>(initialStage ?? 'credentials');
   const [email, setEmail] = useState('');
@@ -48,6 +56,7 @@ export function LoginModal({ onClose, onLoggedIn, initialStage, initialMfaSubmit
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
+    if (addAccount) return;
     void (async () => {
       const [savedEmail, hasCreds] = await Promise.all([
         window.nndd.invoke<string | null>(window.nndd.channels.AUTH_GET_SAVED_EMAIL).catch(() => null),
@@ -59,7 +68,7 @@ export function LoginModal({ onClose, onLoggedIn, initialStage, initialMfaSubmit
       }
       setHasSavedCredentials(hasCreds);
     })();
-  }, []);
+  }, [addAccount]);
 
   // ログイン処理中に main から2FAコード要求が来たらコード入力段へ切り替える
   useEffect(() => {
@@ -172,7 +181,9 @@ export function LoginModal({ onClose, onLoggedIn, initialStage, initialMfaSubmit
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
       <div className="bg-nndd-panel border border-nndd-border rounded p-5 w-[360px] text-sm">
         <div className="flex justify-between items-center mb-3">
-          <div className="font-bold">ニコニコ動画 ログイン</div>
+          <div className="font-bold">
+            {addAccount ? 'アカウントを追加' : 'ニコニコ動画 ログイン'}
+          </div>
           <button onClick={handleClose} className="text-nndd-subtext hover:text-nndd-text">
             ×
           </button>

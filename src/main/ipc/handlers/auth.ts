@@ -1,6 +1,6 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import { IpcChannel } from '@shared/types';
-import { AuthManager, MyListClient, type SsoProvider } from '../../nicovideo';
+import { AccountManager, AuthManager, MyListClient, type SsoProvider } from '../../nicovideo';
 import { MaintenanceMonitor } from '../../nicovideo/MaintenanceMonitor';
 import { createLogger } from '../../util/Logger';
 import type { IpcHandlerContext } from './context';
@@ -41,6 +41,18 @@ export function registerAuthHandlers(): void {
     // アカウントが変わると自分のマイリストも変わるので、所有確認のキャッシュを捨てる
     MyListClient.clearOwnMylistCache();
     return true;
+  });
+
+  ipcMain.handle(IpcChannel.ACCOUNT_LIST, () => AccountManager.getState());
+
+  ipcMain.handle(IpcChannel.ACCOUNT_SWITCH, async (_e, params: { id: string }) => {
+    return AuthManager.switchAccount(params.id);
+  });
+
+  ipcMain.handle(IpcChannel.ACCOUNT_REMOVE, async (_e, params: { id: string }) => {
+    // 削除対象がログイン中ならサーバー側もログアウトしてから Cookie を破棄する
+    if (AccountManager.activeId === params.id) await AuthManager.logout();
+    return AccountManager.remove(params.id);
   });
 
   ipcMain.handle(
@@ -84,6 +96,13 @@ export function startSessionCheck(ctx: IpcHandlerContext): void {
     }
   });
 
+  AccountManager.setNotifier((state) => {
+    const mainWin = mainWindowGetter?.();
+    if (mainWin && !mainWin.isDestroyed()) {
+      mainWin.webContents.send(IpcChannel.ACCOUNT_CHANGED, state);
+    }
+  });
+
   // セッションチェック。切れていたら自動再ログイン、失敗時はrendererに通知。
   // 起動直後に1回 + 以後30分ごと (起動直後チェックがないと、数日放置後の起動でセッション切れに
   // 気付かないまま最初の動画再生を試みて失敗する)
@@ -92,7 +111,11 @@ export function startSessionCheck(ctx: IpcHandlerContext): void {
       if (AuthManager.isLoggedOut) return;
       try {
         const ok = await AuthManager.checkLoggedIn();
-        if (ok) return;
+        if (ok) {
+          // プレミアム加入/解約やニックネーム変更を反映
+          await AccountManager.refreshActiveProfile();
+          return;
+        }
         // メンテ中は 503 でログイン確認に失敗するだけ。期限切れ扱いで再ログインや通知を出さない
         if (MaintenanceMonitor.isActive('video')) return;
         const result = await AuthManager.autoRelogin();

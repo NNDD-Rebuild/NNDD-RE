@@ -1,7 +1,6 @@
-import path from 'node:path';
-import { app } from 'electron';
-import { NnddPaths } from '@shared/constants';
 import { CookieStore } from './auth/CookieStore';
+import { accountCookiePath, anonymousCookiePath, legacyCookiePath } from './auth/accountPaths';
+import { getConfigStore } from '../config/ConfigStore';
 import { NicoHttp } from './NicoHttp';
 
 /**
@@ -20,10 +19,13 @@ export class NicoContext {
 
   static async initialize(): Promise<NicoContext> {
     if (this._instance) return this._instance;
-    const cookiePath = path.join(
-      app.getPath('userData'),
-      NnddPaths.COOKIE_FILE_NAME
-    );
+    // 最後に使ったアカウントの Cookie を復元。アカウント未登録 (旧バージョンからの移行前) は旧 cookies.json
+    const config = getConfigStore().get('accounts');
+    const cookiePath = config.activeId
+      ? accountCookiePath(config.activeId)
+      : config.list.length > 0
+        ? anonymousCookiePath()
+        : legacyCookiePath();
     const cookieStore = await CookieStore.load(cookiePath);
     const http = new NicoHttp(cookieStore);
     this._instance = new NicoContext(cookieStore, http);

@@ -10,6 +10,7 @@ import { shutdownHttpServer } from './ipc/handlers/http';
 import { createLogger, setLogLevel } from './util/Logger';
 import { isHeadless } from './util/headless';
 import { NicoContext } from './nicovideo/NicoContext';
+import { AccountManager } from './nicovideo/auth/AccountManager';
 import { NicoHistoryClient } from './nicovideo';
 import {
   registerScheme,
@@ -248,6 +249,8 @@ app.whenReady().then(async () => {
 
   // ニコニコAPI コンテキスト初期化 (Cookie読込)
   await NicoContext.initialize();
+  // 旧単一アカウントからの移行・プロフィール更新 (ネットワーク待ちで起動を止めない)
+  void AccountManager.initialize();
 
   // 画像キャッシュ: 起動時にフォルダを確保 + 設定値を反映
   {
