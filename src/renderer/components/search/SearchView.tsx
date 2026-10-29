@@ -19,6 +19,8 @@ import { extractVideoIdFromInput } from '@shared/utils/videoId';
 import type { DownloadKind } from '@shared/types/download';
 import { enqueueDownload } from '../../util/enqueueDownload';
 import { useSearchHistory } from '@renderer/hooks/useInputHistory';
+import { SavedSearchSidebar } from './SavedSearchSidebar';
+import { SEARCH_SORT_OPTIONS } from './searchOptions';
 
 /**
  * 検索タブ。
@@ -293,47 +295,17 @@ export function SearchView(): JSX.Element {
     handleSearch(1, { word: s.word, type: s.type, sortType: s.sortType });
   };
 
-  const handleRemoveSaved = async (id: string): Promise<void> => {
-    await window.nndd.invoke(window.nndd.channels.SEARCH_SAVED_REMOVE, id);
-    reloadSaved();
-  };
-
   const totalPages = total > 0 ? Math.ceil(total / LIMIT) : 0;
 
   return (
     <div className="h-full flex">
       {/* 左: 保存検索 */}
-      <aside className="w-56 border-r border-nndd-border bg-nndd-panel p-2 overflow-y-auto">
-        <div className="font-bold text-xs text-nndd-subtext mb-2">
-          保存した検索
-        </div>
-        {savedSearches.length === 0 ? (
-          <div className="text-xs text-nndd-subtext">なし</div>
-        ) : (
-          savedSearches.map((s) => (
-            <div
-              key={s.id}
-              className="flex items-center gap-1 p-1 hover:bg-nndd-border rounded text-xs"
-            >
-              <button
-                onClick={() => handleLoadSaved(s)}
-                onDoubleClick={() => handleLoadSavedAndSearch(s)}
-                className="flex-1 text-left truncate"
-                title={s.word}
-              >
-                {s.name}
-              </button>
-              <button
-                onClick={() => handleRemoveSaved(s.id)}
-                className="text-nndd-subtext hover:text-red-500 dark:hover:text-red-400"
-                title="削除"
-              >
-                ×
-              </button>
-            </div>
-          ))
-        )}
-      </aside>
+      <SavedSearchSidebar
+        items={savedSearches}
+        onLoad={handleLoadSaved}
+        onLoadAndSearch={handleLoadSavedAndSearch}
+        onChanged={reloadSaved}
+      />
 
       {/* 右: 検索フォーム + 結果 */}
       <main className="flex-1 flex flex-col">
@@ -365,14 +337,9 @@ export function SearchView(): JSX.Element {
             onChange={(e) => setSortType(e.target.value as NNDDRESearchSortTypeValue)}
             className="bg-nndd-bg border border-nndd-border px-2 py-1 text-sm"
           >
-            <option value={NNDDRESearchSortType.VIEW_COUNT_DESC}>再生数 多い順</option>
-            <option value={NNDDRESearchSortType.COMMENT_COUNT_DESC}>コメ多い順</option>
-            <option value={NNDDRESearchSortType.MYLIST_COUNT_DESC}>マイリス多い順</option>
-            <option value={NNDDRESearchSortType.LIKE_COUNT_DESC}>いいね多い順</option>
-            <option value={NNDDRESearchSortType.REGISTERED_AT_DESC}>新着順</option>
-            <option value={NNDDRESearchSortType.REGISTERED_AT_ASC}>古い順</option>
-            <option value={NNDDRESearchSortType.LENGTH_ASC}>長さ短い順</option>
-            <option value={NNDDRESearchSortType.LENGTH_DESC}>長さ長い順</option>
+            {SEARCH_SORT_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
           </select>
           <button
             onClick={() => handleSearch(1)}

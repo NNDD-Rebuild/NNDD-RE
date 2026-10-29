@@ -169,6 +169,20 @@ export class NnddDatabase {
         // 既にカラムあり — 無視
       }
     }
+    // v16 → v17: saved_search に parentId / isDir カラム追加 (保存検索のフォルダ分け)
+    if (Number(from) <= 16) {
+      for (const sql of [
+        `ALTER TABLE saved_search ADD COLUMN parentId TEXT;`,
+        `ALTER TABLE saved_search ADD COLUMN isDir INTEGER DEFAULT 0;`
+      ]) {
+        try {
+          this.db.exec(sql);
+        } catch {
+          // 既にカラムあり — 無視
+        }
+      }
+      log.info('added saved_search.parentId / isDir columns');
+    }
   }
 
   /** プリペアドステートメントの取得 */

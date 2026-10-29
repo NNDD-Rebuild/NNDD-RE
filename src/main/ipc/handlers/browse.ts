@@ -256,6 +256,14 @@ export function registerBrowseHandlers(ctx: IpcHandlerContext): void {
     return true;
   });
 
+  ipcMain.handle(
+    IpcChannel.SEARCH_SAVED_MOVE,
+    (_e, args: { id: string; parentId: string | null }) => {
+      library.searchDao.move(args.id, args.parentId ?? null);
+      return true;
+    }
+  );
+
   // --- 入力欄の履歴 (保存のON/OFFは設定。OFF中は追加せず、候補も返さない) ---
   const dao = library.inputHistoryDao;
   const cfg = getConfigStore();

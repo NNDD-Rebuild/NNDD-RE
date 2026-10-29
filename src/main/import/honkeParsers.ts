@@ -139,24 +139,28 @@ export interface HonkeSearchItem {
   sortType: number;
   searchType: number;
   isDir: boolean;
+  /** 所属フォルダの、返却配列内でのインデックス。ルート直下は -1 */
+  parent: number;
 }
 
-/** searchItems.xml: フォルダは平坦化 */
+/** searchItems.xml: フォルダは searchItem のネスト。親子関係は parent (配列内インデックス) で表した平坦な配列で返す (親は子より前) */
 export function parseSearchItemsXml(xml: string): HonkeSearchItem[] {
   const out: HonkeSearchItem[] = [];
-  const walk = (nodes: Node[]): void => {
+  const walk = (nodes: Node[], parent: number): void => {
     for (const n of nodes) {
+      const index = out.length;
       out.push({
         name: safeDecode(str(n['@_name'])),
         word: safeDecode(str(n['@_searchWord'])),
         sortType: Number.parseInt(str(n['@_sortType']), 10) || 0,
         searchType: Number.parseInt(str(n['@_searchType']), 10) || 0,
-        isDir: str(n['@_isDir']) === 'true'
+        isDir: str(n['@_isDir']) === 'true',
+        parent
       });
-      if (n.searchItem) walk(asArray(n.searchItem as Node | Node[]));
+      if (n.searchItem) walk(asArray(n.searchItem as Node | Node[]), index);
     }
   };
-  walk(asArray(root(xml, 'searchItems').searchItem as Node | Node[]));
+  walk(asArray(root(xml, 'searchItems').searchItem as Node | Node[]), -1);
   return out;
 }
 

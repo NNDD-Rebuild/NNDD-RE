@@ -6,7 +6,7 @@
  * 既存のオフライン NNDD ライブラリ DB をそのまま読み込めるようにする。
  */
 
-export const DB_SCHEMA_VERSION = '16';
+export const DB_SCHEMA_VERSION = '17';
 
 export const CREATE_TABLES = [
   /* NNDDREVideo - 動画本体 */
@@ -100,7 +100,9 @@ export const CREATE_TABLES = [
     name TEXT,
     word TEXT,
     type TEXT,
-    sortType TEXT
+    sortType TEXT,
+    parentId TEXT,
+    isDir INTEGER DEFAULT 0
   );`,
 
   /* NGリスト (コメント) */
@@ -310,8 +312,9 @@ export const Q = {
   // 保存検索
   SELECT_SAVED_SEARCHES: `SELECT * FROM saved_search;`,
   INSERT_SAVED_SEARCH: `
-    INSERT OR REPLACE INTO saved_search (id, name, word, type, sortType)
-    VALUES (?, ?, ?, ?, ?);`,
+    INSERT OR REPLACE INTO saved_search (id, name, word, type, sortType, parentId, isDir)
+    VALUES (?, ?, ?, ?, ?, ?, ?);`,
+  UPDATE_SAVED_SEARCH_PARENT: `UPDATE saved_search SET parentId = ? WHERE id = ?;`,
   DELETE_SAVED_SEARCH: `DELETE FROM saved_search WHERE id = ?;`,
   DELETE_ALL_SAVED_SEARCH: `DELETE FROM saved_search;`,
 

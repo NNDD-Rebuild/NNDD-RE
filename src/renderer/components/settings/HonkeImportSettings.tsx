@@ -22,7 +22,7 @@ const CATEGORY_LABELS: Record<
   },
   [HonkeImportCategory.NG]: {
     label: "NGリスト",
-    hint: "NGワード/ID/コマンド/NGタグ (ライブラリのタグ一覧から隠すタグ。許可IDは非対応)",
+    hint: "NGワード/ID/コマンド/許可ID/NGタグ (ライブラリのタグ一覧から隠すタグ)",
   },
   [HonkeImportCategory.INPUT_HISTORY]: {
     label: "検索・マイリスト履歴",
@@ -30,11 +30,11 @@ const CATEGORY_LABELS: Record<
   },
   [HonkeImportCategory.MYLIST]: {
     label: "マイリスト",
-    hint: "フォルダ階層は平坦化して取り込み",
+    hint: "フォルダ階層も取り込み",
   },
   [HonkeImportCategory.SEARCH]: {
     label: "保存検索",
-    hint: "コメント日時順は投稿日時順に変換",
+    hint: "フォルダ階層も取り込み",
   },
   [HonkeImportCategory.HISTORY]: { label: "再生履歴", hint: "" },
   [HonkeImportCategory.PLAYLIST]: {

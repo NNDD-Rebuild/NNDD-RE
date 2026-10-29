@@ -21,7 +21,9 @@ import {
   type NNDDREVideo,
   type NNDDRESearchSortTypeValue,
   type NNDDRESearchTypeValue,
-  type RssTypeValue
+  type RssTypeValue,
+  NNDDRESearchSortType,
+  NNDDRESearchType
 } from '@shared/types';
 import { buildLocalUrl } from '@shared/constants';
 import { extractBracketedVideoId } from '@shared/utils/videoId';
@@ -65,7 +67,15 @@ interface Collected<T> {
 interface ConfigItem { reKey: string; value: unknown; honkeKey: string }
 /** isDir のとき url は空 (適用時に採番)。parent は items 内のインデックスで、ルートは -1 */
 interface MyListCandidate { name: string; url: string; type: RssTypeValue; isDir: boolean; parent: number }
-interface SearchCandidate { name: string; word: string; type: NNDDRESearchTypeValue; sortType: NNDDRESearchSortTypeValue }
+interface SearchCandidate {
+  name: string;
+  word: string;
+  type: NNDDRESearchTypeValue;
+  sortType: NNDDRESearchSortTypeValue;
+  isDir: boolean;
+  /** 所属フォルダの candidates 内でのインデックス。ルート直下は -1 */
+  parent: number;
+}
 type InputHistoryCandidate = { search: string } | { myList: MyListHistoryEntry };
 interface PlaylistCandidate { name: string; entries: { videoId: string; title: string; lengthSec: number }[] }
 interface LibraryCandidate {
@@ -581,23 +591,29 @@ export class HonkeImporter {
     }
     const items: SearchCandidate[] = [];
     const skipped: string[] = [];
-    const existing = new Set(this.deps.library.searchDao.list().map((s) => `${s.type}\0${s.word}`));
+    const existing = new Set(
+      this.deps.library.searchDao.list().filter((s) => !s.isDir).map((s) => `${s.type}\0${s.word}`)
+    );
     const seen = new Set<string>();
+    const candidateIndex = new Map<number, number>();
     let duplicate = 0;
-    for (const s of list) {
-      if (s.isDir || !s.word) {
-        if (s.isDir) skipped.push(`${s.name}: フォルダは取り込まず、中身を平坦に取り込みます`);
-        continue;
+    list.forEach((s, i) => {
+      const parent = candidateIndex.get(s.parent) ?? -1;
+      if (s.isDir) {
+        candidateIndex.set(i, items.length);
+        items.push({ name: s.name, word: '', type: NNDDRESearchType.KEYWORD, sortType: NNDDRESearchSortType.REGISTERED_AT_DESC, isDir: true, parent });
+        return;
       }
+      if (!s.word) return;
       const type = mapSearchType(s.searchType);
       const key = `${type}\0${s.word}`;
-      if (seen.has(key)) continue;
+      if (seen.has(key)) return;
       seen.add(key);
       const sort = mapSortType(s.sortType);
-      if (sort.fallback) skipped.push(`${s.name}: コメント日時順は未対応のため投稿日時の新しい順にしました`);
+      if (sort.fallback) skipped.push(`${s.name}: 並び順が不正な値だったため投稿日時の新しい順にしました`);
       if (existing.has(key)) duplicate++;
-      items.push({ name: s.name || s.word, word: s.word, type, sortType: sort.value });
-    }
+      items.push({ name: s.name || s.word, word: s.word, type, sortType: sort.value, isDir: false, parent });
+    });
     return { total: list.length, items, duplicate, skipped };
   }
 
@@ -606,19 +622,39 @@ export class HonkeImporter {
     const dao = this.deps.library.searchDao;
     let added = 0;
     let skipped = 0;
+    let folders = 0;
     this.deps.library.db.transaction(() => {
       if (policy === 'replace') dao.clearAll();
-      const existing = new Set(dao.list().map((s) => `${s.type}\0${s.word}`));
-      for (const s of c.items) {
+      const current = dao.list();
+      const existing = new Set(current.filter((s) => !s.isDir).map((s) => `${s.type}\0${s.word}`));
+      const folderKey = (parentId: string | null, name: string): string => `${parentId ?? ''}\0${name}`;
+      const folderIds = new Map<string, string>();
+      for (const s of current) if (s.isDir) folderIds.set(folderKey(s.parentId ?? null, s.name), s.id);
+      const idOf: string[] = [];
+      c.items.forEach((s, i) => {
+        const parentId = s.parent >= 0 ? idOf[s.parent] : null;
+        if (s.isDir) {
+          const key = folderKey(parentId, s.name);
+          let id = folderIds.get(key);
+          if (!id) {
+            id = crypto.randomUUID();
+            folderIds.set(key, id);
+            dao.upsert({ id, name: s.name, word: '', type: s.type, sortType: s.sortType, parentId, isDir: true });
+            folders++;
+          }
+          idOf[i] = id;
+          return;
+        }
         if (existing.has(`${s.type}\0${s.word}`)) {
           skipped++;
-          continue;
+          return;
         }
-        dao.upsert({ id: crypto.randomUUID(), ...s });
+        dao.upsert({ id: crypto.randomUUID(), name: s.name, word: s.word, type: s.type, sortType: s.sortType, parentId });
         added++;
-      }
+      });
     });
-    return { category: HonkeImportCategory.SEARCH, added, updated: 0, skipped, notes: c.skipped };
+    const notes = folders > 0 ? [`フォルダ ${folders} 個を作成しました`, ...c.skipped] : c.skipped;
+    return { category: HonkeImportCategory.SEARCH, added, updated: 0, skipped, notes };
   }
 
   // ---- 検索・マイリストの入力履歴 ----

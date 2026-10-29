@@ -30,6 +30,9 @@ export const NNDDRESearchSortType = {
   MYLIST_COUNT_ASC: 'mylistCount_asc',
   /** いいね数 多い順 */
   LIKE_COUNT_DESC: 'likeCount_desc',
+  /** コメント日時 新しい順 (最新のコメントが付いた順) */
+  LAST_COMMENT_DESC: 'lastCommentTime_desc',
+  LAST_COMMENT_ASC: 'lastCommentTime_asc',
   /** 長さ 短い順 */
   LENGTH_ASC: 'length_asc',
   LENGTH_DESC: 'length_desc'
@@ -76,4 +79,8 @@ export interface SearchItem {
   word: string;
   type: NNDDRESearchTypeValue;
   sortType: NNDDRESearchSortTypeValue;
+  /** 所属フォルダの id。ルート直下は null / 未指定 */
+  parentId?: string | null;
+  /** フォルダのとき true (word / type / sortType は使わない) */
+  isDir?: boolean;
 }

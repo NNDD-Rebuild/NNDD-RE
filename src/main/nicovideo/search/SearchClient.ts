@@ -156,6 +156,10 @@ export class SearchClient {
         return ['mylistCounter', 'asc'];
       case 'likeCount_desc':
         return ['likeCounter', 'desc'];
+      case 'lastCommentTime_desc':
+        return ['lastCommentTime', 'desc'];
+      case 'lastCommentTime_asc':
+        return ['lastCommentTime', 'asc'];
       case 'length_asc':
         return ['lengthSeconds', 'asc'];
       case 'length_desc':
@@ -202,6 +206,10 @@ export class SearchClient {
         return ['mylistCount', 'asc'];
       case 'likeCount_desc':
         return ['likeCount', 'desc'];
+      case 'lastCommentTime_desc':
+        return ['lastCommentTime', 'desc'];
+      case 'lastCommentTime_asc':
+        return ['lastCommentTime', 'asc'];
       case 'length_asc':
         return ['duration', 'asc'];
       case 'length_desc':
