@@ -179,7 +179,7 @@ Space / F / M / V / ←→ / ↑↓ など。一覧は [キーボードショー
 
 ## 内蔵HTTPサーバー (他アプリ連携)
 
-設定 → 全般 → 内蔵HTTPサーバー「起動」をクリックすると `http://127.0.0.1:12345/` で稼働します。エンドポイント一覧は [内蔵HTTPサーバー連携](https://nndd-rebuild.github.io/NNDD-RE/http-server-integration/) を参照してください。
+設定 → 外部ツール・連携 → サーバー・LAN「起動」をクリックすると `http://127.0.0.1:12345/` で稼働します。エンドポイント一覧は [内蔵HTTPサーバー連携](https://nndd-rebuild.github.io/NNDD-RE/http-server-integration/) を参照してください。
 
 ## アーキテクチャの要点
 
@@ -205,7 +205,7 @@ Space / F / M / V / ←→ / ↑↓ など。一覧は [キーボードショー
 
 - `better-sqlite3` はネイティブモジュールのため `electron-rebuild` または `electron-builder install-app-deps` の実行が必要になることがあります
 - FFmpeg / yt-dlp は **動画のダウンロード (ライブラリへの保存) にのみ必要**です。動画の視聴 (デフォルトのストリーミング再生) は niconico CDN から `hls.js` で直接再生するため、どちらも不要です
-- FFmpeg / yt-dlp は設定 → 外部ツール画面からオンデマンドでダウンロードします (バイナリは `userData/bin/` 配下に保存、yt-dlpと同じディレクトリに置くことでyt-dlpがFFmpegを自動検出します)
+- FFmpeg / yt-dlp は設定 → 外部ツール・連携 → 外部ツール画面からオンデマンドでダウンロードします (バイナリは `userData/bin/` 配下に保存、yt-dlpと同じディレクトリに置くことでyt-dlpがFFmpegを自動検出します)
 - カスタムプロトコル `nndd-re-local://` は CSP 設定で許可済みです
 
 ## 参考
