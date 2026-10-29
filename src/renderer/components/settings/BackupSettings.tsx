@@ -11,6 +11,7 @@ import { GitHubLoginArea } from './githubSync/GitHubLoginArea';
 import { DeviceFlowModal } from './githubSync/DeviceFlowModal';
 import { ProfileList } from './githubSync/ProfileList';
 import { ProfileEditor } from './githubSync/ProfileEditor';
+import { HonkeImportSettings } from './HonkeImportSettings';
 import { Hint, PageTitle, SettingsPage, StatusText } from './common';
 
 export function BackupSettings(): JSX.Element {
@@ -212,7 +213,7 @@ export function BackupSettings(): JSX.Element {
 
   return (
     <SettingsPage>
-      <PageTitle title="バックアップ">
+      <PageTitle title="バックアップ・移行">
         GitHub Gist を使ってアプリ設定・NGリスト・マイリスト・スケジュール・保存検索・プレイリスト・
         視聴履歴をバックアップ/同期できます。アップロードはプロファイルごとに手動、または
         「起動時・終了時に自動アップロード」を有効にすると自動で行われます(前回から変更がなければ
@@ -267,6 +268,8 @@ export function BackupSettings(): JSX.Element {
         />
       )}
       </div>
+
+      <HonkeImportSettings />
     </SettingsPage>
   );
 }

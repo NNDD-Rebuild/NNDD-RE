@@ -3,6 +3,7 @@ import { useConfig } from '@renderer/hooks/useConfig';
 import { useAppStore } from '@renderer/store/useAppStore';
 import { IpcChannel } from '@shared/types';
 import type { BinaryStatuses } from './ExternalToolsSettings';
+import { ImageCacheSection } from './general/ImageCacheSection';
 import {
   Btn,
   CheckRow,
@@ -21,11 +22,11 @@ type SortCol = 'videoName' | 'time' | 'playCount' | 'pubDate' | 'creationDate';
 type SortDir = 'asc' | 'desc';
 
 /**
- * 設定 > DLリスト・ライブラリ。
- * 元: NNDD.mxml の Canvas label="DLリスト・ライブラリ"
+ * 設定 > ダウンロード / ライブラリ。
+ * 元: NNDD.mxml の Canvas label="DLリスト・ライブラリ" を、DL動作とライブラリ表示に分けたもの。
  */
 
-export function LibrarySettings(): JSX.Element {
+export function DownloadSettings(): JSX.Element {
   const [maxConcurrent, setMaxConcurrent] = useConfig<number>(
     'maxConcurrentDownloads',
     2
@@ -70,26 +71,17 @@ export function LibrarySettings(): JSX.Element {
     'downloadMuxImplementation',
     'mediabunny'
   );
-  const [librarySortCol, setLibrarySortCol] = useConfig<SortCol>('ui.librarySortCol', 'pubDate');
-  const [librarySortDir, setLibrarySortDir] = useConfig<SortDir>('ui.librarySortDir', 'asc');
-  const [libraryDisplayMode, setLibraryDisplayModeConfig] = useConfig<LibraryDisplayMode>('ui.libraryViewMode', 'table');
   const [binaryStatus, setBinaryStatus] = useState<BinaryStatuses | null>(null);
-  const setLibraryViewModeStore = useAppStore((s) => s.setLibraryViewMode);
   const setPendingSettingsTab = useAppStore((s) => s.setPendingSettingsTab);
   const ytDlpMissing = binaryStatus !== null && !binaryStatus.ytDlp.found;
   const ffmpegMissing = binaryStatus !== null && !binaryStatus.ffmpeg.found;
-  const setLibraryDisplayMode = (mode: LibraryDisplayMode): void => {
-    setLibraryDisplayModeConfig(mode);
-    setLibraryViewModeStore(mode);
-  };
-
   useEffect(() => {
     window.nndd.invoke<BinaryStatuses>(IpcChannel.BINARY_STATUS).then(setBinaryStatus).catch(() => {});
   }, []);
 
   return (
     <SettingsPage>
-      <PageTitle title="DLリスト・ライブラリ" />
+      <PageTitle title="ダウンロード" />
 
       <Section title="ダウンロード">
         <Row label="同時ダウンロード数" hint="1-10、デフォルト 2">
@@ -176,6 +168,23 @@ export function LibrarySettings(): JSX.Element {
           <NumberCommitInput min={0} max={300} step={10} value={comment429RetryWaitSec} onCommit={setComment429RetryWaitSec} />
         </Row>
       </Section>
+    </SettingsPage>
+  );
+}
+
+export function LibrarySettings(): JSX.Element {
+  const [librarySortCol, setLibrarySortCol] = useConfig<SortCol>('ui.librarySortCol', 'pubDate');
+  const [librarySortDir, setLibrarySortDir] = useConfig<SortDir>('ui.librarySortDir', 'asc');
+  const [libraryDisplayMode, setLibraryDisplayModeConfig] = useConfig<LibraryDisplayMode>('ui.libraryViewMode', 'table');
+  const setLibraryViewModeStore = useAppStore((s) => s.setLibraryViewMode);
+  const setLibraryDisplayMode = (mode: LibraryDisplayMode): void => {
+    setLibraryDisplayModeConfig(mode);
+    setLibraryViewModeStore(mode);
+  };
+
+  return (
+    <SettingsPage>
+      <PageTitle title="ライブラリ" />
 
       <Section title="ライブラリ表示形式">
         <RadioGroup
@@ -212,6 +221,8 @@ export function LibrarySettings(): JSX.Element {
           ライブラリを開いたときの初期ソート。リスト・グリッド両方に適用されます。
         </Hint>
       </Section>
+
+      <ImageCacheSection />
     </SettingsPage>
   );
 }

@@ -286,7 +286,7 @@ live.nicovideo.jp/watch/lvXXX の #embedded-data (data-props)
 
 #### NCV 連携 (起動)
 
-設定 > 外部ツール > NCV (`ExternalToolsSettings.tsx`、`live.ncvEnabled` / `live.ncvPath`) が ON のとき、生放送を開くと `LivePlayerManager.launchNcv` が NCV を起動する。起動は視聴開始後 (`startSession`、タイムシフトかどうかが分かってから) に決め、`live.ncvLaunchDelaySec` 秒 (既定 3、0 で即時) 待ってから行う。タイムシフトは `live.ncvTimeshift` (既定 ON) が OFF なら起動せず、コメントリストも通常の表示方式になる。起動したかは `LiveStartResult.ncvLaunched` で renderer に返し、プレイヤーの URL の `ncv=pending` (RE から起動予定) / `ncv=linked` (NCV から呼ばれた) と合わせてコメントリスト表示を決める。
+設定 > 外部ツール・連携 > 外部ツール > NCV (`ExternalToolsSettings.tsx`、`live.ncvEnabled` / `live.ncvPath`) が ON のとき、生放送を開くと `LivePlayerManager.launchNcv` が NCV を起動する。起動は視聴開始後 (`startSession`、タイムシフトかどうかが分かってから) に決め、`live.ncvLaunchDelaySec` 秒 (既定 3、0 で即時) 待ってから行う。タイムシフトは `live.ncvTimeshift` (既定 ON) が OFF なら起動せず、コメントリストも通常の表示方式になる。起動したかは `LiveStartResult.ncvLaunched` で renderer に返し、プレイヤーの URL の `ncv=pending` (RE から起動予定) / `ncv=linked` (NCV から呼ばれた) と合わせてコメントリスト表示を決める。
 
 #### 実機で未確認の点
 
@@ -682,7 +682,7 @@ npm run rebuild  # または electron-rebuild -f -t dev
 ### 動画がダウンロードできない
 
 - 既定の設定ではダウンロードに yt-dlp / FFmpeg は不要。失敗時のエラー内容を確認する (ネイティブDLはフォールバックしない)
-- yt-dlp / FFmpeg を使う設定 (`useNativeVideoDownloader: false` または `downloadMuxImplementation: 'ffmpeg'`) の場合は、設定 > 外部ツール で検出されているか確認する（本ドキュメントの「動画DL・再生とyt-dlp/FFmpegの関係」参照）
+- yt-dlp / FFmpeg を使う設定 (`useNativeVideoDownloader: false` または `downloadMuxImplementation: 'ffmpeg'`) の場合は、設定 > 外部ツール・連携 で検出されているか確認する（本ドキュメントの「動画DL・再生とyt-dlp/FFmpegの関係」参照）
 - `YtDlpDownloader.findExe()` は `ytDlpPath` 設定 → `userData/bin/` → PATH の順で探索するため、パス指定が誤っていないか確認
 
 ---

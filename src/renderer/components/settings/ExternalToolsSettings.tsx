@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { useConfig } from '@renderer/hooks/useConfig';
 import { IpcChannel } from '@shared/types';
 import { Btn, Card, CheckRow, CommitInput, Hint, NumberCommitInput, PageTitle, SettingsPage, StatusText } from './common';
-import { TailscaleSidecarSection } from './TailscaleSidecarSection';
 
 export interface BinaryStatus {
   found: boolean;
@@ -224,8 +223,6 @@ export function ExternalToolsSettings(): JSX.Element {
         noInstallNote="ffmpeg をインストール後、再起動してください:"
         platform={platform}
       />
-
-      <TailscaleSidecarSection />
 
       <Card title="外部プレイヤー">
         <CheckRow

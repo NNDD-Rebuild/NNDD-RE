@@ -17,7 +17,7 @@ export function DeveloperSection({ onDeveloperModeChange }: DeveloperSectionProp
           void setDeveloperEnabled(v).then(() => onDeveloperModeChange?.(v));
         }}
         label={<span className="font-bold">開発者モードを有効にする</span>}
-        hint="有効にすると、設定画面に「デバッグ」タブが表示され、API生データの保存先選択やダンプ対象の設定ができるようになります。"
+        hint="有効にすると、設定画面に「デバッグ」項目が表示され、API生データの保存先選択やダンプ対象の設定ができるようになります。"
       />
     </Section>
   );

@@ -1,13 +1,8 @@
 import { LibraryRootSection } from './general/LibraryRootSection';
 import { LoginSection } from './general/LoginSection';
-import { PrivacySection, WatchHistorySection } from './general/PrivacySections';
-import { HttpServerSection } from './general/HttpServerSection';
-import { LanLibrarySection } from './general/LanLibrarySection';
+import { PrivacySection } from './general/PrivacySections';
 import { TraySection, WindowResetSection } from './general/WindowSections';
-import { ImageCacheSection } from './general/ImageCacheSection';
-import { DiscordRpcSection, WebhookSection, ChannelWatchSection } from './general/IntegrationSections';
 import { DeveloperSection } from './general/DeveloperSection';
-import { HonkeImportSettings } from './HonkeImportSettings';
 import { PageTitle, SettingsPage } from './common';
 
 
@@ -17,8 +12,13 @@ import { PageTitle, SettingsPage } from './common';
  *
  *  - 動画の保存先
  *  - ログイン
- *  - HTTPサーバー起動/停止
- *  - ウィンドウ位置リセット
+ *  - プライバシー
+ *  - システムトレイ・ウィンドウ位置リセット
+ *  - 開発者オプション
+ *
+ * HTTPサーバー・LANライブラリは「外部ツール・連携 > サーバー・LAN」、Discord・Webhook・
+ * チャンネル監視は「外部ツール・連携 > 通知・連携」、画像キャッシュは「ライブラリ」、
+ * 本家NNDDインポートは「バックアップ・移行」に移動した。
  *
  * 各設定グループは general/ 配下のコンポーネントが自分の state と初期読み込みを持つ。
  */
@@ -34,16 +34,8 @@ export function GeneralSettings({ onDeveloperModeChange }: GeneralSettingsProps)
       <LibraryRootSection />
       <LoginSection />
       <PrivacySection />
-      <WatchHistorySection />
-      <HttpServerSection />
-      <LanLibrarySection />
       <TraySection />
       <WindowResetSection />
-      <ImageCacheSection />
-      <DiscordRpcSection />
-      <WebhookSection />
-      <ChannelWatchSection />
-      <HonkeImportSettings />
       <DeveloperSection onDeveloperModeChange={onDeveloperModeChange} />
     </SettingsPage>
   );

@@ -1,10 +1,11 @@
 import { IpcChannel, type IpcChannelValue } from '@shared/types';
 import { useConfig } from '@renderer/hooks/useConfig';
 import { useAppStore } from '@renderer/store/useAppStore';
+import { WatchHistorySection } from './general/PrivacySections';
 import { Btn, CheckRow, Hint, PageTitle, RadioGroup, Row, Section, Select, SettingsPage } from './common';
 
 /**
- * 設定 > ランキング・検索・マイリスト。
+ * 設定 > 表示・検索 (旧: ランキング・検索・マイリスト)。
  * 元: NNDD.mxml の Canvas label="ランキング・検索・マイリスト"
  *
  *  - 起動時タブ
@@ -45,7 +46,7 @@ export function NicoSettings(): JSX.Element {
 
   return (
     <SettingsPage>
-      <PageTitle title="ランキング・検索・マイリスト">
+      <PageTitle title="表示・検索">
         ランキング・検索・マイリストの主要動作は実装済みです。
         起動時動作・UI・通信に関する詳細設定を以下で調整できます。
       </PageTitle>
@@ -62,7 +63,7 @@ export function NicoSettings(): JSX.Element {
                 { value: 'list', label: '☰ リスト', hint: 'コンパクトに一覧表示' }
               ]}
             />
-            <Hint className="mt-1">ライブラリの表示形式は「DLリスト・ライブラリ」タブで設定できます。</Hint>
+            <Hint className="mt-1">ライブラリの表示形式は「ライブラリ」項目で設定できます。</Hint>
           </div>
         </Row>
         <Row label="センシティブな動画を隠す" hint="OFFでランキングにR18等の閲覧注意動画も表示">
@@ -94,6 +95,8 @@ export function NicoSettings(): JSX.Element {
         </Row>
         <Hint>検索タブの検索ワード欄とマイリストタブのURL欄に、直近10件が候補として表示されます。</Hint>
       </Section>
+
+      <WatchHistorySection />
 
       <Section title="アプリ起動・UI">
         <Row label="起動時のタブ">

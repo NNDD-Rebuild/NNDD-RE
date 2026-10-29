@@ -10,7 +10,7 @@ interface FollowUserOption {
 }
 
 /**
- * 設定 > スケジュール (DLリスト・ライブラリ設定の一部)。
+ * 設定 > ダウンロード > スケジュール。
  *
  * 元: src/ScheduleWindow.mxml + ScheduleManager.as
  *

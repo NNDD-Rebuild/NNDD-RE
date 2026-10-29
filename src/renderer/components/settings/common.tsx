@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 import type {
   ButtonHTMLAttributes,
   InputHTMLAttributes,
@@ -11,6 +11,9 @@ import type {
  * 見出し・行・チェック・ラジオ・入力・ボタン・説明文はここに集約し、各タブで個別に Tailwind を書かない。
  */
 
+/** SettingsTabs の中身として描画されているか。true のとき PageTitle / SettingsPage の外枠は出さない */
+const EmbeddedContext = createContext(false);
+
 /** タブ最上部のページ見出し (h2) と説明文 */
 export function PageTitle({
   title,
@@ -18,7 +21,9 @@ export function PageTitle({
 }: {
   title: string;
   children?: ReactNode;
-}): JSX.Element {
+}): JSX.Element | null {
+  const embedded = useContext(EmbeddedContext);
+  if (embedded) return null;
   return (
     <div className="mb-4">
       <h2 className="text-base font-bold">{title}</h2>
@@ -29,7 +34,56 @@ export function PageTitle({
 
 /** タブ全体の外枠 */
 export function SettingsPage({ children }: { children: ReactNode }): JSX.Element {
-  return <div className="p-4 max-w-3xl">{children}</div>;
+  const embedded = useContext(EmbeddedContext);
+  if (embedded) return <>{children}</>;
+  return <div className="p-4 max-w-5xl">{children}</div>;
+}
+
+export interface SettingsTabItem {
+  id: string;
+  label: string;
+  content: ReactNode;
+}
+
+/**
+ * 設定ページ内の切り替えタブ。
+ * 中身は既存の設定コンポーネントをそのまま渡せる (外枠と見出しは SettingsTabs 側が出す)。
+ * 選択中のタブだけマウントする。
+ */
+export function SettingsTabs({
+  title,
+  tabs
+}: {
+  title: string;
+  tabs: SettingsTabItem[];
+}): JSX.Element {
+  const [activeId, setActiveId] = useState(tabs[0]?.id ?? '');
+  const active = tabs.find((t) => t.id === activeId) ?? tabs[0];
+  return (
+    <div className="p-4 max-w-5xl">
+      <PageTitle title={title} />
+      <div className="flex flex-wrap gap-2 border-b border-nndd-border mb-6" role="tablist">
+        {tabs.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            aria-selected={t.id === active.id}
+            onClick={() => setActiveId(t.id)}
+            className={[
+              'px-8 py-3 text-sm -mb-px border-b-2',
+              t.id === active.id
+                ? 'text-nndd-text border-nndd-accent'
+                : 'text-nndd-subtext border-transparent hover:text-nndd-text'
+            ].join(' ')}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <EmbeddedContext.Provider value={true}>{active.content}</EmbeddedContext.Provider>
+    </div>
+  );
 }
 
 /** 設定画面の見出し付きブロック */
