@@ -9,6 +9,8 @@ npm install
 npm run dev          # 開発実行 (main + renderer HMR)
 npm run tc:all      # 型チェック (node + web 両方)
 npm run build       # プロダクションビルド
+npm run check:ipc   # IpcChannel と ipcMain.handle 登録の突き合わせ
+npm run gen:proto   # proto/nicolive から src/main/nicovideo/live/gen/ を生成
 ```
 
 詳細は CLAUDE.md を参照。
@@ -41,8 +43,9 @@ npm run build       # プロダクションビルド
 | DL動画 | `~/Documents/NNDD-RE/library/Downloads/` |
 | 画像キャッシュ (サムネ・アイコン) | `userData/nndd-cache/image/` |
 | 映像ストリームキャッシュ | `userData/nndd-cache/movie/` (設定 `cacheRoot` 時は `<cacheRoot>/cache/movie/`) |
-| 設定 | `userData/config.json` (Electron ConfigStore) |
-| Cookie | `userData/session/` (tough-cookie) |
+| 設定 | `userData/nndd-config.json` (electron-store、`name: 'nndd-config'`) |
+| Cookie | `userData/accounts/<ユーザーID>.json` (tough-cookie、アカウント別。旧単一アカウント時代は `userData/cookies.json`) |
+| ログ | `userData/log/nndd.log` (超過分は `nndd.log.1` へローテート) |
 
 ---
 
@@ -57,11 +60,12 @@ npm run build       # プロダクションビルド
 | `ConfigStore` | 設定値の永続化 | `main.ts` (`getConfigStore()`) |
 | `BackupManager` | GitHub Gist バックアップ/同期 | `main.ts` で `new`（`src/main/githubSync/BackupManager.ts`） |
 | `TrayManager` | システムトレイ・メニュー管理 | `main.ts` で `new` |
-| `NnddHttpServer` | 内蔵HTTPサーバー | `main.ts` で `httpServer.enabled` 時のみ `new` |
-| `PlayerManager` | プレイヤー BrowserWindow 生成・管理 | staticシングルトン (`PlayerManager.get()`)。実際の起動は `registerIpc.ts` の `VIDEO_OPEN_PLAYER` ハンドラ、`main.ts` では終了時の `closeAll()` のみ参照 |
+| `AccountManager` | ニコニコのマルチアカウント管理 (アクティブ ID・切り替え) | `main.ts` (`AccountManager.initialize()`、staticシングルトン) |
+| `NnddHttpServer` | 内蔵HTTPサーバー | `main.ts` ではなく `ipc/handlers/http.ts` 内で `new`（`httpServer.enabled` またはヘッドレス時に自動起動、`HTTPD_START` でも起動）。`main.ts` は終了時の `shutdownHttpServer()` のみ参照 |
+| `PlayerManager` | プレイヤー BrowserWindow 生成・管理 | staticシングルトン (`PlayerManager.get()`)。実際の起動は `ipc/handlers/video.ts` の `VIDEO_OPEN_PLAYER` ハンドラ、`main.ts` では終了時の `closeAll()` のみ参照 |
 | `DownloadManager` | 動画 DL キュー・進捗 emit | `main.ts` ではなく `registerIpc.ts` 内で `new` |
 | `ScheduleManager` | スケジューラー定期実行 | `main.ts` ではなく `registerIpc.ts` 内で `new` |
-| `UpdateManager` | electron-updater ラッパー | `main.ts` では未使用。`registerIpc.ts` の update系ハンドラで `getUpdateManager()` により遅延取得 |
+| `UpdateManager` | electron-updater ラッパー | `getUpdateManager()` による遅延取得。`main.ts` は起動時の `checkOnStartup()`、`ipc/handlers/system.ts` の update系ハンドラが `check()` / `download()` / `install()` を呼ぶ |
 
 ### ニコニコAPI（src/main/nicovideo）
 
@@ -74,8 +78,9 @@ npm run build       # プロダクションビルド
 #### 動画取得・DL
 
 - **`WatchPageParser`**: watch ページの HTML/JSON 抽出 (動画メタ、低レイヤ)
-- **`WatchInfoHandler`**: `WatchPageParser` を使いつつ画像キャッシュ差し替え等の上位処理を行うハンドラ。`registerIpc.ts` から呼ばれる実際の取得口はこちら
-- **`WatchSession`**: `/v1/watch/{id}/access-rights/hls` で session ID 取得。**再生 (ストリーミング) 専用**に使われる (`ensureStreamSession()` 経由)- **`VideoDownloader`** (`src/main/nicovideo/video/VideoDownloader.ts`): **既定の動画DL**。`WatchSession` → `M3U8Parser` → `SegmentDownloader` で HLS セグメントを取得・AES-128 復号し、mux して保存する。yt-dlp・FFmpeg 不要
+- **`WatchInfoHandler`**: `WatchPageParser` を使いつつ画像キャッシュ差し替え等の上位処理を行うハンドラ。`ipc/handlers/` から呼ばれる実際の取得口はこちら
+- **`WatchSession`**: `/v1/watch/{id}/access-rights/hls` で session ID 取得。再生 (ストリーミング) 側は `ipc/handlers/video.ts` の `ensureStreamSession()` 経由で使う。ネイティブDLも `VideoDownloader` からセッション取得に使う
+- **`VideoDownloader`** (`src/main/nicovideo/video/VideoDownloader.ts`): **既定の動画DL**。`WatchSession` → `M3U8Parser` → `SegmentDownloader` で HLS セグメントを取得・AES-128 復号し、mux して保存する。yt-dlp・FFmpeg 不要
 - **`YtDlpDownloader`**: yt-dlp で bestvideo+bestaudio を取得して mux。`useNativeVideoDownloader` が false のときと、ネイティブ失敗時のフォールバック (下記「動画DLの経路」)
 - **`YtDlpStreamer`**: ストリーミングキャッシュ (`userData/nndd-cache/movie` または `<cacheRoot>/cache/movie`) の管理 (パス解決・キャッシュ確認・削除)
 - **`M3U8Parser` / `SegmentDownloader` / `Aes128Decryptor`**: ネイティブDL (`VideoDownloader`) と生放送の録画 (`LiveRecorder` / `LiveDownloader`) が使うHLS処理
@@ -96,8 +101,6 @@ yt-dlp・FFmpeg は既定では使わない。外部ツールが要るのは設�
 
 - **再生** (`VIDEO_GET_STREAM_URL`): `getConfigStore().get('player').streamingMode` (`'native' | 'hls' | 'niconico'`、デフォルト `native`) に応じて分岐。`native`/`hls` はどちらも `ensureStreamSession()` → `WatchSession.ensure()` で HLS URL を取得し、`native` は hls.js が直接、`hls` は `StreamServer`/`HlsProxy` 経由でプロキシ再生。`niconico` は公式プレイヤーの webview 埋め込み。**いずれも yt-dlp・FFmpeg 不要**。既にキャッシュ済みファイル (`YtDlpStreamer.getCachedPath()`) があれば最優先でそれを再生
 - **`BinaryInstaller.ts`** (`src/main/util/BinaryInstaller.ts`): yt-dlp/FFmpeg/ffplay のパス解決・バージョン確認・オンデマンドインストールを一元管理。`userData/bin/` に配置。yt-dlpはGitHub Releases本家、ffmpeg/ffplayは `yt-dlp/FFmpeg-Builds` から取得 (Windowsはwinget優先、macOSのffmpeg自動取得は非対応でbrew案内)。バイナリが見つからない場合、`YtDlpDownloader.findExe()` は `ytDlpPath`設定 → `userData/bin/` → PATH上の `yt-dlp` の順にフォールバックし、最終的に見つからなければDL項目が `FAIL` になるだけでアプリはクラッシュしない
-- **`StreamProtocol.ts`** の `spawnMergeDownload()` (yt-dlp+ffmpegでのマージDL、'wait'モード用) は定義されているが現状どこからも呼ばれていない未使用コード
-- `ConfigStore.ts` の `player.streamingMode` 付近には `'cache'`/`'ffplay'`/`'streaming'` という古いモード名を説明したコメントが残っているが、現行の型定義は `'native' | 'hls' | 'niconico'` の3値のみ (コメントの更新漏れ)
 
 #### コメント
 
@@ -107,26 +110,26 @@ yt-dlp・FFmpeg は既定では使わない。外部ツールが要るのは設�
 
 #### 検索・ランキング・マイリスト
 
-- **`SearchClient`**: snapshot API v2 (キーワード・タグ検索)
-- **`RankingClient`**: ランキング RSS (17ジャンル × 5期間)
-- **`MyListClient`**: nvapi v2 (マイリスト)
-- **`FollowFeedClient`**: フォロー情報取得
+- **`SearchClient`**: snapshot API v2 / nvapi (`SearchApiMode`、キーワード・タグ検索)
+- **`RankingClient`**: ニコニコ動画本体のランキングページの BFF (`/ranking/genre/{featuredKey}?term=…&responseType=json`) を取得。ジャンルは新体系の `featuredKey`、期間は `RankingTerm` (`hour` / `24h` / `week` / `month` / `total`)。急上昇 (`fetchHot`) は nvapi、失敗時のみ RSS にフォールバック
+- **`MyListClient`**: nvapi (`/v2/mylists/{id}` 公開マイリスト、`/v1/users/me/mylists` 自分のマイリスト)。取得は `MylistFetcher`、サーバー側プレイリスト同期は `PlaylistServerSync`
+- **`FollowFeedClient`**: フォロー情報・ニコレポ取得
 - **Pマーク (プレミアム会員向けの動画)**: 動画カードの右上に出す。判定元は watch ページの `payment.video.isPremium` と一致することを実測した一覧側の値で、検索 (nvapi) とランキングは各項目の `acf68865` (難読化されたキー名で、仕様ではないため変わる可能性あり)、検索 (スナップショット) はタグ「プレミアム限定動画（プレミアム）」。同じ「…（お試し）」タグは無料動画に付くので対象外。マイリスト・フォロー・ニコレポの一覧には判定できる値が無く、Pマークは出ない
 
 ### DB（src/main/db）
 
 #### スキーマ・クエリ
 
-- **`schema.ts`**: SQL DDL (テーブル定義) + `Q` オブジェクト (共通クエリ)
-- **`Database.ts`**: better-sqlite3 ラッパー・トランザクション管理
+- **`schema.ts`**: SQL DDL (`CREATE_TABLES`) + `Q` オブジェクト (共通クエリ) + `DB_SCHEMA_VERSION` (現在 `'19'`)
+- **`Database.ts`**: better-sqlite3 ラッパー。`migrate(from, to)` が `version` テーブルの値と `DB_SCHEMA_VERSION` を比べて段階的に ALTER / 表の作り直しを行う
 
 #### アカウント別のデータ
 
-マイリスト (`mylist`)・マイリスト入力履歴 (`mylist_history`)・自作プレイリスト (`playlist` / `playlist_sync_dismissed`)・スケジュール (`schedule`) は `account` 列 (ニコニコのユーザーID。未ログインは空文字) を持ち、アカウントごとに分かれる。スキーマ版 18 で追加した (`mylist` / `mylist_history` / `playlist_sync_dismissed` は url の UNIQUE を `(account, url)` に変えるため `Database.rebuildWithAccount` で表を作り直す)。
+マイリスト (`mylist`)・マイリスト入力履歴 (`mylist_history`)・自作プレイリスト (`playlist` / `playlist_sync_dismissed`)・スケジュール (`schedule`)・コメントNG (`ng_list` / `ng_sync_base`)・ニコ動視聴履歴 (`nico_watch_history`) は `account` 列 (ニコニコのユーザーID。未ログインは空文字) を持ち、アカウントごとに分かれる。スキーマ版 18 で `mylist` / `mylist_history` / `playlist` / `playlist_sync_dismissed` / `schedule` に、版 19 で `ng_list` / `nico_watch_history` に追加した (`playlist` 以外は一意制約を `account` 付きに変えるため `Database.rebuildWithAccount` で表を作り直す。`playlist` は `ALTER TABLE` で列だけ足す)。
 
 - DAO の一覧・追加・削除は第1引数に `account` を取る。IPC ハンドラは `AccountManager.key` を渡す。非同期の長い処理 (スケジュール実行、マイリスト一括更新、プレイリストの取り込み) は、開始時点の `account` を控えて渡す。途中で切り替わっても、始めたアカウントの行を更新するため
 - `playlist_item` / `playlist_sync_base` は `playlist_id` で結びつくので `account` を持たない。ニコニコ側に触れるプレイリスト操作は、`library.ts` の `assertOwnPlaylist` で今のアカウントのものか確かめる
-- バージョン 17 以前のデータは `account=''` になり、最初にログインしたアカウントへ一度だけ引き継ぐ (`registerIpc.ts` の `AccountManager.onActiveChange` → `LibraryManager.adoptUnscopedData`、設定 `accountScopeAdopted` で一回限り)
+- バージョン 17 以前 (NG・視聴履歴は 18 以前) のデータは `account=''` になり、最初にログインしたアカウントへ一度だけ引き継ぐ (`registerIpc.ts` の `AccountManager.onActiveChange` → `LibraryManager.adoptUnscopedData`、設定 `accountScopeAdopted` で一回限り。コメントNG・ニコ動視聴履歴は版 19 で後から対象になったため、設定 `accountScopeAdoptedNgHistory` で別に一度だけ引き継ぐ)
 - アカウント間の移動・コピーは `LibraryManager.transferAccountData` (DB) と `library.ts` の `ACCOUNT_DATA_TRANSFER` (録画予約は config)。UI は設定 > バックアップ・移行 > アカウントのデータ移動 (`general/AccountDataSection.tsx`)。プレイリストは移動・コピーでニコニコ側との同期を解除する。移動先に同じ URL / 番組 / ID があれば移動先を優先する
 - 録画予約 (`liveRecordReservations`) は各予約に `account` を持つ。`LiveRecordScheduler` は今のアカウントの予約だけ実行する
 - 切り替えで捨てる基準: `LiveFollowNotifier.seen` と `ChannelWatcher.lastSeenVideoId` はアカウントごとに持つ。renderer は `useAppStore` の `accounts.activeId` を依存にして読み込み直す
@@ -136,33 +139,39 @@ yt-dlp・FFmpeg は既定では使わない。外部ツールが要るのは設�
 
 | DAO | テーブル | メソッド例 |
 |---|---|---|
-| `VideoDao` | `videos` | getByVideoId, insertOrUpdate, search, delete |
+| `VideoDao` | `NNDDREVideo`, `tagstring`, `NNDDREVideo_tag`, `file` | list, getByKey, insertOrUpdate, setTags, delete |
 | `MyListDao` | `mylist` | list(account), upsert(account, …), remove(account, url) |
-| `HistoryDao` | `history` | add, getLatest, delete |
-| `SearchDao` | `search_cache` | cache, getCached |
-| `ScheduleDao` | `schedules` | add, getAll, delete |
-| `NgListDao` | `ng_users`, `ng_words` | add, getAll, delete |
+| `HistoryDao` | `history` | list, add, remove, clear, existsBatch |
+| `SearchDao` | `saved_search` | list, upsert, move, remove |
+| `ScheduleDao` | `schedule` | list(account), upsert(account, …), remove(account, id) |
+| `NgListDao` | `ng_list`, `ng_sync_base`, `ng_tag`, `ng_up` | listComment(account), addComment, removeComment, listTags, listUps |
+| `InputHistoryDao` | `search_history`, `mylist_history` | listSearch, addSearch, listMyList(account), addMyList |
+| `PlaylistDao` | `playlist`, `playlist_item`, `playlist_sync_base`, `playlist_sync_dismissed` | (自作プレイリスト) |
+| `ResumeDao` | `resume_position` | (動画ごとの再生位置) |
+| `NicoWatchHistoryDao` | `nico_watch_history` | (ニコニコ本家側の視聴履歴) |
 
 各 DAO は `constructor(db: NnddDatabase)` で依存注入。
 
 ### ダウンロード
 
-- **`DownloadManager`**: キュー・進捗 emit
-  - `enqueue(videoId, commentOnly?)` → `download()` に振る
-  - `on('progress', ...)` で IPC を emit
-- **`MyListAutoDownloader`**: マイリストの新着を定期取得 + enqueue
-- **`ScheduleManager`**: cron ライク (曜日・時刻指定)
+- **`DownloadManager`** (`EventEmitter`): キュー・進捗 emit
+  - `enqueue(opts: EnqueueOptions)` (`videoId`・`commentOnly`・`saveDir` など) でキューに追加
+  - `on('change', item)` / `on('changeAll', list)` を購読して `DOWNLOAD_PROGRESS_EVENT` で renderer へ通知
+- **`MyListAutoDownloader`** / **`SeriesAutoDownloader`** / **`FollowUserAutoDownloader`**: マイリスト・シリーズ・フォローユーザーの新着を取得 + enqueue
+- **`ScheduleManager`**: 曜日・時刻指定のスケジュール実行 (上記3つの自動DLを呼ぶ)
+- **`ChannelWatcher`**: チャンネル新着監視 (トレイ通知)
 
 ### プレイヤー・カスタムプロトコル
 
-- **`PlayerManager`**: BrowserWindow 管理（最大10）
+- **`PlayerManager`**: 動画プレイヤー BrowserWindow の生成・管理（既存ウィンドウがあれば再利用して新しい動画パラメータを送る。`hideWatchHistory` が切り替わったときだけ作り直す）
 - **`LocalVideoProtocol`**: `nndd-re-local://` の Electron カスタムプロトコルハンドラ (`protocol.handle()`、ローカルファイル再生)。実装されているカスタムプロトコルはこれのみ
 - **`StreamServer`**: 通常の Node `http` サーバー (`/hls/proxy` 等)。HLSプロキシ再生 (`streamingMode: 'hls'`) 用
 - **`HlsProxy`**: `StreamServer` 上で master/variant m3u8 とセグメントをプロキシするロジック
 - **`HlsSessionInterceptor`**: HLSセッション関連のリクエストインターセプト
-- **`StreamProtocol`**: **カスタムプロトコルではない**。yt-dlp+ffmpegでのマージDL用ユーティリティ関数 (`spawnMergeDownload()`) を提供するファイル。現状呼び出し元なし (未使用)
 - **`CommentWindowManager`**: コメント別ウィンドウの管理
-- **`src/main/protocol/CmdProtocol.ts`** (`nndd-re-cmd://`): 外部起動用 (ブラウザ拡張等)。`app.setAsDefaultProtocolClient` で登録。`play/videoId` / `download/videoId` / `mylist/mylistId` / `live/programId` に対応
+- **`LivePlayerManager`** / **`LiveCommentWindowManager`**: 生放送プレイヤー / コメントリスト浮動ウィンドウ (下記「ニコニコ生放送」)
+- **`ExternalPlayer`**: 外部プレイヤー起動
+- **`src/main/protocol/CmdProtocol.ts`** (`nndd-re-cmd://`): 外部起動用 (ブラウザ拡張等)。`app.setAsDefaultProtocolClient` で登録。`play/videoId` / `download/videoId` / `mylist/mylistId` / `live/programId` / `liveRecord/programId` に対応
 
 ### GitHub同期バックアップ (`src/main/githubSync/`)
 
@@ -178,8 +187,8 @@ yt-dlp・FFmpeg は既定では使わない。外部ツールが要るのは設�
 
 - **サーバー側**: `NnddHttpServer.ts` が `POST /NNDDServer` で本家NNDD互換のXML API (`GET_VIDEO_ID_LIST` 等) を提供 (`httpServer` 設定で有効化)
 - **クライアント側**: `src/main/server/LanLibraryClient.ts` が同じXMLプロトコルで他インスタンスに接続 (`remoteNndd` 設定を使用)
-- UI は `src/renderer/components/library/LibraryView.tsx` 内にインライン実装された「LANライブラリ」タブ。IPCチャンネルは `LAN_STATUS` / `LAN_LIBRARY_LIST` / `LAN_VIDEO_STREAM`
-- **注意**: `src/renderer/components/lan/LanLibraryView.tsx` は同機能の初期プロトタイプで、`App.tsx`/`SettingsView.tsx` を含めコードベースのどこからも参照されていない孤立コンポーネント（未使用、技術的負債）。実運用は上記の `LibraryView.tsx` 内タブなので、新規開発時に誤って `LanLibraryView.tsx` を編集しないよう注意
+- UI は `src/renderer/components/library/LibraryView.tsx` のサイドバーにある「LANライブラリ」(`LAN_FOLDER` を選択した状態) で、本体は `LanLibraryPane.tsx`、取得は `hooks/library/useLanLibrary.ts`。IPCチャンネルは `LAN_STATUS` / `LAN_LIBRARY_LIST` / `LAN_VIDEO_STREAM`
+- **注意**: `src/renderer/components/lan/LanLibraryView.tsx` は同機能の初期プロトタイプで、コードベースのどこからも参照されていない孤立コンポーネント（未使用、技術的負債）。実運用は上記の `LibraryView.tsx` + `LanLibraryPane.tsx` なので、新規開発時に誤って `LanLibraryView.tsx` を編集しないよう注意
 
 ### ニコニコ生放送 (`src/main/nicovideo/live/`)
 
@@ -345,11 +354,16 @@ live.nicovideo.jp/watch/lvXXX の #embedded-data (data-props)
 
 ### その他
 
-- **`NnddHttpServer`**: Express サーバー (内蔵, `/api/library`, `/api/mylist`, `POST /NNDDServer` 等)
+- **`NnddHttpServer`**: Express サーバー (内蔵, `/api/library`, `/api/mylist`, `/api/video/:id/*`, `/library`, `POST /NNDDServer` 等)。Tailscale 公開は `src/main/server/tailscale/`
 - **`TrayManager`**: システムトレイ・メニュー管理
 - **`UpdateManager`**: electron-updater
-- **`Logger`**: ログファイル出力 (`~/Documents/NNDD-RE/system/logs/`)
+- **`Logger`**: ログファイル出力 (`userData/log/nndd.log`)
 - **`LibraryScanner`**: ライブラリディレクトリをスキャン・DB 同期
+- **`DiscordRpcManager`** (`src/main/discord/`): Discord Rich Presence
+- **`WebhookNotifier`** (`src/main/notification/`): Webhook 通知
+- **`HonkeImporter`** (`src/main/import/`): 本家 NNDD のデータ取り込み
+- **`Telemetry`** (`src/main/telemetry/`): 利用状況の送信 (同意制)
+- **`CmdProtocol`**: 上記「プレイヤー・カスタムプロトコル」参照
 - **`BinaryInstaller`** (`src/main/util/BinaryInstaller.ts`): yt-dlp/FFmpeg/ffplay のパス管理・オンデマンドインストール (`userData/bin/`)
 
 ---
@@ -362,9 +376,10 @@ live.nicovideo.jp/watch/lvXXX の #embedded-data (data-props)
 
 | チャンネル | 説明 |
 |---|---|
-| `AUTH_LOGIN` | ブラウザログイン |
+| `AUTH_OPEN_LOGIN_WINDOW` | ブラウザログイン |
 | `AUTH_LOGIN_FORM` / `AUTH_LOGIN_MFA` / `AUTH_LOGIN_WITH_SAVED` | フォームログイン / 二要素認証 / 保存パスワードでのログイン |
 | `AUTH_LOGOUT` | ログアウト |
+| `AUTH_STATUS` | ログイン状態取得 |
 | `CONFIG_GET` / `CONFIG_SET` / `CONFIG_GET_ALL` | 設定取得・保存・全件取得 |
 
 ### ダウンロード
@@ -374,6 +389,7 @@ live.nicovideo.jp/watch/lvXXX の #embedded-data (data-props)
 | `DOWNLOAD_ENQUEUE` | DL キューに追加 |
 | `DOWNLOAD_CANCEL` | DL キャンセル |
 | `DOWNLOAD_LIST` | キュー一覧 |
+| `DOWNLOAD_PAUSE` / `DOWNLOAD_RESUME` / `DOWNLOAD_RETRY` / `DOWNLOAD_REMOVE` / `DOWNLOAD_CLEAR_COMPLETED` | 一時停止・再開・再試行・削除・完了分クリア (`*_ALL` の一括版あり) |
 | `DOWNLOAD_PROGRESS_EVENT` | 進捗通知 (Main→Renderer) |
 
 ### ライブラリ
@@ -392,7 +408,9 @@ live.nicovideo.jp/watch/lvXXX の #embedded-data (data-props)
 | `SEARCH_EXECUTE` | 検索実行 |
 | `RANKING_FETCH` | ランキング取得 |
 | `MYLIST_LIST` / `MYLIST_GET` | マイリスト一覧 / 個別取得 |
-| `MYLIST_RENEW_ALL` | 全マイリストの新着を再取得 |
+| `MYLIST_RENEW` | マイリストの新着を再取得 |
+| `MYLIST_AUTO_DOWNLOAD_ALL` | 全マイリストの新着を自動DL |
+| `VIDEO_GET_WATCH_INFO` | watch ページ情報取得 |
 | `VIDEO_OPEN_PLAYER` | プレイヤーウィンドウで再生 |
 | `VIDEO_GET_STREAM_URL` | ストリーミングURL取得 (`player.streamingMode` に応じて分岐) |
 | `VIDEO_GET_COMMENTS` | コメント取得 |
@@ -404,6 +422,7 @@ live.nicovideo.jp/watch/lvXXX の #embedded-data (data-props)
 | `GITHUB_STATUS` / `GITHUB_START_DEVICE_FLOW` / `GITHUB_DEVICE_FLOW_EVENT` / `GITHUB_CANCEL_DEVICE_FLOW` / `GITHUB_LOGOUT` | GitHub Device Flow ログイン・状態確認 |
 | `BACKUP_LIST_PROFILES` / `BACKUP_ADD_PROFILE` / `BACKUP_UPDATE_PROFILE` / `BACKUP_REMOVE_PROFILE` / `BACKUP_SET_ACTIVE_PROFILE` | 同期プロファイルのCRUD・切替 |
 | `BACKUP_LINK_EXISTING_GIST` / `BACKUP_LIST_CANDIDATE_GISTS` | 既存Gistへの再連携 |
+| `BACKUP_LIST_REVISIONS` / `BACKUP_RESTORE_REVISION` | Gist のリビジョン一覧・復元 |
 | `BACKUP_UPLOAD` / `BACKUP_DOWNLOAD` / `BACKUP_PREVIEW` | アップロード・ダウンロード（破壊的、要確認）・プレビュー |
 
 ### LANライブラリ
@@ -423,8 +442,12 @@ live.nicovideo.jp/watch/lvXXX の #embedded-data (data-props)
 | `LIVE_EVENT` | main → プレイヤーへのイベント (`LiveEvent`: ストリーム・コメント・統計・状態など) |
 | `LIVE_CHANGE_QUALITY` | 画質変更 |
 | `LIVE_TIMESHIFT_ACTIVATE` | タイムシフトの予約 → 視聴開始 (ユーザー確認後のみ) |
+| `LIVE_TIMESHIFT_RESERVE` / `LIVE_TIMESHIFT_CANCEL` | タイムシフト予約 (視聴開始しない) / 予約解除 |
+| `LIVE_SET_CHASE_PLAY` / `LIVE_ANSWER_ENQUETE` | 追っかけ再生の切り替え / アンケート投票 |
+| `LIVE_RECORD_ASK` / `LIVE_RECORD_RESERVE` / `LIVE_RECORD_UNRESERVE` / `LIVE_RECORD_RESERVATIONS` | 生放送の録画 (確認・予約・解除・一覧) |
+| `LIVE_AKASHIC_API` | ニコ生ゲームの投票・フォロー HTTP を main 経由で実行 |
 | `LIVE_FETCH_COMMENTS_AROUND` | 再生位置の周辺のコメントを取得 (コメント数が多い番組) |
-| `LIVE_LIST_FOLLOWING` / `LIVE_SEARCH` / `LIVE_RANKING` / `LIVE_RECENT` / `LIVE_LIST_TIMESHIFT_RESERVATIONS` | 番組一覧 |
+| `LIVE_LIST_FOLLOWING` / `LIVE_SEARCH` / `LIVE_RANKING` / `LIVE_RECENT` / `LIVE_ANIME` / `LIVE_LIST_TIMESHIFT_RESERVATIONS` | 番組一覧 |
 | `LIVE_COMMENT_WINDOW_*` | コメントリストの浮動ウィンドウの開閉・中継 |
 | `NAV_LIVE_SEARCH` | プレイヤーのタグから生放送タブで番組検索 |
 | `LIVE_POC_RUN` | 調査用 PoC の実行 (デバッグ設定) |
@@ -455,7 +478,7 @@ window.nndd.on(
 
 ### メインウィンドウ（App.tsx）
 
-10 タブ構成（`useAppStore.ts` の `MAIN_TABS` で定義）。主なもの：
+10 タブ構成（`useAppStore.ts` の `MAIN_TABS` で定義。ランキング・検索・フォロー中・生放送・マイリスト・DLリスト・ライブラリ・履歴・統計・設定）。主なもの：
 
 1. **ランキング** (`components/ranking/RankingView.tsx`)
    - 17 ジャンル × 5 期間
@@ -482,10 +505,12 @@ window.nndd.on(
 6. **ライブラリ** (`components/library/LibraryView.tsx`)
    - ダウンロード済み動画
    - 検索・フィルター
-   - 「LANライブラリ」サブタブ（`LAN_STATUS`/`LAN_LIBRARY_LIST`/`LAN_VIDEO_STREAM` を利用、リモートNNDD/NNDD-RE参照）もこの中にインライン実装
+   - 「LANライブラリ」（`LAN_STATUS`/`LAN_LIBRARY_LIST`/`LAN_VIDEO_STREAM` を利用、リモートNNDD/NNDD-RE参照）はサイドバー選択で `LanLibraryPane.tsx` を表示
 
 7. **履歴** (`components/history/HistoryView.tsx`)
    - 視聴履歴
+
+- **統計** (`components/stats/StatsView.tsx`)
 
 8. **設定** (`components/settings/SettingsView.tsx`)
    - 13サブタブ（下記参照）
@@ -499,6 +524,8 @@ window.nndd.on(
 - **`StatusBar.tsx`**: 下部ステータスバー
 - **`LoginModal.tsx`**: ログイン モーダル
 - **`LoginArea.tsx`**: ログイン状態表示エリア
+- **`VirtualizedItemList.tsx`**: 仮想スクロールの一覧 (`@tanstack/react-virtual`)
+- **`OpenVideoDialog.tsx`** / **`MaintenanceBanner.tsx`** / **`ErrorNotice.tsx`**: 動画ID・URL・ローカルファイルを開くダイアログ / メンテナンス告知 / エラー表示
 - **`AddToPlaylistMenuItem.tsx`**: プレイリスト追加メニュー項目
 - **`ContinuousPlayButton.tsx`**: 連続再生ボタン
 - **`Placeholder.tsx`**: 空状態プレースホルダー
@@ -507,11 +534,12 @@ window.nndd.on(
 
 - **`VideoPlayer.tsx`**: hls.js + canvas オーバーレイ
 - **`CommentOverlay.tsx`**: コメント描画 (Canvas)
-- **`CommentRenderer.ts`**: コメント流れロジック（5 レイヤー × 12 スロット）
+- **`CommentRenderer.ts`**: `@xpadev-net/niconicomments` をラップしたコメント描画
 - **`CommentList.tsx`**: コメント一覧表示
 - **`VideoController.tsx`**: 再生制御（再生/一時停止・音量・画質・倍速）
 - **`VideoInfoView.tsx`**: 動画情報（タイトル・説明・統計）
 - **`NgListDialog.tsx`**: NGリスト管理ダイアログ
+- **`LiveRewindBar.tsx`**: 生放送の仮シークバー
 
 #### 生放送 (別エントリ)
 
@@ -520,23 +548,23 @@ window.nndd.on(
 
 #### settings
 
-`SettingsView.tsx` の `SUBTABS` は12個 + 開発者モード限定の「デバッグ」で計13サブタブ:
+`SettingsView.tsx` の `SUBTABS` は12個 + 開発者モード限定の「デバッグ」で計13サブタブ。各サブタブの中身:
 
 - **`SettingsView.tsx`**: 設定ハブ
-- **`GeneralSettings.tsx`**: 全般（ログイン・HTTPサーバー・更新・LANライブラリ説明）
-- **`NicoSettings.tsx`**: ニコニコ（クッキー情報）
-- **`PlayerSettings.tsx`**: プレイヤー（キーボード・UI）
-- **`LiveSettings.tsx`**: 生放送（別番組を別ウィンドウで開くか、コメントリストの表示方式）
-- **`LibrarySettings.tsx`**: ライブラリ（DLディレクトリ・キャッシュ）
-- **`ScheduleSettings.tsx`**: スケジューラー（曜日・時刻）
-- **`NgCommentSettings.tsx`**: NGコメント（完全一致・投稿者NG等）
-- **`ExternalToolsSettings.tsx`**: 外部ツール（yt-dlp/FFmpeg/ffplayの検出状態・パス指定・オンデマンドインストール）
-- **`ConnectionDiagnostics.tsx`**: 接続診断
-- **`LogViewer.tsx`**: ログ表示
-- **`UpdateSettings.tsx`**: 更新（バージョン・チェック、情報タブ）
-- **`BackupSettings.tsx`**: GitHub Gistバックアップ/同期（`githubSync/` サブフォルダのコンポーネントを利用）
-- **`DebugSettings.tsx`**: デバッグ（開発者モード限定）
-- **`settings/githubSync/`**: `DeviceFlowModal.tsx`, `GitHubLoginArea.tsx`, `ProfileEditor.tsx`, `ProfileList.tsx`（`BackupSettings.tsx`からimport）
+- 全般 (`GeneralSettings.tsx`): ログイン・ライブラリルート・トレイ/ウィンドウ・プライバシー・開発者モード (`general/` 配下の各 Section)
+- 表示・検索 (`NicoSettings.tsx`): 起動時タブ・テーマなど
+- ダウンロード (`LibrarySettings.tsx` の `DownloadSettings` + `ScheduleSettings.tsx` を `SettingsTabs` で束ねる)
+- ライブラリ (`LibrarySettings.tsx` の `LibrarySettings`)
+- プレイヤー (`PlayerSettings.tsx`)
+- 生放送 (`LiveSettings.tsx`)
+- NGコメント (`NgCommentSettings.tsx`)
+- 外部ツール・連携 (`IntegrationSettings.tsx`): 外部ツール (`ExternalToolsSettings.tsx`: yt-dlp/FFmpeg/ffplayの検出状態・パス指定・オンデマンドインストール、外部プレイヤー、NCV)・通知/連携 (Discord Rich Presence / Webhook / チャンネル新着監視)・サーバー/LAN (`general/HttpServerSection.tsx`、`TailscaleSidecarSection.tsx`、`general/LanLibrarySection.tsx`)
+- バックアップ・移行 (`BackupSettings.tsx`): GitHub Gistバックアップ/同期 (`githubSync/` のコンポーネントを利用)・`HonkeImportSettings.tsx` (本家NNDDからの取り込み)・`general/AccountDataSection.tsx`
+- 情報・更新 (`UpdateSettings.tsx`): バージョン・更新チェック・`TelemetrySettings.tsx`
+- 接続診断 (`ConnectionDiagnostics.tsx`)
+- ログ (`LogViewer.tsx`)
+- デバッグ (`DebugSettings.tsx`、開発者モード限定)
+- **`settings/githubSync/`**: `DeviceFlowModal.tsx`, `GitHubLoginArea.tsx`, `ProfileEditor.tsx`, `ProfileList.tsx`, `RevisionHistoryModal.tsx`（`BackupSettings.tsx`からimport）
 
 #### その他
 
@@ -546,6 +574,7 @@ window.nndd.on(
 
 - **`useConfig.ts`**: `ConfigStore` キャッシュ + setter
 - **`useKeyboardShortcuts.ts`**: プレイヤーのキーバインド管理
+- `hooks/library/` / `hooks/live/` / `hooks/mylist/` / `hooks/player/`: 画面ごとの個別フック (例: `useLanLibrary.ts`、`useLiveHls.ts`)
 
 ### Store（Zustand）
 
@@ -553,10 +582,11 @@ window.nndd.on(
 
 ```typescript
 type AppStore = {
-  currentTab: number;
+  activeTab: MainTab;
   isLoggedIn: boolean;
-  pendingMylistId?: string;  // マイリスト詳細へのナビ用
-  pendingSeriesId?: string;  // シリーズ詳細へのナビ用
+  accounts: AccountsState;       // 登録済みアカウントとアクティブID
+  pendingMylistId: string | null;  // マイリスト詳細へのナビ用
+  pendingSeriesId: string | null;  // シリーズ詳細へのナビ用
   ...
 }
 ```
@@ -575,7 +605,7 @@ type AppStore = {
    } as const;
    ```
 
-2. `src/main/ipc/registerIpc.ts` に handler 登録
+2. `src/main/ipc/handlers/` の該当ドメインのファイル (`registerIpc.ts` から各 `register*Handlers` が呼ばれる) に handler 登録
    ```typescript
    ipcMain.handle(IpcChannel.MY_NEW_CHANNEL, async (event, args) => {
      return await myFunction(args);
@@ -612,7 +642,7 @@ export class ExampleClient {
   }
 }
 
-// src/main/ipc/registerIpc.ts
+// src/main/ipc/handlers/<domain>.ts
 ipcMain.handle(IpcChannel.EXAMPLE_GET, async (event, id) => {
   const client = new ExampleClient(NicoContext.get().http);
   return await client.getExample(id);
@@ -632,9 +662,9 @@ ipcMain.handle(IpcChannel.EXAMPLE_GET, async (event, id) => {
    `;
    ```
 
-2. `Database` クラスで migration
-3. DAO クラスを `src/main/db/dao/` に作成
-4. `LibraryManager` でインスタンス化
+2. `DB_SCHEMA_VERSION` を上げ、`Database.ts` の `migrate()` に旧版からの変更を追加
+3. DAO クラスを `src/main/db/dao/` に作成し `dao/index.ts` で export
+4. `LibraryManager` でインスタンス化 (`readonly xxxDao` として公開)
 
 ### 4. 新しいレンダラーコンポーネント
 
@@ -666,7 +696,7 @@ npm run tc:web      # web側のみ
 npm run dev
 
 # ログファイル
-~/Documents/NNDD-RE/system/logs/
+<userData>/log/nndd.log
 ```
 
 ### DevTools を開く
@@ -676,8 +706,7 @@ Electron DevTools: `Ctrl+Shift+I`（メインウィンドウ）
 ### better-sqlite3 ビルドエラー
 
 ```bash
-npm ci
-npm run rebuild  # または electron-rebuild -f -t dev
+npm ci  # 依存を入れ直す (package.json に rebuild スクリプトは無い)
 ```
 
 ### IPC 呼び出しがタイムアウト
@@ -689,7 +718,7 @@ npm run rebuild  # または electron-rebuild -f -t dev
 
 - 接続診断（設定 > 接続診断）を実行
 - Cookie 再ログインを試す
-- `~/Documents/NNDD-RE/system/logs/` を確認
+- `<userData>/log/nndd.log` (設定 > ログ でも閲覧可) を確認
 
 ### 動画がダウンロードできない
 
@@ -701,7 +730,7 @@ npm run rebuild  # または electron-rebuild -f -t dev
 
 ## リソース
 
-- **CLAUDE.md**: プロジェクトクイック操作
+- **CLAUDE.md**: プロジェクトクイック操作 (`.gitignore` 対象でリポジトリには含まれない)
 - **README.md**: ユーザー向けドキュメント
 - **src/shared/types/**: 全型定義
 - **src/main/nicovideo**: ニコニコ API クライアント

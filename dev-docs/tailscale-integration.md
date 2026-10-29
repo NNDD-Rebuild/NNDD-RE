@@ -44,7 +44,7 @@
   - 共有シークレットが一致したリクエストだけ、サイドカーが付けた `X-Forwarded-For` を接続元として信頼する(`createSidecarTrust`)。loopback から来た、というだけでは信頼しない。
   - 起動(`exposure.start`)は待たずに IPC を返す。サイドカーは異常終了時に最大 5 回再起動する。アプリ終了時に止める(`shutdownHttpServer`)。
 - 秘密情報(Auth key)は `SecretStore`(`safeStorage`)に置く。**`httpServer` は GitHub Gist バックアップの同期対象なので、秘密情報を ConfigStore に置かない。** 公開範囲に関わる設定(`bindMode` / `allowedHosts`)は端末固有なので、バックアップに含めず、復元でもローカルの値を保持する。
-- ACL の例(RE の端末を `tag:nndd-re` にして、自分の端末だけに許可): `{ "action": "accept", "src": ["autogroup:member"], "dst": ["tag:nndd-re:80"] }`。タグ付きの Auth key を「外部ツール」で入力する。tailnet の既定の ACL は「全員を許可」なので、1 人で使う分には問題ないが、共有する場合は絞ること。
+- ACL の例(RE の端末を `tag:nndd-re` にして、自分の端末だけに許可): `{ "action": "accept", "src": ["autogroup:member"], "dst": ["tag:nndd-re:80"] }`。タグ付きの Auth key は、設定 → 外部ツール・連携 → サーバー・LAN の Tailscale 欄で入力する。tailnet の既定の ACL は「全員を許可」なので、1 人で使う分には問題ないが、共有する場合は絞ること。
 
 ## 3. 検証
 
