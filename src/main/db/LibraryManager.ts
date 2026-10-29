@@ -14,7 +14,9 @@ import {
   ResumeDao,
   NicoWatchHistoryDao
 } from './dao';
+import { randomUUID } from 'node:crypto';
 import { NnddPaths } from '@shared/constants';
+import type { AccountDataCounts } from '@shared/types';
 
 /**
  * NNDDライブラリ全体の管理。
@@ -97,6 +99,90 @@ export class LibraryManager {
       )
       .pluck()
       .all() as string[];
+  }
+
+  /** そのアカウントのローカルデータの件数 (録画予約は config にあるので含まない) */
+  countAccountData(account: string): Pick<AccountDataCounts, 'mylist' | 'playlist' | 'schedule'> {
+    const n = (sql: string): number => (this.db.prepare(sql).pluck().get(account) as number) ?? 0;
+    return {
+      mylist: n(`SELECT COUNT(*) FROM mylist WHERE account = ? AND isDir = 0;`),
+      playlist: n(`SELECT COUNT(*) FROM playlist WHERE account = ?;`),
+      schedule: n(`SELECT COUNT(*) FROM schedule WHERE account = ?;`)
+    };
+  }
+
+  /**
+   * あるアカウントのデータを別のアカウントへ移動・コピーする (録画予約は config なので呼び出し側で扱う)。
+   * - 移動先に同じ URL / 同じ ID があるものは、移動先の行を優先する (上書きしない)
+   * - プレイリストのニコニコ側マイリストとの同期は、移動・コピーで解除する (同期先のマイリストは元のアカウントのものなので)
+   * @returns 対象にした件数 (移動先に同じものがあって動かさなかった分を含む)
+   */
+  transferAccountData(
+    from: string,
+    to: string,
+    kinds: { mylist: boolean; playlist: boolean; schedule: boolean },
+    mode: 'move' | 'copy'
+  ): Pick<AccountDataCounts, 'mylist' | 'playlist' | 'schedule'> {
+    const done = { mylist: 0, playlist: 0, schedule: 0 };
+    if (from === to) return done;
+    const before = this.countAccountData(from);
+    this.db.transaction(() => {
+      if (kinds.mylist) {
+        const cols = 'url, name, type, isDir, unPlayCount, lastRenewed, icon, parentUrl';
+        if (mode === 'copy') {
+          this.db
+            .prepare(`INSERT OR IGNORE INTO mylist (account, ${cols}) SELECT ?, ${cols} FROM mylist WHERE account = ?;`)
+            .run(to, from);
+          this.db
+            .prepare(
+              `INSERT OR IGNORE INTO mylist_history (account, url, name, usedAt) SELECT ?, url, name, usedAt FROM mylist_history WHERE account = ?;`
+            )
+            .run(to, from);
+        } else {
+          this.db.prepare(`UPDATE OR IGNORE mylist SET account = ? WHERE account = ?;`).run(to, from);
+          this.db.prepare(`UPDATE OR IGNORE mylist_history SET account = ? WHERE account = ?;`).run(to, from);
+          // 移動先に同じ URL があって動かせなかった行は、移動先のものと重複なので消す
+          this.db.prepare(`DELETE FROM mylist WHERE account = ?;`).run(from);
+          this.db.prepare(`DELETE FROM mylist_history WHERE account = ?;`).run(from);
+        }
+        done.mylist = before.mylist;
+      }
+      if (kinds.playlist) {
+        const ids = this.db.prepare(`SELECT id FROM playlist WHERE account = ?;`).pluck().all(from) as number[];
+        if (mode === 'copy') {
+          const insertPlaylist = this.db.prepare(
+            `INSERT INTO playlist (account, name, createdAt, updatedAt, icon) SELECT ?, name, createdAt, updatedAt, icon FROM playlist WHERE id = ?;`
+          );
+          const copyItems = this.db.prepare(
+            `INSERT INTO playlist_item (playlist_id, videoId, title, thumbnailUrl, lengthSec, sortOrder, addedAt)
+             SELECT ?, videoId, title, thumbnailUrl, lengthSec, sortOrder, addedAt FROM playlist_item WHERE playlist_id = ?;`
+          );
+          for (const id of ids) {
+            const created = Number(insertPlaylist.run(to, id).lastInsertRowid);
+            copyItems.run(created, id);
+          }
+        } else {
+          const removeBase = this.db.prepare(`DELETE FROM playlist_sync_base WHERE playlist_id = ?;`);
+          for (const id of ids) removeBase.run(id);
+          this.db
+            .prepare(`UPDATE playlist SET account = ?, serverMylistId = NULL, syncKey = NULL WHERE account = ?;`)
+            .run(to, from);
+          this.db.prepare(`DELETE FROM playlist_sync_dismissed WHERE account = ?;`).run(from);
+        }
+        done.playlist = ids.length;
+      }
+      if (kinds.schedule) {
+        if (mode === 'copy') {
+          const list = this.scheduleDao.list(from);
+          for (const s of list) this.scheduleDao.upsert(to, { ...s, id: randomUUID(), lastRun: null });
+          done.schedule = list.length;
+        } else {
+          this.db.prepare(`UPDATE OR IGNORE schedule SET account = ? WHERE account = ?;`).run(to, from);
+          done.schedule = before.schedule;
+        }
+      }
+    });
+    return done;
   }
 
   /**

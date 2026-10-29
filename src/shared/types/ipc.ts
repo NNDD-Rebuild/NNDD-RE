@@ -53,6 +53,10 @@ export const IpcChannel = {
   ACCOUNT_REMOVE: 'nndd:account:remove',
   /** アカウント一覧/アクティブ/プロフィール変化通知 (main→renderer) → AccountsState */
   ACCOUNT_CHANGED: 'nndd:account:changed',
+  /** アカウントごとのローカルデータ (マイリスト・プレイリスト・スケジュール・録画予約) の件数一覧 → AccountDataEntry[] */
+  ACCOUNT_DATA_LIST: 'nndd:account:dataList',
+  /** アカウント間でローカルデータを移動・コピー (AccountDataTransferRequest) → AccountDataCounts (移した件数) */
+  ACCOUNT_DATA_TRANSFER: 'nndd:account:dataTransfer',
 
   // メンテナンス検知
   /** 現在のメンテナンス状態を取得 → MaintenanceState */
@@ -571,6 +575,31 @@ export interface AccountsState {
   accounts: NicoAccount[];
   /** ログイン中 (Cookie 有効) のアクティブアカウント。未ログインなら null */
   activeId: string | null;
+}
+
+/** アカウントごとに持つローカルデータの件数 */
+export interface AccountDataCounts {
+  /** マイリスト・チャンネル・ユーザー・シリーズの登録 (フォルダを含まない) */
+  mylist: number;
+  playlist: number;
+  schedule: number;
+  /** 生放送の録画予約 */
+  liveReservation: number;
+}
+
+/** ローカルデータを持つアカウント。id が空文字なら未ログイン時のデータ */
+export interface AccountDataEntry {
+  id: string;
+  counts: AccountDataCounts;
+}
+
+export interface AccountDataTransferRequest {
+  from: string;
+  /** 登録済みアカウントのID */
+  to: string;
+  /** move: 移動元から消す / copy: 移動元にも残す */
+  mode: 'move' | 'copy';
+  kinds: Record<keyof AccountDataCounts, boolean>;
 }
 
 export interface AutoReloginResult {

@@ -12,6 +12,7 @@ import { DeviceFlowModal } from './githubSync/DeviceFlowModal';
 import { ProfileList } from './githubSync/ProfileList';
 import { ProfileEditor } from './githubSync/ProfileEditor';
 import { HonkeImportSettings } from './HonkeImportSettings';
+import { AccountDataSection } from './general/AccountDataSection';
 import { Hint, PageTitle, SettingsPage, StatusText } from './common';
 
 export function BackupSettings(): JSX.Element {
@@ -270,6 +271,8 @@ export function BackupSettings(): JSX.Element {
       </div>
 
       <HonkeImportSettings />
+
+      <AccountDataSection />
     </SettingsPage>
   );
 }

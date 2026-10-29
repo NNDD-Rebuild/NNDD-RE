@@ -333,6 +333,7 @@ export function LiveView(): JSX.Element {
   const [subTab, setSubTab] = useState<SubTab>('followOnair');
   const isLoggedIn = useAppStore((s) => s.isLoggedIn);
   const activeAccountId = useAppStore((s) => s.accounts.activeId);
+  const importRevision = useAppStore((s) => s.importRevision);
   const needsLogin = LOGIN_REQUIRED_TABS.includes(subTab) && !isLoggedIn;
   const [input, setInput] = useState('');
   const [openError, setOpenError] = useState('');
@@ -602,8 +603,8 @@ export function LiveView(): JSX.Element {
       .invoke<LiveProgramListResult>(IpcChannel.LIVE_RECORD_RESERVATIONS)
       .then((r) => setReservedIds(new Set(r.programs.map((x) => x.programId))))
       .catch(() => {});
-    // 録画予約はアカウントごと。切り替えたら読み込み直す
-  }, [activeAccountId]);
+    // 録画予約はアカウントごと。切り替えやデータ移動のあとは読み込み直す
+  }, [activeAccountId, importRevision]);
 
   const onRecordReserve = (p: LiveProgramSummary): void => {
     const reserved = reservedIds.has(p.programId);

@@ -1,7 +1,15 @@
 import path from 'node:path';
 import { ipcMain, shell, webContents } from 'electron';
 import { IpcChannel } from '@shared/types';
-import type { LibraryScanOptions, LibraryScanProgress, LibraryScanResult } from '@shared/types';
+import type {
+  AccountDataCounts,
+  AccountDataEntry,
+  AccountDataTransferRequest,
+  LibraryScanOptions,
+  LibraryScanProgress,
+  LibraryScanResult
+} from '@shared/types';
+import { getConfigStore } from '../../config/ConfigStore';
 import { MyListClient, NicoContext, NicoHistoryClient } from '../../nicovideo';
 import { AccountManager } from '../../nicovideo/auth/AccountManager';
 import {
@@ -407,6 +415,46 @@ export function registerLibraryHandlers(ctx: IpcHandlerContext): void {
 
   ipcMain.handle(IpcChannel.PLAYLIST_LIST_CONTAINING, (_e, videoId: string) => {
     return library.playlistDao.listPlaylistIdsForVideo(AccountManager.key, videoId);
+  });
+
+  // --- アカウント間のデータ移動・コピー (誤ったアカウントに紐づいたデータを直す) ---
+  /** 録画予約の持ち主。account 未設定 (マルチアカウント導入前) は今のアカウント扱い */
+  const reservationOwner = (r: { account?: string }): string => r.account ?? AccountManager.key;
+  const countReservations = (account: string): number =>
+    (getConfigStore().get('liveRecordReservations') ?? []).filter((r) => reservationOwner(r) === account).length;
+
+  ipcMain.handle(IpcChannel.ACCOUNT_DATA_LIST, (): AccountDataEntry[] => {
+    const ids = new Set(library.listAccountsWithData());
+    for (const r of getConfigStore().get('liveRecordReservations') ?? []) ids.add(reservationOwner(r));
+    return [...ids]
+      .map((id) => ({ id, counts: { ...library.countAccountData(id), liveReservation: countReservations(id) } }))
+      .filter((e) => e.counts.mylist + e.counts.playlist + e.counts.schedule + e.counts.liveReservation > 0);
+  });
+
+  ipcMain.handle(IpcChannel.ACCOUNT_DATA_TRANSFER, (_e, req: AccountDataTransferRequest): AccountDataCounts => {
+    const registered = new Set(AccountManager.getState().accounts.map((a) => a.id));
+    if (typeof req?.from !== 'string' || typeof req?.to !== 'string') throw new Error('移動元と移動先を指定してください');
+    if (!req.to || !registered.has(req.to)) throw new Error('移動先は登録済みのアカウントを選んでください');
+    if (req.from === req.to) throw new Error('移動元と移動先が同じです');
+    if (req.mode !== 'move' && req.mode !== 'copy') throw new Error('移動かコピーかを選んでください');
+    const { mylist, playlist, schedule, liveReservation } = req.kinds ?? ({} as AccountDataTransferRequest['kinds']);
+    if (!mylist && !playlist && !schedule && !liveReservation) throw new Error('移すデータを選んでください');
+
+    const done = library.transferAccountData(req.from, req.to, { mylist: !!mylist, playlist: !!playlist, schedule: !!schedule }, req.mode);
+    let reservations = 0;
+    if (liveReservation) {
+      const store = getConfigStore();
+      const all = store.get('liveRecordReservations') ?? [];
+      const mine = all.filter((r) => reservationOwner(r) === req.from);
+      const destIds = new Set(all.filter((r) => reservationOwner(r) === req.to).map((r) => r.programId));
+      // 移動先に同じ番組の予約があればそちらを優先する
+      const incoming = mine.filter((r) => !destIds.has(r.programId)).map((r) => ({ ...r, account: req.to }));
+      const rest = req.mode === 'move' ? all.filter((r) => reservationOwner(r) !== req.from) : all;
+      store.set('liveRecordReservations', [...rest, ...incoming].sort((a, b) => a.beginAtMs - b.beginAtMs));
+      reservations = mine.length;
+    }
+    log.info(`account data ${req.mode}: ${req.from || '(未ログイン)'} -> ${req.to}`, { ...done, liveReservation: reservations });
+    return { ...done, liveReservation: reservations };
   });
 
   // --- 再生位置レジューム ---

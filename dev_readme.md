@@ -127,6 +127,7 @@ yt-dlp・FFmpeg は既定では使わない。外部ツールが要るのは設�
 - DAO の一覧・追加・削除は第1引数に `account` を取る。IPC ハンドラは `AccountManager.key` を渡す。非同期の長い処理 (スケジュール実行、マイリスト一括更新、プレイリストの取り込み) は、開始時点の `account` を控えて渡す。途中で切り替わっても、始めたアカウントの行を更新するため
 - `playlist_item` / `playlist_sync_base` は `playlist_id` で結びつくので `account` を持たない。ニコニコ側に触れるプレイリスト操作は、`library.ts` の `assertOwnPlaylist` で今のアカウントのものか確かめる
 - バージョン 17 以前のデータは `account=''` になり、最初にログインしたアカウントへ一度だけ引き継ぐ (`registerIpc.ts` の `AccountManager.onActiveChange` → `LibraryManager.adoptUnscopedData`、設定 `accountScopeAdopted` で一回限り)
+- アカウント間の移動・コピーは `LibraryManager.transferAccountData` (DB) と `library.ts` の `ACCOUNT_DATA_TRANSFER` (録画予約は config)。UI は設定 > バックアップ・移行 > アカウントのデータ移動 (`general/AccountDataSection.tsx`)。プレイリストは移動・コピーでニコニコ側との同期を解除する。移動先に同じ URL / 番組 / ID があれば移動先を優先する
 - 録画予約 (`liveRecordReservations`) は各予約に `account` を持つ。`LiveRecordScheduler` は今のアカウントの予約だけ実行する
 - 切り替えで捨てる基準: `LiveFollowNotifier.seen` と `ChannelWatcher.lastSeenVideoId` はアカウントごとに持つ。renderer は `useAppStore` の `accounts.activeId` を依存にして読み込み直す
 - バックアップ (`BackupManager`) は `accounts` (ユーザーID → マイリスト・スケジュール・プレイリスト) を書き出す。形式 1 のアプリでも読めるよう、従来の `myList` / `schedule` / `playlist` に今のアカウント分を重ねて入れる。復元は `accounts` に入っているアカウント分だけを置き換える
