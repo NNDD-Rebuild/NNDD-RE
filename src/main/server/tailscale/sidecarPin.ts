@@ -17,12 +17,12 @@ export interface SidecarPin {
 }
 
 export const SIDECAR_PIN: SidecarPin = {
-  version: 'v0.1.0',
+  version: 'v0.1.1',
   assets: {
-    'nndd-re-tailscale-windows-amd64.exe': '8a7c184e2094bcc78d68fea53818fdcfc252a261bb3cb7728baad9ad70310f39',
-    'nndd-re-tailscale-darwin-amd64': 'a7baebf5119fb4648b072aa369c0ec31165ee9e3293f76dcc91d1d648ede3737',
-    'nndd-re-tailscale-darwin-arm64': 'a8ec44b24eccda3a5a07ad608646dcdbf1a304375529e2512c75c8677b946149',
-    'nndd-re-tailscale-linux-amd64': '9a43e763dffff6d133c4556bbca94a55fc5fad741b44f0a637e3642c59544d16'
+    'nndd-re-tailscale-windows-amd64.exe': '1c2ae3ef8f02bae66ab6961b72a8ba96a57c115cc7f53753ad9b1ccc07b701ab',
+    'nndd-re-tailscale-darwin-amd64': 'aa7373837cf807e100ec20d196df4cec44c290bb0f3349256509359463c46e4a',
+    'nndd-re-tailscale-darwin-arm64': 'e0b0619805a52a6406f57054a19ad35daf5137a83e8022567f2a8b5a0b185adc',
+    'nndd-re-tailscale-linux-amd64': '80fbee2123bfa52b7c2ea64b515bb4f96ff68e2dc33cfef542b522514356dbe8'
   }
 };
 
