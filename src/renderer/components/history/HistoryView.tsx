@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { HistoryItem, NicoWatchHistoryItem, ResumePosition } from '@shared/types';
 import { IpcChannel } from '@shared/types';
 import { watchUrl } from '@shared/utils/nicoUrl';
@@ -24,6 +24,7 @@ interface HistoryMenu {
  */
 export function HistoryView(): JSX.Element {
   const activeTab = useAppStore((s) => s.activeTab);
+  const activeAccountId = useAppStore((s) => s.accounts.activeId);
   const [source, setSource] = useState<HistorySource>('app');
   const [items, setItems] = useState<HistoryItem[]>([]);
   const [resumes, setResumes] = useState<Record<string, ResumePosition>>({});
@@ -72,6 +73,24 @@ export function HistoryView(): JSX.Element {
     else if (!nicoLoaded) reloadNico();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- タブ・表示元の切替時だけ読み直す (読込関数は毎回作り直されるため依存に含めない)
   }, [activeTab, source]);
+
+  // アカウント切替時は前のアカウントのニコ動履歴を捨てて読み直す。
+  // 起動時同期は起動したアカウント分しか取得しないので、切替先は本家から取得して補う。
+  const prevAccountRef = useRef(activeAccountId);
+  useEffect(() => {
+    if (prevAccountRef.current === activeAccountId) return;
+    prevAccountRef.current = activeAccountId;
+    setNicoItems([]);
+    setNicoLoaded(false);
+    setMenu(null);
+    if (activeAccountId === null) {
+      setNicoLoaded(true);
+      return;
+    }
+    reloadNico();
+    syncNico();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- アカウント切替時だけ実行する
+  }, [activeAccountId]);
 
   const handleClear = async (): Promise<void> => {
     await window.nndd.invoke(window.nndd.channels.HISTORY_CLEAR);
