@@ -7,6 +7,7 @@ import type { NNDDREVideo } from '@shared/types';
 import { NicoApi } from '@shared/constants/api';
 import { VideoFileSuffix } from '@shared/constants/paths';
 import { extractBracketedVideoId } from '@shared/utils/videoId';
+import { isLiveProgramId } from '@shared/utils/liveId';
 import { LibraryManager } from '../db/LibraryManager';
 import { isPathAllowed } from '../player/LocalVideoProtocol';
 import { getConfigStore, resolveBindMode, type HttpBindMode } from '../config/ConfigStore';
@@ -558,7 +559,9 @@ export class NnddHttpServer {
 
     const nowComments = nowNos
       ? normal.filter((c) => nowNos!.has(c.no))
-      : [...normal].sort((a, b) => b.no - a.no).slice(0, 1000);
+      : isLiveProgramId(this.extractVideoId(v.uri) ?? '')
+        ? normal
+        : [...normal].sort((a, b) => b.no - a.no).slice(0, 1000);
     const merged = [...nowComments, ...owner].sort((a, b) => a.vposMs - b.vposMs);
     res.json(merged);
   }
