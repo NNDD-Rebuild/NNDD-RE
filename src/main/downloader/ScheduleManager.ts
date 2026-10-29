@@ -144,7 +144,7 @@ export class ScheduleManager {
       log.warn(`schedule execution failed: ${s.name}`, e);
     } finally {
       // 最終実行時刻を更新
-      this.library.scheduleDao.upsert(account, { ...s, lastRun: now });
+      this.library.scheduleDao.setLastRun(account, s.id, now);
     }
   }
 }

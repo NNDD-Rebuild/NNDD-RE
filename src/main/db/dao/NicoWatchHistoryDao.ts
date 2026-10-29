@@ -28,22 +28,23 @@ interface KeyRow {
 export class NicoWatchHistoryDao {
   constructor(private readonly db: NnddDatabase) {}
 
-  list(limit = 1000): NicoWatchHistoryItem[] {
-    const rows = this.db.prepare(Q.SELECT_NICO_WATCH_HISTORY).all(limit) as NicoWatchHistoryRow[];
+  list(account: string, limit = 1000): NicoWatchHistoryItem[] {
+    const rows = this.db.prepare(Q.SELECT_NICO_WATCH_HISTORY).all(account, limit) as NicoWatchHistoryRow[];
     return rows.map((r) => this.rowToItem(r));
   }
 
   /** 差分取得の打ち切り判定用に既知の履歴キー (nicoHistoryKey) 一覧を取得 */
-  listKeys(): Set<string> {
-    const rows = this.db.prepare(Q.SELECT_NICO_WATCH_HISTORY_KEYS).all() as KeyRow[];
+  listKeys(account: string): Set<string> {
+    const rows = this.db.prepare(Q.SELECT_NICO_WATCH_HISTORY_KEYS).all(account) as KeyRow[];
     return new Set(rows.map((r) => `${r.videoId}@${r.watchedAt}`));
   }
 
-  upsertBatch(items: NicoWatchHistoryItem[]): void {
+  upsertBatch(account: string, items: NicoWatchHistoryItem[]): void {
     const stmt = this.db.prepare(Q.UPSERT_NICO_WATCH_HISTORY);
     this.db.transaction(() => {
       for (const item of items) {
         stmt.run(
+          account,
           item.videoId,
           item.title,
           item.thumbnailUrl,
@@ -55,18 +56,18 @@ export class NicoWatchHistoryDao {
   }
 
   /** VideoCard等でのバッジ表示用バッチ判定 */
-  existsBatch(videoIds: string[]): Set<string> {
+  existsBatch(account: string, videoIds: string[]): Set<string> {
     const result = new Set<string>();
     const stmt = this.db.prepare(Q.SELECT_NICO_WATCH_HISTORY_EXISTS);
     for (const id of videoIds) {
-      if (stmt.get(id)) result.add(id);
+      if (stmt.get(account, id)) result.add(id);
     }
     return result;
   }
 
   /** 1件削除 (ローカルキャッシュのみ) */
-  remove(videoId: string): void {
-    this.db.prepare(Q.DELETE_NICO_WATCH_HISTORY_BY_VIDEO_ID).run(videoId);
+  remove(account: string, videoId: string): void {
+    this.db.prepare(Q.DELETE_NICO_WATCH_HISTORY_BY_VIDEO_ID).run(account, videoId);
   }
 
   /**
@@ -75,11 +76,11 @@ export class NicoWatchHistoryDao {
    * 本家に残っている最古の視聴日時より古い項目は「期限切れ」と区別できないため消さない。
    * 視聴日時が不明 (0) の項目も消さない。
    */
-  removeNotIn(keepKeys: Set<string>, newerThanSec: number): number {
+  removeNotIn(account: string, keepKeys: Set<string>, newerThanSec: number): number {
     const stmt = this.db.prepare(Q.DELETE_NICO_WATCH_HISTORY_BY_ID);
     let removed = 0;
     this.db.transaction(() => {
-      const rows = this.db.prepare(Q.SELECT_NICO_WATCH_HISTORY_KEYS).all() as KeyRow[];
+      const rows = this.db.prepare(Q.SELECT_NICO_WATCH_HISTORY_KEYS).all(account) as KeyRow[];
       for (const r of rows) {
         if (r.watchedAt > newerThanSec && !keepKeys.has(`${r.videoId}@${r.watchedAt}`)) {
           stmt.run(r.id);
@@ -90,8 +91,8 @@ export class NicoWatchHistoryDao {
     return removed;
   }
 
-  clear(): void {
-    this.db.prepare(Q.DELETE_NICO_WATCH_HISTORY).run();
+  clear(account: string): void {
+    this.db.prepare(Q.DELETE_NICO_WATCH_HISTORY).run(account);
   }
 
   private rowToItem(r: NicoWatchHistoryRow): NicoWatchHistoryItem {

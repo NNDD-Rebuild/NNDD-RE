@@ -429,7 +429,7 @@ export class HonkeImporter {
     }
 
     const dao = this.deps.library.ngListDao;
-    const existing = new Set(dao.listComment().map((x) => `${x.type}\0${x.value}`));
+    const existing = new Set(dao.listComment(AccountManager.key).map((x) => `${x.type}\0${x.value}`));
     const existingTags = new Set(dao.listTags());
     const duplicate =
       comment.filter((x) => existing.has(`${x.type}\0${x.value}`)).length +
@@ -448,14 +448,14 @@ export class HonkeImporter {
     let added = 0;
     this.deps.library.db.transaction(() => {
       if (policy === 'replace') {
-        for (const x of dao.listComment()) dao.removeComment(x);
+        for (const x of dao.listComment(AccountManager.key)) dao.removeComment(AccountManager.key, x);
         for (const t of dao.listTags()) dao.removeTag(t);
       }
-      const existing = new Set(dao.listComment().map((x) => `${x.type}\0${x.value}`));
+      const existing = new Set(dao.listComment(AccountManager.key).map((x) => `${x.type}\0${x.value}`));
       const existingTags = new Set(dao.listTags());
       for (const x of data.comment) {
         if (existing.has(`${x.type}\0${x.value}`)) continue;
-        dao.addComment(x);
+        dao.addComment(AccountManager.key, x);
         existing.add(`${x.type}\0${x.value}`);
         added++;
       }

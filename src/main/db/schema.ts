@@ -6,7 +6,7 @@
  * 既存のオフライン NNDD ライブラリ DB をそのまま読み込めるようにする。
  */
 
-export const DB_SCHEMA_VERSION = '18';
+export const DB_SCHEMA_VERSION = '19';
 
 export const CREATE_TABLES = [
   /* NNDDREVideo - 動画本体 */
@@ -112,9 +112,10 @@ export const CREATE_TABLES = [
   /* NGリスト (コメント) */
   `CREATE TABLE IF NOT EXISTS ng_list (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account TEXT NOT NULL DEFAULT '',
     type TEXT,
     value TEXT,
-    UNIQUE(type, value)
+    UNIQUE(account, type, value)
   );`,
 
   /* サーバー側NGとの同期で使う「前回同期した時点の一覧」(アカウントごと)。削除の伝播を判定するための基準 */
@@ -206,12 +207,13 @@ export const CREATE_TABLES = [
   /* ニコニコ動画本家 (公式サイト) 側の視聴履歴。アプリ内history (自前計測) とは別出所 */
   `CREATE TABLE IF NOT EXISTS nico_watch_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account TEXT NOT NULL DEFAULT '',
     videoId TEXT NOT NULL,
     title TEXT,
     thumbnailUrl TEXT,
     watchedAt REAL NOT NULL DEFAULT 0,
     fetchedAt REAL,
-    UNIQUE (videoId, watchedAt)
+    UNIQUE (account, videoId, watchedAt)
   );`
 ];
 
@@ -317,6 +319,7 @@ export const Q = {
     INSERT OR REPLACE INTO schedule
       (id, account, name, targetType, targetMyListUrl, targetId, daysOfWeek, time, enabled, lastRun, makeSubfolder)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+  UPDATE_SCHEDULE_LAST_RUN: `UPDATE schedule SET lastRun = ? WHERE account = ? AND id = ?;`,
   DELETE_SCHEDULE: `DELETE FROM schedule WHERE account = ? AND id = ?;`,
   DELETE_ALL_SCHEDULE: `DELETE FROM schedule WHERE account = ?;`,
 
@@ -330,14 +333,15 @@ export const Q = {
   DELETE_ALL_SAVED_SEARCH: `DELETE FROM saved_search;`,
 
   // NGリスト
-  SELECT_NG_LIST: `SELECT * FROM ng_list;`,
-  INSERT_NG_LIST: `INSERT OR IGNORE INTO ng_list (type, value) VALUES (?, ?);`,
-  DELETE_NG_LIST: `DELETE FROM ng_list WHERE type = ? AND value = ?;`,
-  DELETE_ALL_NG_LIST: `DELETE FROM ng_list;`,
+  // コメントNG (アカウントごと。第1引数が account)
+  SELECT_NG_LIST: `SELECT * FROM ng_list WHERE account = ?;`,
+  INSERT_NG_LIST: `INSERT OR IGNORE INTO ng_list (account, type, value) VALUES (?, ?, ?);`,
+  DELETE_NG_LIST: `DELETE FROM ng_list WHERE account = ? AND type = ? AND value = ?;`,
+  DELETE_ALL_NG_LIST: `DELETE FROM ng_list WHERE account = ?;`,
   SELECT_NG_SYNC_BASE: `SELECT type, value FROM ng_sync_base WHERE account = ?;`,
   INSERT_NG_SYNC_BASE: `INSERT OR IGNORE INTO ng_sync_base (account, type, value) VALUES (?, ?, ?);`,
   DELETE_NG_SYNC_BASE_BY_ACCOUNT: `DELETE FROM ng_sync_base WHERE account = ?;`,
-  DELETE_ALL_NG_SYNC_BASE: `DELETE FROM ng_sync_base;`,
+  DELETE_ALL_NG_SYNC_BASE: `DELETE FROM ng_sync_base WHERE account = ?;`,
 
   SELECT_SEARCH_HISTORY: `SELECT word FROM search_history ORDER BY usedAt DESC, id DESC LIMIT ?;`,
   UPSERT_SEARCH_HISTORY: `INSERT INTO search_history (word, usedAt) VALUES (?, ?)
@@ -400,16 +404,16 @@ export const Q = {
   DELETE_RESUME: `DELETE FROM resume_position WHERE videoKey = ?;`,
 
   // ニコニコ動画本家 視聴履歴
-  SELECT_NICO_WATCH_HISTORY: `SELECT * FROM nico_watch_history ORDER BY watchedAt DESC LIMIT ?;`,
-  SELECT_NICO_WATCH_HISTORY_KEYS: `SELECT id, videoId, watchedAt FROM nico_watch_history;`,
-  SELECT_NICO_WATCH_HISTORY_EXISTS: `SELECT 1 FROM nico_watch_history WHERE videoId = ?;`,
+  SELECT_NICO_WATCH_HISTORY: `SELECT * FROM nico_watch_history WHERE account = ? ORDER BY watchedAt DESC LIMIT ?;`,
+  SELECT_NICO_WATCH_HISTORY_KEYS: `SELECT id, videoId, watchedAt FROM nico_watch_history WHERE account = ?;`,
+  SELECT_NICO_WATCH_HISTORY_EXISTS: `SELECT 1 FROM nico_watch_history WHERE account = ? AND videoId = ?;`,
   UPSERT_NICO_WATCH_HISTORY: `
-    INSERT INTO nico_watch_history (videoId, title, thumbnailUrl, watchedAt, fetchedAt)
-    VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT (videoId, watchedAt) DO UPDATE SET
+    INSERT INTO nico_watch_history (account, videoId, title, thumbnailUrl, watchedAt, fetchedAt)
+    VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT (account, videoId, watchedAt) DO UPDATE SET
       title = excluded.title, thumbnailUrl = excluded.thumbnailUrl, fetchedAt = excluded.fetchedAt;`,
-  DELETE_NICO_WATCH_HISTORY: `DELETE FROM nico_watch_history;`,
-  DELETE_NICO_WATCH_HISTORY_BY_VIDEO_ID: `DELETE FROM nico_watch_history WHERE videoId = ?;`,
+  DELETE_NICO_WATCH_HISTORY: `DELETE FROM nico_watch_history WHERE account = ?;`,
+  DELETE_NICO_WATCH_HISTORY_BY_VIDEO_ID: `DELETE FROM nico_watch_history WHERE account = ? AND videoId = ?;`,
   /** 本家の履歴に無くなった項目の掃除用 */
   DELETE_NICO_WATCH_HISTORY_BY_ID: `DELETE FROM nico_watch_history WHERE id = ?;`
 } as const;

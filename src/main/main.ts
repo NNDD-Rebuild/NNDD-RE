@@ -16,7 +16,8 @@ import {
   registerScheme,
   registerProtocolHandler,
   autoConfigureAllowedRoots,
-  setLibraryVideoDirs
+  setLibraryVideoDirs,
+  setLibraryVideoDirSource
 } from './player/LocalVideoProtocol';
 import {
   startStreamServer,
@@ -244,6 +245,7 @@ app.whenReady().then(async () => {
   if (cacheRoot) extraPaths.push(path.join(String(cacheRoot), 'cache', 'movie'));
   autoConfigureAllowedRoots(extraPaths);
   setLibraryVideoDirs(library.videoDao.list().map((v) => v.uri));
+  setLibraryVideoDirSource(() => library?.videoDao.list().map((v) => v.uri) ?? []);
   registerProtocolHandler();
   await startStreamServer();
 

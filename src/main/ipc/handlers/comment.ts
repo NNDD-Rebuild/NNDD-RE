@@ -5,6 +5,7 @@ import { getConfigStore } from '../../config/ConfigStore';
 import { WatchInfoHandler, CommentClient, CommentXmlReader, CommentDiffUpdater, NicoContext } from '../../nicovideo';
 import { mergeNgWithServer, pushNgAdd, pushNgRemove } from '../../nicovideo/ng/NgServerSync';
 import { CommentWindowManager } from '../../player/CommentWindowManager';
+import { AccountManager } from '../../nicovideo/auth/AccountManager';
 import { createLogger } from '../../util/Logger';
 import { runExclusive } from '../../util/KeyedMutex';
 import type { IpcHandlerContext } from './context';
@@ -27,7 +28,7 @@ export function registerCommentHandlers(ctx: IpcHandlerContext): {
 
   // --- NGリスト ---
   ipcMain.handle(IpcChannel.NG_LIST_COMMENT, () =>
-    library.ngListDao.listComment()
+    library.ngListDao.listComment(AccountManager.key)
   );
   const broadcast = (channel: string): void => {
     for (const win of BrowserWindow.getAllWindows()) {
@@ -35,12 +36,14 @@ export function registerCommentHandlers(ctx: IpcHandlerContext): {
     }
   };
   const broadcastNgChanged = (): void => broadcast(IpcChannel.NG_COMMENT_CHANGED);
+  // コメントNGはアカウントごとなので、アカウントが替わったら開いているウィンドウの表示を更新する
+  AccountManager.onActiveChange(() => broadcastNgChanged());
   /** 自動同期が ON でログイン済みのときだけ、ローカルの NG 変更をサーバーへ反映する */
   const serverSyncEnabled = async (): Promise<boolean> =>
     getConfigStore().get('ngServerSync') === true && (await NicoContext.get().isLoggedIn());
   /** NG コメントを追加して全ウィンドウへ通知する。追加できたら true、登録済みなら false */
   const addNgComment = (item: NgListItem): boolean => {
-    const added = library.ngListDao.addComment(item);
+    const added = library.ngListDao.addComment(AccountManager.key, item);
     broadcastNgChanged();
     // ローカルを先に確定し、サーバー反映は失敗してもブロックしない (ログのみ)
     if (added) {
@@ -55,7 +58,7 @@ export function registerCommentHandlers(ctx: IpcHandlerContext): {
     return true;
   });
   ipcMain.handle(IpcChannel.NG_REMOVE_COMMENT, (_e, item: NgListItem) => {
-    library.ngListDao.removeComment(item);
+    library.ngListDao.removeComment(AccountManager.key, item);
     broadcastNgChanged();
     void serverSyncEnabled().then((on) => {
       if (on) return pushNgRemove(item);
@@ -67,11 +70,14 @@ export function registerCommentHandlers(ctx: IpcHandlerContext): {
     // 並走すると同じ基準から二重にサーバーへ追加・削除するため直列にする
     runExclusive('ng-sync', async () => {
       const dao = library.ngListDao;
+      // ローカルの NG は開始時のアカウントのものとして扱う (途中で切り替わっても別アカウントに混ぜない)
+      const localAccount = AccountManager.key;
       const result = await mergeNgWithServer(
         {
-          list: () => dao.listComment(),
-          add: (item) => dao.addComment(item),
-          remove: (item) => dao.removeComment(item),
+          localAccount,
+          list: () => dao.listComment(localAccount),
+          add: (item) => dao.addComment(localAccount, item),
+          remove: (item) => dao.removeComment(localAccount, item),
           getBase: (account) => dao.getSyncBase(account),
           setBase: (account, items) => dao.setSyncBase(account, items)
         },

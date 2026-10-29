@@ -66,12 +66,6 @@ export const BACKUP_SCHEMA_VERSION = 1;
 
 /** アカウントごとのバックアップデータの形 (マイリスト・スケジュール・プレイリスト) */
 export interface BackupAccountData {
-  /**
-   * アカウントごとのマイリスト・スケジュール・プレイリスト (キーはニコニコのユーザーID、未ログイン時のデータは空文字)。
-   * 形式 2 以降。復元時はアカウントごとにそのアカウント分だけを置き換える。
-   * 下の myList / schedule / playlist は、形式 1 のアプリでも読めるよう、書き出したときのアカウント分を重ねて入れる
-   */
-  accounts?: Record<string, BackupAccountData>;
   myList?: Array<{
     url: string;
     name: string;
@@ -123,7 +117,7 @@ export interface BackupPayload {
   };
   /**
    * アカウントごとのマイリスト・スケジュール・プレイリスト (キーはニコニコのユーザーID、未ログイン時のデータは空文字)。
-   * 復元時はアカウントごとに、そのアカウント分だけを置き換える。
+   * 復元時はアカウントごとに、そのアカウント分だけを置き換える。形式の版は上げない (古いアプリは無視するだけで読める)。
    * 下の myList / schedule / playlist は、これを知らない古いアプリでも読めるよう、書き出したときのアカウント分を重ねて入れる
    */
   accounts?: Record<string, BackupAccountData>;

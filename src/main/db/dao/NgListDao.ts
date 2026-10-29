@@ -16,8 +16,8 @@ export class NgListDao {
   constructor(private readonly db: NnddDatabase) {}
 
   // コメントNG
-  listComment(): NgListItem[] {
-    const rows = this.db.prepare(Q.SELECT_NG_LIST).all() as NgRow[];
+  listComment(account: string): NgListItem[] {
+    const rows = this.db.prepare(Q.SELECT_NG_LIST).all(account) as NgRow[];
     return rows.map((r) => ({
       type: r.type as NgListItemTypeValue,
       value: r.value
@@ -25,12 +25,12 @@ export class NgListDao {
   }
 
   /** 追加できたら true。既に登録済み (INSERT OR IGNORE で無視された) なら false */
-  addComment(item: NgListItem): boolean {
-    return this.db.prepare(Q.INSERT_NG_LIST).run(item.type, item.value).changes > 0;
+  addComment(account: string, item: NgListItem): boolean {
+    return this.db.prepare(Q.INSERT_NG_LIST).run(account, item.type, item.value).changes > 0;
   }
 
-  removeComment(item: NgListItem): void {
-    this.db.prepare(Q.DELETE_NG_LIST).run(item.type, item.value);
+  removeComment(account: string, item: NgListItem): void {
+    this.db.prepare(Q.DELETE_NG_LIST).run(account, item.type, item.value);
   }
 
   /** サーバー側NGと前回同期した時点の一覧 (アカウントごと)。未同期なら空配列 */
@@ -76,13 +76,13 @@ export class NgListDao {
     this.db.prepare(Q.DELETE_NG_UP).run(userId);
   }
 
-  /** 全NGリスト (コメント/タグ/ユーザー) を削除 */
-  clearAll(): void {
-    this.db.prepare(Q.DELETE_ALL_NG_LIST).run();
+  /** そのアカウントのコメントNGと、全アカウント共通のタグ/ユーザーNGを削除 */
+  clearAll(account: string): void {
+    this.db.prepare(Q.DELETE_ALL_NG_LIST).run(account);
     this.db.prepare(Q.DELETE_ALL_NG_TAG).run();
     this.db.prepare(Q.DELETE_ALL_NG_UP).run();
     // 全消去は「削除」ではなく入れ替え (インポート・復元) の可能性が高い。基準も消して次回同期を初回扱いにし、
     // サーバー側の NG を巻き込んで消さないようにする
-    this.db.prepare(Q.DELETE_ALL_NG_SYNC_BASE).run();
+    this.db.prepare(Q.DELETE_ALL_NG_SYNC_BASE).run(account);
   }
 }

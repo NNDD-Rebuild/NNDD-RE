@@ -337,5 +337,8 @@ export class AuthManager {
     }
     await ctx.cookieStore.clear();
     this._loggedOut = true;
+    // アカウントの選択も外す。ログアウト中にそのアカウントのマイリスト・NG・スケジュールなどを
+    // 表示・同期・実行し続けないため (保存パスワードは残り、切替で再ログインできる)
+    await AccountManager.deactivate();
   }
 }

@@ -178,28 +178,29 @@ export function registerLibraryHandlers(ctx: IpcHandlerContext): void {
 
   // --- ニコニコ動画本家 視聴履歴 ---
   ipcMain.handle(IpcChannel.NICO_HISTORY_LIST, () => {
-    return library.nicoWatchHistoryDao.list(3000);
+    return library.nicoWatchHistoryDao.list(AccountManager.key, 3000);
   });
 
   ipcMain.handle(IpcChannel.NICO_HISTORY_SYNC, async () => {
     await NicoHistoryClient.syncFull(library.nicoWatchHistoryDao);
-    return library.nicoWatchHistoryDao.list(3000);
+    return library.nicoWatchHistoryDao.list(AccountManager.key, 3000);
   });
 
   ipcMain.handle(IpcChannel.NICO_HISTORY_REMOVE, async (_e, videoId: string) => {
+    const account = AccountManager.key;
     try {
       await NicoHistoryClient.removeItem(videoId);
     } catch (e) {
       // ブラウザ等で既に消されている場合は本家側が無い扱いなので、ローカルだけ消して続行する
       if ((e as { httpStatus?: number }).httpStatus !== 404) throw e;
     }
-    library.nicoWatchHistoryDao.remove(videoId);
-    return library.nicoWatchHistoryDao.list(3000);
+    library.nicoWatchHistoryDao.remove(account, videoId);
+    return library.nicoWatchHistoryDao.list(account, 3000);
   });
 
   ipcMain.handle(IpcChannel.WATCHED_CHECK_BATCH, (_e, videoIds: string[]) => {
     const fromApp = library.historyDao.existsBatch(videoIds);
-    const fromNico = library.nicoWatchHistoryDao.existsBatch(videoIds);
+    const fromNico = library.nicoWatchHistoryDao.existsBatch(AccountManager.key, videoIds);
     return videoIds.filter((id) => fromApp.has(id) || fromNico.has(id));
   });
 
@@ -560,8 +561,16 @@ export function registerLibraryHandlers(ctx: IpcHandlerContext): void {
     const rel = path.relative(path.resolve(src), path.resolve(dest));
     if (rel === '' ) return dest;
     if (!rel.startsWith('..') && !path.isAbsolute(rel)) throw new Error('フォルダを自分の中には移動できません');
-    const caseOnly = src.toLowerCase() === dest.toLowerCase();
-    if (!caseOnly && fsmod.existsSync(dest)) throw new Error('移動先にすでに同名のフォルダがあります');
+    // 大文字小文字だけの変更は、大文字小文字を区別しない FS では dest が src 自身を指す。実体が同じかで見分ける
+    // (区別する FS で別の同名フォルダがあるときは衝突として弾く)
+    if (fsmod.existsSync(dest)) {
+      const a = fsmod.statSync(src);
+      const b = fsmod.statSync(dest);
+      const sameEntry = a.ino !== 0 && a.ino === b.ino && a.dev === b.dev;
+      if (!(sameEntry && src.toLowerCase() === dest.toLowerCase())) {
+        throw new Error('移動先にすでに同名のフォルダがあります');
+      }
+    }
     try {
       fsmod.renameSync(src, dest);
     } catch (e) {

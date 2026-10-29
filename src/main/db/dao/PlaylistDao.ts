@@ -199,7 +199,13 @@ export class PlaylistDao {
   /** そのアカウントの全プレイリスト・全アイテムを削除 */
   clearAll(account: string): void {
     this.db.transaction(() => {
-      this.db.prepare('DELETE FROM playlist_sync_dismissed WHERE account = ?').run(account);
+      // 同期していたプレイリストの登録キーは取り込み除外にする (ニコニコ側に残ったマイリストから復活させない)。既存の除外は残す
+      this.db
+        .prepare(
+          `INSERT OR IGNORE INTO playlist_sync_dismissed (account, syncKey)
+           SELECT account, syncKey FROM playlist WHERE account = ? AND syncKey IS NOT NULL`
+        )
+        .run(account);
       // アイテムと基準は playlist を消す前に (playlist の account で対象を決めるため)
       this.db.prepare(Q.DELETE_ALL_PLAYLIST_SYNC_BASE).run(account);
       this.db.prepare(Q.DELETE_ALL_PLAYLIST_ITEM).run(account);

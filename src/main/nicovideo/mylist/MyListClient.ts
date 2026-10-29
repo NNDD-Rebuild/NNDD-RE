@@ -263,7 +263,9 @@ export class MyListClient {
       const m = res.data?.mylist;
       // 応答の欠落を「空のマイリスト」と取り違えると、同期でローカルの項目が黙って消える
       if (!m) throw new Error('マイリストの応答が不正です (mylist がありません)');
-      const total = m.totalItemCount ?? 0;
+      // 総数が分からないまま途中で打ち切ると、残りを「サーバーに無い」と誤判定して消してしまう
+      if (typeof m.totalItemCount !== 'number') throw new Error('マイリストの応答が不正です (totalItemCount がありません)');
+      const total = m.totalItemCount;
       if (total > maxItems) {
         throw new Error(`マイリストの動画が ${maxItems} 件を超えているため同期できません (${total} 件)`);
       }

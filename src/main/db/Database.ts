@@ -197,6 +197,14 @@ export class NnddDatabase {
       }
       log.info('added account scope to mylist / mylist_history / playlist / playlist_sync_dismissed / schedule');
     }
+    // v18 → v19: コメントNGとニコ動視聴履歴もアカウントごとにする (サーバー側のNG・履歴と同期するため)。
+    // 既存の行は account='' にして、ログインしたアカウントへ後で引き継ぐ (LibraryManager.adoptUnscopedData)
+    if (Number(from) <= 18) {
+      for (const table of ['ng_list', 'nico_watch_history']) {
+        this.rebuildWithAccount(table);
+      }
+      log.info('added account scope to ng_list / nico_watch_history');
+    }
   }
 
   /** account カラムを持つ定義で表を作り直し、既存の行は account='' で引き継ぐ (既に account があれば何もしない) */

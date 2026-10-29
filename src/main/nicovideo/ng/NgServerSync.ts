@@ -100,6 +100,8 @@ export class NgServerClient {
 
 /** 同期で使うローカルの入出力 (NgListDao の一部) */
 export interface LocalNgStore {
+  /** list / add / remove が対象にしているローカルのアカウント。サーバー側のアカウントと一致しなければ同期しない */
+  localAccount: string;
   list(): NgListItem[];
   /** 追加できたら true、登録済みなら false */
   add(item: NgListItem): boolean;
@@ -138,6 +140,9 @@ export async function mergeNgWithServer(
   };
 
   const account = await getMyUserId();
+  if (account !== local.localAccount) {
+    throw new Error('ログイン中のアカウントが切り替わったため、NGの同期を中止しました');
+  }
   const serverItems = await NgServerClient.list(); // 失敗時はここで例外 → 何も変更しない
 
   const serverMap = new Map<string, NgListItem>();

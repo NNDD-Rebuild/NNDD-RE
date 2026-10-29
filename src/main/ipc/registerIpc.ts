@@ -83,14 +83,22 @@ export function registerIpcHandlers(
   // 最初にログインしたアカウントへ一度だけ引き継ぐ。以降は新規データがアカウントごとに分かれる
   AccountManager.onActiveChange((account) => {
     const store = getConfigStore();
-    if (!account || store.get('accountScopeAdopted')) return;
-    library.adoptUnscopedData(account);
-    store.set(
-      'liveRecordReservations',
-      (store.get('liveRecordReservations') ?? []).map((r) => (r.account === undefined ? { ...r, account } : r))
-    );
-    store.set('accountScopeAdopted', true);
-    log.info(`adopted pre-account local data to account ${account}`);
+    if (!account) return;
+    if (!store.get('accountScopeAdopted')) {
+      library.adoptUnscopedData(account);
+      store.set(
+        'liveRecordReservations',
+        (store.get('liveRecordReservations') ?? []).map((r) => (r.account === undefined ? { ...r, account } : r))
+      );
+      store.set('accountScopeAdopted', true);
+      log.info(`adopted pre-account local data to account ${account}`);
+    }
+    // コメントNG・ニコ動視聴履歴は後からアカウント別になったので、引き継ぎは別に一度だけ行う
+    if (!store.get('accountScopeAdoptedNgHistory')) {
+      library.adoptUnscopedData(account, 'ngHistory');
+      store.set('accountScopeAdoptedNgHistory', true);
+      log.info(`adopted pre-account NG list / nico history to account ${account}`);
+    }
   });
 
   const scheduler = new ScheduleManager(library, autoDl, seriesAutoDl, followUserAutoDl);

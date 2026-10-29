@@ -397,6 +397,8 @@ export interface NnddConfig {
    * 最初にログインしたアカウントへ引き継ぎ済みか
    */
   accountScopeAdopted: boolean;
+  /** 後からアカウント別になったコメントNG・ニコ動視聴履歴を、最初にログインしたアカウントへ引き継ぎ済みか */
+  accountScopeAdoptedNgHistory: boolean;
 
   /** 旧単一アカウント時代の保存済み認証情報 (safeStorage で暗号化)。accounts へ移行済みなら空 */
   auth: {
@@ -601,6 +603,7 @@ const DEFAULTS: NnddConfig = {
   },
   accounts: { list: [] },
   accountScopeAdopted: false,
+  accountScopeAdoptedNgHistory: false,
   auth: {},
   githubSync: {
     profiles: [],

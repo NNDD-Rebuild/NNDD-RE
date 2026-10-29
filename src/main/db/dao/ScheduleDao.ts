@@ -58,6 +58,11 @@ export class ScheduleDao {
       );
   }
 
+  /** 最終実行時刻だけ更新する (実行中に編集された他の項目を上書きしない。削除済みなら何もしない) */
+  setLastRun(account: string, id: string, lastRun: Date): void {
+    this.db.prepare(Q.UPDATE_SCHEDULE_LAST_RUN).run(lastRun.getTime() / 1000, account, id);
+  }
+
   remove(account: string, id: string): void {
     this.db.prepare(Q.DELETE_SCHEDULE).run(account, id);
   }

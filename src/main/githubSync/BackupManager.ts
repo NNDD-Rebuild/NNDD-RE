@@ -170,7 +170,7 @@ export class BackupManager {
 
     if (scope.ngList) {
       payload.ngList = {
-        comments: this.library.ngListDao.listComment(),
+        comments: this.library.ngListDao.listComment(AccountManager.key),
         tags: this.library.ngListDao.listTags(),
         ups: this.library.ngListDao.listUps()
       };
@@ -330,8 +330,9 @@ export class BackupManager {
     if (scope.ngList && payload.ngList) {
       const ngList = payload.ngList;
       this.library.db.transaction(() => {
-        this.library.ngListDao.clearAll();
-        for (const c of ngList.comments) this.library.ngListDao.addComment(c);
+        const account = AccountManager.key;
+        this.library.ngListDao.clearAll(account);
+        for (const c of ngList.comments) this.library.ngListDao.addComment(account, c);
         for (const t of ngList.tags) this.library.ngListDao.addTag(t);
         for (const u of ngList.ups) this.library.ngListDao.addUp(u);
       });
@@ -385,8 +386,8 @@ export class BackupManager {
 
   /** buildPayload() の出力からメタデータ(schemaVersion/exportedAt/appVersion)を除いた本体のみをハッシュ化 (変更検知用) */
   private computeContentHash(payload: BackupPayload): string {
-    const { config, ngList, myList, schedule, savedSearch, playlist, history } = payload;
-    const body = { config, ngList, myList, schedule, savedSearch, playlist, history };
+    const { config, ngList, accounts, myList, schedule, savedSearch, playlist, history } = payload;
+    const body = { config, ngList, accounts, myList, schedule, savedSearch, playlist, history };
     return createHash('sha256').update(JSON.stringify(body)).digest('hex');
   }
 
@@ -694,6 +695,8 @@ function parseBackupPayload(raw: string): BackupPayload {
     expectNullableString(o.word, `${where}.word`);
     expectNullableString(o.type, `${where}.type`);
     expectNullableString(o.sortType, `${where}.sortType`);
+    if (o.parentId !== undefined) expectNullableString(o.parentId, `${where}.parentId`);
+    if (o.isDir !== undefined) expectBoolean(o.isDir, `${where}.isDir`);
   });
 
   checkOptionalList(root, 'playlist', checkPlaylistItem);

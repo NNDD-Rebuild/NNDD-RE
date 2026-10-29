@@ -1,6 +1,7 @@
 import type { NicoWatchHistoryItem } from '@shared/types';
 import { NicoEndpoint } from '@shared/constants';
 import { NicoContext } from '../NicoContext';
+import { AccountManager } from '../auth/AccountManager';
 import { createLogger } from '../../util/Logger';
 import { nicoHistoryKey, type NicoWatchHistoryDao } from '../../db/dao/NicoWatchHistoryDao';
 import type { NicoNvapiWatchHistoryResponse } from '../apiTypes';
@@ -82,6 +83,8 @@ export class NicoHistoryClient {
     try {
       const ctx = NicoContext.get();
       if (!(await ctx.isLoggedIn())) return;
+      // 取得中にアカウントが切り替わったら、前のアカウントの履歴として保存しない
+      const account = AccountManager.key;
       const all = new Map<string, NicoWatchHistoryItem>();
       let cursor: string | undefined;
       let complete = false;
@@ -94,13 +97,14 @@ export class NicoHistoryClient {
         }
         cursor = nextCursor;
       }
-      if (all.size > 0) dao.upsertBatch([...all.values()]);
+      if (AccountManager.key !== account) return;
+      if (all.size > 0) dao.upsertBatch(account, [...all.values()]);
       // 保存期間切れで本家から消えた履歴はローカルに残したい。本家に残っている最古の視聴日時より新しい分だけを
       // 「本家で削除された」と見なす (最古が分からない = 視聴日時付きの項目が無いときは何も消さない)
       let oldestSec = Infinity;
       for (const it of all.values()) if (it.watchedAt) oldestSec = Math.min(oldestSec, it.watchedAt.getTime() / 1000);
       if (complete && Number.isFinite(oldestSec)) {
-        const removed = dao.removeNotIn(new Set(all.keys()), oldestSec);
+        const removed = dao.removeNotIn(account, new Set(all.keys()), oldestSec);
         if (removed > 0) log.info(`nico watch history: removed ${removed} items deleted on the server`);
       }
     } catch (e) {
@@ -113,9 +117,11 @@ export class NicoHistoryClient {
     try {
       const ctx = NicoContext.get();
       if (!(await ctx.isLoggedIn())) return;
-      const items = await this.fetchDiff(dao.listKeys());
+      const account = AccountManager.key;
+      const items = await this.fetchDiff(dao.listKeys(account));
+      if (AccountManager.key !== account) return;
       if (items.length > 0) {
-        dao.upsertBatch(items);
+        dao.upsertBatch(account, items);
         log.info(`nico watch history synced: ${items.length} new items`);
       }
     } catch (e) {

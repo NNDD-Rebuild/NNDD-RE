@@ -45,6 +45,15 @@ export function setLibraryVideoDirs(uris: string[]): void {
   libraryVideoDirs = [...dirs];
 }
 
+/** 許可ルート外だった要求のときに、ライブラリ登録済み動画の URI を引き直す元 (DL・スキャン・フォルダ移動で増減するため) */
+let libraryUriSource: (() => string[]) | null = null;
+let lastDirRefreshAt = 0;
+const DIR_REFRESH_MIN_INTERVAL_MS = 2000;
+
+export function setLibraryVideoDirSource(source: () => string[]): void {
+  libraryUriSource = source;
+}
+
 const MIME: Record<string, string> = {
   '.mp4': 'video/mp4', '.m4v': 'video/mp4',
   '.m4a': 'audio/mp4',
@@ -247,10 +256,22 @@ async function handleRequest(req: Request): Promise<Response> {
 function isAllowed(filePath: string): boolean {
   if (allowedRoots.length === 0) return false;
   const resolved = path.resolve(filePath);
-  return [...allowedRoots, ...libraryVideoDirs].some((root) => {
+  const within = (root: string): boolean => {
     const rel = path.relative(root, resolved);
-    return rel && !rel.startsWith('..') && !path.isAbsolute(rel);
-  });
+    return !!rel && !rel.startsWith('..') && !path.isAbsolute(rel);
+  };
+  if (allowedRoots.some(within) || libraryVideoDirs.some(within)) return true;
+  // 登録後に増えた・移動した動画かもしれないので、間隔を空けて保存フォルダの一覧を引き直して再判定する
+  const now = Date.now();
+  if (!libraryUriSource || now - lastDirRefreshAt < DIR_REFRESH_MIN_INTERVAL_MS) return false;
+  lastDirRefreshAt = now;
+  try {
+    setLibraryVideoDirs(libraryUriSource());
+  } catch (e) {
+    log.warn('library video dirs refresh failed:', e);
+    return false;
+  }
+  return libraryVideoDirs.some(within);
 }
 
 /** @deprecated shared の buildLocalUrl を使うこと */

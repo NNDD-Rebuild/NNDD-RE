@@ -164,10 +164,16 @@ export class LibraryManager {
         } else {
           const removeBase = this.db.prepare(`DELETE FROM playlist_sync_base WHERE playlist_id = ?;`);
           for (const id of ids) removeBase.run(id);
+          // 元のアカウントのニコニコ側マイリストには登録キーが残るので、取り込み除外にして復活 (重複) させない
+          this.db
+            .prepare(
+              `INSERT OR IGNORE INTO playlist_sync_dismissed (account, syncKey)
+               SELECT account, syncKey FROM playlist WHERE account = ? AND syncKey IS NOT NULL;`
+            )
+            .run(from);
           this.db
             .prepare(`UPDATE playlist SET account = ?, serverMylistId = NULL, syncKey = NULL WHERE account = ?;`)
             .run(to, from);
-          this.db.prepare(`DELETE FROM playlist_sync_dismissed WHERE account = ?;`).run(from);
         }
         done.playlist = ids.length;
       }
@@ -178,6 +184,8 @@ export class LibraryManager {
           done.schedule = list.length;
         } else {
           this.db.prepare(`UPDATE OR IGNORE schedule SET account = ? WHERE account = ?;`).run(to, from);
+          // 移動先に同じ ID があって動かせなかった行は重複なので消す (マイリストと同じ扱い)
+          this.db.prepare(`DELETE FROM schedule WHERE account = ?;`).run(from);
           done.schedule = before.schedule;
         }
       }
@@ -189,11 +197,16 @@ export class LibraryManager {
    * アカウント導入前に作ったデータ (account='') を、最初にログインしたアカウントへ引き継ぐ。
    * マイリスト・マイリスト履歴・プレイリスト・スケジュールが対象。既に同じ URL がある行は引き継がず残す。
    * 録画予約 (config) は呼び出し側で扱う。
+   * @param scope 'core': マイリスト等 / 'ngHistory': 後からアカウント別になったコメントNG・ニコ動視聴履歴
    */
-  adoptUnscopedData(account: string): void {
+  adoptUnscopedData(account: string, scope: 'core' | 'ngHistory' = 'core'): void {
     if (!account) return;
+    const tables =
+      scope === 'core'
+        ? ['mylist', 'mylist_history', 'playlist', 'playlist_sync_dismissed', 'schedule']
+        : ['ng_list', 'nico_watch_history'];
     this.db.transaction(() => {
-      for (const table of ['mylist', 'mylist_history', 'playlist', 'playlist_sync_dismissed', 'schedule']) {
+      for (const table of tables) {
         this.db.prepare(`UPDATE OR IGNORE ${table} SET account = ? WHERE account = '';`).run(account);
       }
     });
