@@ -1,6 +1,7 @@
 import { IpcChannel } from '@shared/types';
 import type { VideoCardData } from '../common/VideoCard';
 import { ContinuousPlayButton } from '../common/ContinuousPlayButton';
+import { MYLIST_SORT_OPTIONS, type MylistSort, type MylistSortKey } from './mylistUtils';
 
 /** 一覧上部のバー: 連続再生 / タイトル絞り込み / 全件読込の進捗 / 件数 */
 export function MyListFilterBar({
@@ -12,7 +13,9 @@ export function MyListFilterBar({
   onSearchConfirm,
   loadingAll,
   loadedCount,
-  totalItems
+  totalItems,
+  sort,
+  onSortChange
 }: {
   loading: boolean;
   filteredItems: VideoCardData[];
@@ -23,6 +26,9 @@ export function MyListFilterBar({
   loadingAll: boolean;
   loadedCount: number;
   totalItems: number;
+  /** 指定時のみ並び順の選択を出す (マイリスト用。プレイリストは手動の並びなので出さない) */
+  sort?: MylistSort;
+  onSortChange?: (sort: MylistSort) => void;
 }): JSX.Element {
   return (
     <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b border-nndd-border bg-nndd-panel text-xs">
@@ -48,6 +54,27 @@ export function MyListFilterBar({
         placeholder="タイトルで絞り込み"
         className="bg-nndd-bg border border-nndd-border px-2 py-1 text-xs"
       />
+      {sort && onSortChange && (
+        <>
+          <select
+            value={sort.key}
+            onChange={(e) => onSortChange({ ...sort, key: e.target.value as MylistSortKey })}
+            title="並び順 (マイリストごとに記憶します)"
+            className="bg-nndd-bg border border-nndd-border px-1 py-1 text-xs"
+          >
+            {MYLIST_SORT_OPTIONS.map((o) => (
+              <option key={o.key} value={o.key}>{o.label}</option>
+            ))}
+          </select>
+          <button
+            onClick={() => onSortChange({ ...sort, desc: !sort.desc })}
+            title={sort.desc ? '降順 (クリックで昇順)' : '昇順 (クリックで降順)'}
+            className="px-2 py-1 bg-nndd-border rounded hover:bg-nndd-accent hover:text-white"
+          >
+            {sort.desc ? '▼' : '▲'}
+          </button>
+        </>
+      )}
       {loadingAll && (
         <span className="text-nndd-subtext animate-pulse">
           全件読込中… ({loadedCount.toLocaleString()}/{totalItems.toLocaleString()}件)

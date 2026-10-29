@@ -12,11 +12,14 @@ import { PAGE_SIZE, mylistItemToCard, type Selected } from '@renderer/components
 export function useMylistSearch({
   selected,
   items,
-  totalItems
+  totalItems,
+  useAllItems = false
 }: {
   selected: Selected | null;
   items: VideoCardData[];
   totalItems: number;
+  /** true のとき、検索語が空でも全ページ分 (allItems) を一覧の元にする (並び順を指定したとき) */
+  useAllItems?: boolean;
 }) {
   // タイトル検索 (選択中リスト内)
   const [searchText, setSearchText] = useState('');
@@ -110,11 +113,11 @@ export function useMylistSearch({
   };
 
   const filteredItems = useMemo(() => {
-    if (!searchText.trim()) return items;
-    const q = searchText.trim().toLowerCase();
     const base = allItems ?? items;
+    if (!searchText.trim()) return useAllItems ? base : items;
+    const q = searchText.trim().toLowerCase();
     return base.filter((it) => it.title.toLowerCase().includes(q));
-  }, [items, allItems, searchText]);
+  }, [items, allItems, searchText, useAllItems]);
 
   return {
     searchText,
@@ -127,6 +130,8 @@ export function useMylistSearch({
     cancelLoadAllRef,
     filteredItems,
     resetSearch,
+    /** 全ページを取得して allItems にキャッシュする (取得済み・取得中なら何もしない) */
+    loadAllPages: loadAllPagesForSearch,
     fetchAllMylistPages,
     handleSearchTextChange,
     handleSearchConfirm

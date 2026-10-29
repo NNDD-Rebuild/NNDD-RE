@@ -10,6 +10,7 @@ import { ErrorNotice } from '../common/ErrorNotice';
 import { ContextMenuPopup, MenuItem } from '../common/VideoCard';
 import { useAppStore } from '../../store/useAppStore';
 import { useWatchedIds } from '@renderer/hooks/useWatchedIds';
+import { useConfig } from '@renderer/hooks/useConfig';
 import { useLibraryCheck } from '@renderer/hooks/useLibraryCheck';
 import { useMylistSearch } from '@renderer/hooks/mylist/useMylistSearch';
 import { useMylistAccountImport } from '@renderer/hooks/mylist/useMylistAccountImport';
@@ -17,7 +18,10 @@ import { useMylistAddForm } from '@renderer/hooks/mylist/useMylistAddForm';
 import { usePendingMylistNavigation } from '@renderer/hooks/mylist/usePendingMylistNavigation';
 import { useMylistBulkMenu } from '@renderer/hooks/mylist/useMylistBulkMenu';
 import {
+  DEFAULT_MYLIST_SORT,
   PAGE_SIZE,
+  sortMylistItems,
+  type MylistSort,
   mylistItemToCard,
   playlistItemToCard,
   typeLabel,
@@ -58,6 +62,14 @@ export function MyListView(): JSX.Element {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalItems, setTotalItems] = useState(0);
 
+  // マイリストごとの並び順 (リストのURLをキーに設定へ保存)。取得順以外は全ページを取得して並べ替える
+  const [mylistSortMap, setMylistSortMap] = useConfig<Record<string, MylistSort>>('ui.mylistSort', {});
+  const currentSort: MylistSort =
+    selected?.kind === 'mylist'
+      ? (mylistSortMap[selected.mylist.myListUrl] ?? DEFAULT_MYLIST_SORT)
+      : DEFAULT_MYLIST_SORT;
+  const sortActive = selected?.kind === 'mylist' && (currentSort.key !== 'default' || currentSort.desc);
+
   // タイトル検索 (選択中リスト内) と、検索・一括DL用の全ページキャッシュ
   const {
     searchText,
@@ -68,12 +80,18 @@ export function MyListView(): JSX.Element {
     loadedCount,
     setLoadedCount,
     cancelLoadAllRef,
-    filteredItems,
+    filteredItems: searchedItems,
+    loadAllPages,
     resetSearch,
     fetchAllMylistPages,
     handleSearchTextChange,
     handleSearchConfirm
-  } = useMylistSearch({ selected, items, totalItems });
+  } = useMylistSearch({ selected, items, totalItems, useAllItems: sortActive });
+  // 並び順を適用した一覧 (以降の表示・連続再生・一括DLはすべてこれを使う)
+  const filteredItems = useMemo(
+    () => (selected?.kind === 'mylist' ? sortMylistItems(searchedItems, currentSort) : searchedItems),
+    [searchedItems, selected, currentSort]
+  );
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // プレイリスト作成フォーム (ニコニコ同期は意図せず外部にマイリストを作らないよう既定 OFF)
@@ -109,7 +127,8 @@ export function MyListView(): JSX.Element {
   // 一括DL中
   const [bulkDling, setBulkDling] = useState(false);
   const { downloadedIds, checkDownloaded } = useLibraryCheck();
-  const videoIds = useMemo(() => items.map((it) => it.videoId), [items]);
+  // 既読バッジの照合。全ページ取得済み (並べ替え・検索中) はその全件が対象
+  const videoIds = useMemo(() => (allItems ?? items).map((it) => it.videoId), [allItems, items]);
   const watchedIds = useWatchedIds(videoIds);
 
   const showToast = useAppStore((s) => s.showToast);
@@ -145,6 +164,25 @@ export function MyListView(): JSX.Element {
 
   const reloadPlaylists = (): void => {
     window.nndd.invoke<Playlist[]>(IpcChannel.PLAYLIST_LIST).then(setPlaylists);
+  };
+
+  // 全ページを取得した一覧は、DL済みの照合もその全件で取り直す
+  useEffect(() => {
+    if (allItems) void checkDownloaded(allItems.map((i) => i.videoId));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- allItems が揃ったときだけ照合する
+  }, [allItems]);
+
+  // 並び順を取得順以外にしたら、残りのページも取得して全件を並べ替えられるようにする
+  useEffect(() => {
+    if (sortActive && selected?.kind === 'mylist' && !loading && allItems === null && totalItems > items.length) {
+      void loadAllPages();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 並び順・一覧が変わったときだけ判定する
+  }, [sortActive, selected, loading, allItems, totalItems, items.length]);
+
+  const handleSortChange = (next: MylistSort): void => {
+    if (selected?.kind !== 'mylist') return;
+    void setMylistSortMap({ ...mylistSortMap, [selected.mylist.myListUrl]: next });
   };
 
   // アカウントから取得
@@ -978,11 +1016,13 @@ export function MyListView(): JSX.Element {
                 loadingAll={loadingAll}
                 loadedCount={loadedCount}
                 totalItems={totalItems}
+                sort={selected.kind === 'mylist' ? currentSort : undefined}
+                onSortChange={selected.kind === 'mylist' ? handleSortChange : undefined}
               />
             )}
 
             {/* ページネーションバー (固定、マイリストのみ) */}
-            {selected.kind === 'mylist' && (items.length > 0 || loading) && totalItems > PAGE_SIZE && (
+            {selected.kind === 'mylist' && (items.length > 0 || loading) && totalItems > PAGE_SIZE && !sortActive && (
               <MyListPagination
                 totalItems={totalItems}
                 currentPage={currentPage}
