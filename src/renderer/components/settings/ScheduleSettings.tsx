@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Schedule, MyList } from '@shared/types';
 import { ScheduleTargetType } from '@shared/types';
+import { useAppStore } from '@renderer/store/useAppStore';
 import { Btn, Card, CheckRow, Hint, Row, Select, SettingsPage, TextInput } from './common';
 
 interface FollowUserOption {
@@ -43,7 +44,9 @@ export function ScheduleSettings(): JSX.Element {
       .catch(() => setFollowUsers([]));
   };
 
-  useEffect(reload, []);
+  // スケジュールはアカウントごと。切り替えたら読み込み直す
+  const activeAccountId = useAppStore((s) => s.accounts.activeId);
+  useEffect(reload, [activeAccountId]);
 
   const startNew = (): void => {
     setEditing({

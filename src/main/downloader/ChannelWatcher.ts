@@ -2,6 +2,7 @@ import { RssType } from '@shared/types';
 import { extractMylistLikeId } from '@shared/utils/parseMylistUrl';
 import { LibraryManager } from '../db/LibraryManager';
 import { ChannelClient } from '../nicovideo/channel/ChannelClient';
+import { AccountManager } from '../nicovideo/auth/AccountManager';
 import { TrayManager } from '../tray/TrayManager';
 import { getConfigStore } from '../config/ConfigStore';
 import { createLogger } from '../util/Logger';
@@ -18,7 +19,7 @@ const log = createLogger('ChannelWatcher');
  */
 export class ChannelWatcher {
   private intervalId: NodeJS.Timeout | null = null;
-  /** マイリストURL → 前回チェック時の先頭動画ID (アプリ起動中のみ保持) */
+  /** アカウント + マイリストURL → 前回チェック時の先頭動画ID (アプリ起動中のみ保持。アカウントごとに別々の基準) */
   private lastSeenVideoId = new Map<string, string>();
 
   constructor(
@@ -49,15 +50,17 @@ export class ChannelWatcher {
     const cfg = getConfigStore().get('channelWatch');
     if (!cfg?.enabled) return;
 
+    // 監視するのは今のアカウントに登録したチャンネルだけ
+    const account = AccountManager.key;
     const channels = this.library.myListDao
-      .list()
+      .list(account)
       .filter((ml) => ml.type === RssType.CHANNEL);
 
     for (const ch of channels) {
       try {
         const channelId = extractMylistLikeId(ch.myListUrl, RssType.CHANNEL);
         if (!channelId) continue;
-        const id = ch.myListUrl;
+        const id = `${account}\n${ch.myListUrl}`;
         const { items } = await ChannelClient.fetchChannelVideos(channelId, 1);
         const top = items[0];
         if (!top) continue;

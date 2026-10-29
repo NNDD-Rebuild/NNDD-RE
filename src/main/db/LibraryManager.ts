@@ -89,6 +89,30 @@ export class LibraryManager {
     return new LibraryManager(rootDir);
   }
 
+  /** マイリスト・スケジュール・プレイリストのいずれかを持っているアカウント (未ログイン分は空文字) */
+  listAccountsWithData(): string[] {
+    return this.db
+      .prepare(
+        `SELECT account FROM mylist UNION SELECT account FROM schedule UNION SELECT account FROM playlist ORDER BY account;`
+      )
+      .pluck()
+      .all() as string[];
+  }
+
+  /**
+   * アカウント導入前に作ったデータ (account='') を、最初にログインしたアカウントへ引き継ぐ。
+   * マイリスト・マイリスト履歴・プレイリスト・スケジュールが対象。既に同じ URL がある行は引き継がず残す。
+   * 録画予約 (config) は呼び出し側で扱う。
+   */
+  adoptUnscopedData(account: string): void {
+    if (!account) return;
+    this.db.transaction(() => {
+      for (const table of ['mylist', 'mylist_history', 'playlist', 'playlist_sync_dismissed', 'schedule']) {
+        this.db.prepare(`UPDATE OR IGNORE ${table} SET account = ? WHERE account = '';`).run(account);
+      }
+    });
+  }
+
   close(): void {
     this.db.close();
   }

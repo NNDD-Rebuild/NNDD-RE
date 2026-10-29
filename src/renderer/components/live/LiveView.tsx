@@ -332,6 +332,7 @@ function ProgramCard({
 export function LiveView(): JSX.Element {
   const [subTab, setSubTab] = useState<SubTab>('followOnair');
   const isLoggedIn = useAppStore((s) => s.isLoggedIn);
+  const activeAccountId = useAppStore((s) => s.accounts.activeId);
   const needsLogin = LOGIN_REQUIRED_TABS.includes(subTab) && !isLoggedIn;
   const [input, setInput] = useState('');
   const [openError, setOpenError] = useState('');
@@ -466,11 +467,12 @@ export function LiveView(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- サブタブ切替時だけ読み込む (検索条件の変更では読み直さない)
   }, [subTab]);
 
-  // ログイン状態が確定/変化したらログイン必須タブを読み直す
+  // ログイン状態が確定/変化したら、ログイン必須タブを読み直す。
+  // アカウントを切り替えたときは、アカウントごとの録画予約の一覧も読み直す
   useEffect(() => {
-    if (LOGIN_REQUIRED_TABS.includes(subTab)) void load(subTab, null, false, 0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- ログイン状態の変化だけを見る
-  }, [isLoggedIn]);
+    if (LOGIN_REQUIRED_TABS.includes(subTab) || subTab === 'recordReservations') void load(subTab, null, false, 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ログイン状態・アカウントの変化だけを見る
+  }, [isLoggedIn, activeAccountId]);
 
   // 絞り込み条件の変更で読み直す
   useEffect(() => {
@@ -600,7 +602,8 @@ export function LiveView(): JSX.Element {
       .invoke<LiveProgramListResult>(IpcChannel.LIVE_RECORD_RESERVATIONS)
       .then((r) => setReservedIds(new Set(r.programs.map((x) => x.programId))))
       .catch(() => {});
-  }, []);
+    // 録画予約はアカウントごと。切り替えたら読み込み直す
+  }, [activeAccountId]);
 
   const onRecordReserve = (p: LiveProgramSummary): void => {
     const reserved = reservedIds.has(p.programId);

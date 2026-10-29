@@ -134,6 +134,8 @@ export function FollowView(): JSX.Element {
   const setActiveTab = useAppStore((s) => s.setActiveTab);
   const setPendingChannelId = useAppStore((s) => s.setPendingChannelId);
   const isLoggedIn = useAppStore((s) => s.isLoggedIn);
+  // フォロー中はアカウントごとにサーバーから取る。切り替えたら読み込み直す
+  const activeAccountId = useAppStore((s) => s.accounts.activeId);
   const [displayMode, setDisplayMode] = useState<'grid' | 'list'>(globalMode);
   const LIMIT = 32;
 
@@ -188,7 +190,7 @@ export function FollowView(): JSX.Element {
   // マウント時 + ログイン状態変化時に自動読み込み
   useEffect(() => {
     void fetchAll(null);
-  }, [isLoggedIn, fetchAll]);
+  }, [isLoggedIn, activeAccountId, fetchAll]);
 
   // --- 選択ユーザーフィード取得 (page=1始まり) ---
   // 取得中にユーザーを切り替えた場合は新しいユーザーの取得を優先し、前のユーザーの結果は捨てる
@@ -250,7 +252,7 @@ export function FollowView(): JSX.Element {
     void fetchUserPage(user, 1);
   // isLoggedIn 確定前に空取得で終わった場合、確定後に再取得するため依存に含める
   // eslint-disable-next-line react-hooks/exhaustive-deps -- resolveUser はフォロー一覧の更新で変わるが、それでは再取得しない
-  }, [selectedUserId, isLoggedIn]);
+  }, [selectedUserId, isLoggedIn, activeAccountId]);
 
   // userSubTab 変化時: マイリスト/シリーズ一覧を取得
   useEffect(() => {
@@ -336,6 +338,21 @@ export function FollowView(): JSX.Element {
       .finally(() => setUsersLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps -- 一覧・読込中フラグの変化では発火させず、ログイン状態の変化時だけ取得する
   }, [isLoggedIn]);
+
+  // --- アカウントを切り替えたら、前のアカウントのフォローユーザーと選択を捨てて取り直す ---
+  const accountRef = useRef(activeAccountId);
+  useEffect(() => {
+    if (accountRef.current === activeAccountId) return;
+    accountRef.current = activeAccountId;
+    setFollowUsers([]);
+    setSelectedUserId(null);
+    setUsersLoading(true);
+    setUsersError(null);
+    window.nndd.invoke<FollowingUser[]>(IpcChannel.FOLLOW_USERS)
+      .then((users) => setFollowUsers(users))
+      .catch((e: unknown) => setUsersError(toUserFriendlyErrorMessage(e)))
+      .finally(() => setUsersLoading(false));
+  }, [activeAccountId]);
 
   // --- ユーザーを最新投稿順にソート ---
   const sortedFollowUsers = useMemo((): FollowingUser[] => {

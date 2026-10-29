@@ -133,6 +133,8 @@ export function MyListView(): JSX.Element {
 
   const showToast = useAppStore((s) => s.showToast);
   const isLoggedIn = useAppStore((s) => s.isLoggedIn);
+  // マイリスト・プレイリストはアカウントごと。切り替えたら読み込み直す
+  const activeAccountId = useAppStore((s) => s.accounts.activeId);
   // mylists が更新された後に処理するために ref で保持
   const mylistsRef = useRef<MyList[]>([]);
   // あとで見る: 動画ID → サーバー側 itemId (削除用)
@@ -191,6 +193,16 @@ export function MyListView(): JSX.Element {
   // グローバル設定変更を即時反映
   useEffect(() => { setDisplayMode(globalMode); }, [globalMode]);
 
+  // アカウントを切り替えたら、前のアカウントの選択と「アカウントのマイリスト」の取得結果を捨てる
+  const accountRef = useRef(activeAccountId);
+  useEffect(() => {
+    if (accountRef.current === activeAccountId) return;
+    accountRef.current = activeAccountId;
+    setSelected(null);
+    setSelectedIds(new Set());
+    account.resetAccountFetch();
+  }, [activeAccountId]);
+
   useEffect(() => {
     reloadMylists();
     reloadPlaylists();
@@ -212,7 +224,7 @@ export function MyListView(): JSX.Element {
     } else {
       setOwnMylistIds(new Set());
     }
-  }, [isLoggedIn]);
+  }, [isLoggedIn, activeAccountId]);
 
   const importRevision = useAppStore((s) => s.importRevision);
   useEffect(() => {

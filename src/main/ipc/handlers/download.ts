@@ -3,6 +3,7 @@ import { IpcChannel, DownloadStatusType } from '@shared/types';
 import type { Schedule } from '@shared/types';
 import type { EnqueueOptions } from '../../downloader/DownloadManager';
 import { getConfigStore } from '../../config/ConfigStore';
+import { AccountManager } from '../../nicovideo/auth/AccountManager';
 import { sendWebhookNotify } from '../../notification/WebhookNotifier';
 import type { IpcHandlerContext } from './context';
 
@@ -90,17 +91,17 @@ export function registerDownloadHandlers(ctx: IpcHandlerContext): void {
   });
 
   // --- スケジュール ---
-  ipcMain.handle(IpcChannel.SCHEDULE_LIST, () => library.scheduleDao.list());
+  ipcMain.handle(IpcChannel.SCHEDULE_LIST, () => library.scheduleDao.list(AccountManager.key));
   ipcMain.handle(IpcChannel.SCHEDULE_ADD, (_e, s: Schedule) => {
-    library.scheduleDao.upsert(s);
+    library.scheduleDao.upsert(AccountManager.key, s);
     return true;
   });
   ipcMain.handle(IpcChannel.SCHEDULE_UPDATE, (_e, s: Schedule) => {
-    library.scheduleDao.upsert(s);
+    library.scheduleDao.upsert(AccountManager.key, s);
     return true;
   });
   ipcMain.handle(IpcChannel.SCHEDULE_REMOVE, (_e, id: string) => {
-    library.scheduleDao.remove(id);
+    library.scheduleDao.remove(AccountManager.key, id);
     return true;
   });
 

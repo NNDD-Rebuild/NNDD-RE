@@ -18,12 +18,14 @@ interface ScheduleRow {
 /**
  * スケジュール DAO
  * 元: src/org/mineap/nndd/download/ScheduleManager.as
+ *
+ * スケジュールはニコニコのアカウントごとに持つ (実行時に使う Cookie がアカウントのものなので)。
  */
 export class ScheduleDao {
   constructor(private readonly db: NnddDatabase) {}
 
-  list(): Schedule[] {
-    const rows = this.db.prepare(Q.SELECT_SCHEDULES).all() as ScheduleRow[];
+  list(account: string): Schedule[] {
+    const rows = this.db.prepare(Q.SELECT_SCHEDULES).all(account) as ScheduleRow[];
     return rows.map((r) => ({
       id: r.id,
       name: r.name,
@@ -38,11 +40,12 @@ export class ScheduleDao {
     }));
   }
 
-  upsert(s: Schedule): void {
+  upsert(account: string, s: Schedule): void {
     this.db
       .prepare(Q.INSERT_SCHEDULE)
       .run(
         s.id,
+        account,
         s.name,
         s.targetType || 'mylist',
         s.targetMyListUrl,
@@ -55,12 +58,12 @@ export class ScheduleDao {
       );
   }
 
-  remove(id: string): void {
-    this.db.prepare(Q.DELETE_SCHEDULE).run(id);
+  remove(account: string, id: string): void {
+    this.db.prepare(Q.DELETE_SCHEDULE).run(account, id);
   }
 
-  /** 全スケジュールを削除 */
-  clearAll(): void {
-    this.db.prepare(Q.DELETE_ALL_SCHEDULE).run();
+  /** そのアカウントの全スケジュールを削除 */
+  clearAll(account: string): void {
+    this.db.prepare(Q.DELETE_ALL_SCHEDULE).run(account);
   }
 }

@@ -34,6 +34,13 @@ export function useMylistAccountImport({
     }
   };
 
+  /** アカウントを切り替えたときに、前のアカウントの取得結果を捨てる */
+  const resetAccountFetch = (): void => {
+    setAccountMylists(null);
+    setAccountError(null);
+    setImportingIds(new Set());
+  };
+
   const handleImportOne = async (ml: MyList): Promise<void> => {
     setImportingIds((prev) => new Set(prev).add(ml.myListUrl));
     try {
@@ -64,6 +71,7 @@ export function useMylistAccountImport({
     accountError,
     accountMylists,
     setAccountMylists,
+    resetAccountFetch,
     importingIds,
     handleFetchAccount,
     handleImportOne,

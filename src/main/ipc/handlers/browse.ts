@@ -14,6 +14,7 @@ import {
   type SearchOptions
 } from '../../nicovideo';
 import { NicoContext } from '../../nicovideo/NicoContext';
+import { AccountManager } from '../../nicovideo/auth/AccountManager';
 import { SeriesClient } from '../../nicovideo/series/SeriesClient';
 import { ImageCache } from '../../util/ImageCache';
 import { createLogger } from '../../util/Logger';
@@ -30,7 +31,7 @@ export function registerBrowseHandlers(ctx: IpcHandlerContext): void {
 
   // --- マイリスト (永続化分) ---
   ipcMain.handle(IpcChannel.MYLIST_LIST, () => {
-    return library.myListDao.list();
+    return library.myListDao.list(AccountManager.key);
   });
 
   // --- マイリスト (リモート取得) ---
@@ -39,12 +40,12 @@ export function registerBrowseHandlers(ctx: IpcHandlerContext): void {
   });
 
   ipcMain.handle(IpcChannel.MYLIST_ADD, (_e, myList: import('@shared/types').MyList) => {
-    library.myListDao.upsert(myList);
+    library.myListDao.upsert(AccountManager.key, myList);
     return true;
   });
 
   ipcMain.handle(IpcChannel.MYLIST_REMOVE, (_e, url: string) => {
-    library.myListDao.remove(url);
+    library.myListDao.remove(AccountManager.key, url);
     return true;
   });
 
@@ -61,7 +62,7 @@ export function registerBrowseHandlers(ctx: IpcHandlerContext): void {
   ipcMain.handle(IpcChannel.MYLIST_UPDATE_NAME, async (_e, args: { url: string; name: string }) => {
     const id = await ownMylistId(args.url);
     if (id) await MyListClient.renameMylist(id, args.name);
-    library.myListDao.updateName(args.url, args.name);
+    library.myListDao.updateName(AccountManager.key, args.url, args.name);
     return true;
   });
 
@@ -78,7 +79,7 @@ export function registerBrowseHandlers(ctx: IpcHandlerContext): void {
       unPlayVideoCount: 0,
       myListVideoIds: {}
     };
-    library.myListDao.upsert(ml);
+    library.myListDao.upsert(AccountManager.key, ml);
     return ml;
   });
 
@@ -87,7 +88,7 @@ export function registerBrowseHandlers(ctx: IpcHandlerContext): void {
     if (!id) throw new Error('自分のマイリストではないため、ニコニコから削除できません');
     await MyListClient.deleteMylist(id);
     // ニコニコ側を消せたら RE の登録も外す (先に外すと、失敗したときに登録だけ消えてしまう)
-    library.myListDao.remove(args.url);
+    library.myListDao.remove(AccountManager.key, args.url);
     return true;
   });
 
@@ -113,7 +114,7 @@ export function registerBrowseHandlers(ctx: IpcHandlerContext): void {
   ipcMain.handle(
     IpcChannel.MYLIST_MOVE,
     (_e, args: { url: string; parentUrl: string | null }) => {
-      library.myListDao.move(args.url, args.parentUrl);
+      library.myListDao.move(AccountManager.key, args.url, args.parentUrl);
       return true;
     }
   );
@@ -121,7 +122,7 @@ export function registerBrowseHandlers(ctx: IpcHandlerContext): void {
   ipcMain.handle(
     IpcChannel.MYLIST_UPDATE_ICON,
     (_e, args: { url: string; icon: string | null }) => {
-      library.myListDao.updateIcon(args.url, args.icon);
+      library.myListDao.updateIcon(AccountManager.key, args.url, args.icon);
       return true;
     }
   );
@@ -146,7 +147,7 @@ export function registerBrowseHandlers(ctx: IpcHandlerContext): void {
   ipcMain.handle(IpcChannel.MYLIST_FETCH_ACCOUNT, async () => {
     // 同期中のプレイリストのマイリストは、普通のマイリストとして出さない
     const linked = new Set(
-      library.playlistDao.list().flatMap((p) => (p.serverMylistId ? [p.serverMylistId] : []))
+      library.playlistDao.list(AccountManager.key).flatMap((p) => (p.serverMylistId ? [p.serverMylistId] : []))
     );
     return MyListClient.fetchAccountMylists(linked);
   });
@@ -275,12 +276,12 @@ export function registerBrowseHandlers(ctx: IpcHandlerContext): void {
   });
   ipcMain.handle(IpcChannel.INPUT_HISTORY_SEARCH_CLEAR, () => dao.clearSearch());
   ipcMain.handle(IpcChannel.INPUT_HISTORY_MYLIST_LIST, () =>
-    cfg.get('saveMyListHistory') ? dao.listMyList() : []
+    cfg.get('saveMyListHistory') ? dao.listMyList(AccountManager.key) : []
   );
   ipcMain.handle(IpcChannel.INPUT_HISTORY_MYLIST_ADD, (_e, entry: { name: string; url: string }) => {
-    if (cfg.get('saveMyListHistory') && entry?.url) dao.addMyList({ name: entry.name || entry.url, url: entry.url });
+    if (cfg.get('saveMyListHistory') && entry?.url) dao.addMyList(AccountManager.key, { name: entry.name || entry.url, url: entry.url });
   });
-  ipcMain.handle(IpcChannel.INPUT_HISTORY_MYLIST_CLEAR, () => dao.clearMyList());
+  ipcMain.handle(IpcChannel.INPUT_HISTORY_MYLIST_CLEAR, () => dao.clearMyList(AccountManager.key));
 
   // --- ランキング ---
   ipcMain.handle(

@@ -17,12 +17,15 @@ interface MyListRow {
 /**
  * マイリスト永続化 DAO
  * 元: src/org/mineap/nndd/myList/MyListManager.as (XMLファイル管理だったが、DB化)
+ *
+ * マイリスト登録はニコニコのアカウントごとに持つ。account は AccountManager.key (未ログインは空文字)。
+ * 非同期の処理 (スケジュール実行など) は、開始時点の account を控えて渡すこと。
  */
 export class MyListDao {
   constructor(private readonly db: NnddDatabase) {}
 
-  list(): MyList[] {
-    const rows = this.db.prepare(Q.SELECT_MYLISTS).all() as MyListRow[];
+  list(account: string): MyList[] {
+    const rows = this.db.prepare(Q.SELECT_MYLISTS).all(account) as MyListRow[];
     return rows.map((r) => ({
       myListUrl: r.url,
       myListName: r.name,
@@ -36,16 +39,17 @@ export class MyListDao {
   }
 
   /** parentUrl が undefined なら既存の所属フォルダを維持する */
-  upsert(myList: MyList): void {
+  upsert(account: string, myList: MyList): void {
     const parentUrl =
       myList.parentUrl !== undefined
         ? myList.parentUrl
-        : ((this.db.prepare('SELECT parentUrl FROM mylist WHERE url = ?').get(myList.myListUrl) as
+        : ((this.db.prepare(Q.SELECT_MYLIST_PARENT).get(account, myList.myListUrl) as
             | { parentUrl: string | null }
             | undefined)?.parentUrl ?? null);
     this.db
       .prepare(Q.INSERT_MYLIST)
       .run(
+        account,
         myList.myListUrl,
         myList.myListName,
         myList.type,
@@ -57,29 +61,29 @@ export class MyListDao {
       );
   }
 
-  updateName(url: string, name: string): void {
-    this.db.prepare('UPDATE mylist SET name = ? WHERE url = ?').run(name, url);
+  updateName(account: string, url: string, name: string): void {
+    this.db.prepare(Q.UPDATE_MYLIST_NAME).run(name, account, url);
   }
 
-  updateIcon(url: string, icon: string | null): void {
-    this.db.prepare(Q.UPDATE_MYLIST_ICON).run(icon, url);
+  updateIcon(account: string, url: string, icon: string | null): void {
+    this.db.prepare(Q.UPDATE_MYLIST_ICON).run(icon, account, url);
   }
 
   /** 削除。フォルダの場合、中身はルートへ移す */
-  remove(url: string): void {
+  remove(account: string, url: string): void {
     this.db.transaction(() => {
-      this.db.prepare(Q.RELEASE_MYLIST_CHILDREN).run(url);
-      this.db.prepare(Q.DELETE_MYLIST).run(url);
+      this.db.prepare(Q.RELEASE_MYLIST_CHILDREN).run(account, url);
+      this.db.prepare(Q.DELETE_MYLIST).run(account, url);
     });
   }
 
   /** 所属フォルダを変更 (null でルート) */
-  move(url: string, parentUrl: string | null): void {
-    this.db.prepare(Q.UPDATE_MYLIST_PARENT).run(parentUrl, url);
+  move(account: string, url: string, parentUrl: string | null): void {
+    this.db.prepare(Q.UPDATE_MYLIST_PARENT).run(parentUrl, account, url);
   }
 
-  /** 全マイリスト登録を削除 */
-  clearAll(): void {
-    this.db.prepare(Q.DELETE_ALL_MYLIST).run();
+  /** そのアカウントの全マイリスト登録を削除 */
+  clearAll(account: string): void {
+    this.db.prepare(Q.DELETE_ALL_MYLIST).run(account);
   }
 }

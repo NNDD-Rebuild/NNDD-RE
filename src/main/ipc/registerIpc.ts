@@ -2,6 +2,8 @@ import type { BrowserWindow } from 'electron';
 import type { LibraryManager } from '../db/LibraryManager';
 import type { NgListItem } from '@shared/types';
 import { createLogger } from '../util/Logger';
+import { getConfigStore } from '../config/ConfigStore';
+import { AccountManager } from '../nicovideo/auth/AccountManager';
 import { installIpcRegistry } from './ipcRegistry';
 import {
   DownloadManager,
@@ -77,6 +79,20 @@ export function registerIpcHandlers(
   const autoDl = new MyListAutoDownloader(library, dlManager);
   const seriesAutoDl = new SeriesAutoDownloader(library, dlManager);
   const followUserAutoDl = new FollowUserAutoDownloader(library, dlManager);
+  // マルチアカウント導入前に作ったデータ (マイリスト・プレイリスト・スケジュール・録画予約) は、
+  // 最初にログインしたアカウントへ一度だけ引き継ぐ。以降は新規データがアカウントごとに分かれる
+  AccountManager.onActiveChange((account) => {
+    const store = getConfigStore();
+    if (!account || store.get('accountScopeAdopted')) return;
+    library.adoptUnscopedData(account);
+    store.set(
+      'liveRecordReservations',
+      (store.get('liveRecordReservations') ?? []).map((r) => (r.account === undefined ? { ...r, account } : r))
+    );
+    store.set('accountScopeAdopted', true);
+    log.info(`adopted pre-account local data to account ${account}`);
+  });
+
   const scheduler = new ScheduleManager(library, autoDl, seriesAutoDl, followUserAutoDl);
   scheduler.start();
   const channelWatcher = new ChannelWatcher(library, trayManager);

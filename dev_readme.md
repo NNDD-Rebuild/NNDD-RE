@@ -120,12 +120,23 @@ yt-dlp・FFmpeg は既定では使わない。外部ツールが要るのは設�
 - **`schema.ts`**: SQL DDL (テーブル定義) + `Q` オブジェクト (共通クエリ)
 - **`Database.ts`**: better-sqlite3 ラッパー・トランザクション管理
 
+#### アカウント別のデータ
+
+マイリスト (`mylist`)・マイリスト入力履歴 (`mylist_history`)・自作プレイリスト (`playlist` / `playlist_sync_dismissed`)・スケジュール (`schedule`) は `account` 列 (ニコニコのユーザーID。未ログインは空文字) を持ち、アカウントごとに分かれる。スキーマ版 18 で追加した (`mylist` / `mylist_history` / `playlist_sync_dismissed` は url の UNIQUE を `(account, url)` に変えるため `Database.rebuildWithAccount` で表を作り直す)。
+
+- DAO の一覧・追加・削除は第1引数に `account` を取る。IPC ハンドラは `AccountManager.key` を渡す。非同期の長い処理 (スケジュール実行、マイリスト一括更新、プレイリストの取り込み) は、開始時点の `account` を控えて渡す。途中で切り替わっても、始めたアカウントの行を更新するため
+- `playlist_item` / `playlist_sync_base` は `playlist_id` で結びつくので `account` を持たない。ニコニコ側に触れるプレイリスト操作は、`library.ts` の `assertOwnPlaylist` で今のアカウントのものか確かめる
+- バージョン 17 以前のデータは `account=''` になり、最初にログインしたアカウントへ一度だけ引き継ぐ (`registerIpc.ts` の `AccountManager.onActiveChange` → `LibraryManager.adoptUnscopedData`、設定 `accountScopeAdopted` で一回限り)
+- 録画予約 (`liveRecordReservations`) は各予約に `account` を持つ。`LiveRecordScheduler` は今のアカウントの予約だけ実行する
+- 切り替えで捨てる基準: `LiveFollowNotifier.seen` と `ChannelWatcher.lastSeenVideoId` はアカウントごとに持つ。renderer は `useAppStore` の `accounts.activeId` を依存にして読み込み直す
+- バックアップ (`BackupManager`) は `accounts` (ユーザーID → マイリスト・スケジュール・プレイリスト) を書き出す。形式 1 のアプリでも読めるよう、従来の `myList` / `schedule` / `playlist` に今のアカウント分を重ねて入れる。復元は `accounts` に入っているアカウント分だけを置き換える
+
 #### DAO
 
 | DAO | テーブル | メソッド例 |
 |---|---|---|
 | `VideoDao` | `videos` | getByVideoId, insertOrUpdate, search, delete |
-| `MyListDao` | `mylists` | getAll, getById, insert, update, delete |
+| `MyListDao` | `mylist` | list(account), upsert(account, …), remove(account, url) |
 | `HistoryDao` | `history` | add, getLatest, delete |
 | `SearchDao` | `search_cache` | cache, getCached |
 | `ScheduleDao` | `schedules` | add, getAll, delete |

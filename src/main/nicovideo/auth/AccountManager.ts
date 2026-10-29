@@ -39,6 +39,43 @@ export class AccountManager {
 
   private static notify(): void {
     this.notifier?.(this.getState());
+    this.emitActiveChange();
+  }
+
+  private static activeListeners: ((accountKey: string) => void)[] = [];
+  private static lastEmittedKey: string | null = null;
+
+  /**
+   * アクティブアカウントが変わったとき (起動後の最初の通知を含む) に呼ばれるリスナーを登録する。
+   * 切替で捨てるべきメモリ上の基準 (通知済み一覧など) のリセットや、アカウント別データの引き継ぎに使う。
+   */
+  static onActiveChange(fn: (accountKey: string) => void): void {
+    this.activeListeners.push(fn);
+    // 登録時点のアクティブアカウントも通知する (起動時の初期化が登録より先に終わっていても取りこぼさない)
+    this.lastEmittedKey = this.key;
+    try {
+      fn(this.key);
+    } catch (e) {
+      log.warn('active change listener failed:', e);
+    }
+  }
+
+  /** 未ログインのときは空文字。アカウント別に持つローカルデータ (マイリストなど) の所有者キー */
+  static get key(): string {
+    return this.activeId ?? '';
+  }
+
+  private static emitActiveChange(): void {
+    const key = this.key;
+    if (key === this.lastEmittedKey) return;
+    this.lastEmittedKey = key;
+    for (const fn of this.activeListeners) {
+      try {
+        fn(key);
+      } catch (e) {
+        log.warn('active change listener failed:', e);
+      }
+    }
   }
 
   private static list(): StoredAccount[] {
@@ -123,21 +160,21 @@ export class AccountManager {
   /** アクティブアカウントを切り替え、NicoContext の Cookie を差し替える */
   static async activate(id: string): Promise<boolean> {
     if (!this.list().some((a) => a.id === id)) return false;
-    await this.applyCookieFile(accountCookiePath(id));
-    this.save(this.list(), id);
+    // Cookie を差し替えたらすぐ activeId も切り替える (Cookie と AccountManager.key がずれる時間を短くする)
+    await this.applyCookieFile(accountCookiePath(id), () => this.save(this.list(), id));
     this.notify();
     return true;
   }
 
   /** アクティブなし (ログアウト状態) にする */
   static async deactivate(): Promise<void> {
-    await this.applyCookieFile(anonymousCookiePath());
-    this.save(this.list(), undefined);
+    await this.applyCookieFile(anonymousCookiePath(), () => this.save(this.list(), undefined));
     this.notify();
   }
 
-  private static async applyCookieFile(filePath: string): Promise<void> {
+  private static async applyCookieFile(filePath: string, onSwitched?: () => void): Promise<void> {
     await NicoContext.get().cookieStore.switchFile(filePath);
+    onSwitched?.();
     // 自分のマイリスト所有確認キャッシュはアカウント固有
     MyListClient.clearOwnMylistCache();
     // プレイヤー用 partition に前アカウントの Cookie が残らないようにする (次回表示時に再注入される)

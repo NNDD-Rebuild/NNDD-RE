@@ -6,7 +6,7 @@
  * 既存のオフライン NNDD ライブラリ DB をそのまま読み込めるようにする。
  */
 
-export const DB_SCHEMA_VERSION = '17';
+export const DB_SCHEMA_VERSION = '18';
 
 export const CREATE_TABLES = [
   /* NNDDREVideo - 動画本体 */
@@ -59,14 +59,16 @@ export const CREATE_TABLES = [
   /* マイリスト一覧 (元 AIR 版はファイルベースだったが、DBに統合) */
   `CREATE TABLE IF NOT EXISTS mylist (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    url TEXT UNIQUE,
+    account TEXT NOT NULL DEFAULT '',
+    url TEXT,
     name TEXT,
     type TEXT,
     isDir INTEGER DEFAULT 0,
     unPlayCount INTEGER DEFAULT 0,
     lastRenewed REAL,
     icon TEXT,
-    parentUrl TEXT
+    parentUrl TEXT,
+    UNIQUE(account, url)
   );`,
 
   /* 視聴履歴 */
@@ -82,7 +84,8 @@ export const CREATE_TABLES = [
 
   /* ダウンロードスケジュール */
   `CREATE TABLE IF NOT EXISTS schedule (
-    id TEXT PRIMARY KEY,
+    id TEXT NOT NULL,
+    account TEXT NOT NULL DEFAULT '',
     name TEXT,
     targetType TEXT DEFAULT 'mylist',
     targetMyListUrl TEXT,
@@ -91,7 +94,8 @@ export const CREATE_TABLES = [
     time TEXT,
     enabled INTEGER,
     lastRun REAL,
-    makeSubfolder INTEGER DEFAULT 0
+    makeSubfolder INTEGER DEFAULT 0,
+    PRIMARY KEY (account, id)
   );`,
 
   /* 保存検索 */
@@ -131,9 +135,11 @@ export const CREATE_TABLES = [
   /* マイリストURLの入力履歴 (usedAt の新しい順に表示、最大10件) */
   `CREATE TABLE IF NOT EXISTS mylist_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    url TEXT UNIQUE NOT NULL,
+    account TEXT NOT NULL DEFAULT '',
+    url TEXT NOT NULL,
     name TEXT NOT NULL,
-    usedAt INTEGER NOT NULL
+    usedAt INTEGER NOT NULL,
+    UNIQUE(account, url)
   );`,
 
   /* NGタグ */
@@ -151,6 +157,7 @@ export const CREATE_TABLES = [
   /* 自作プレイリスト (ローカル。serverMylistId があればニコニコ側の同名マイリストと同期) */
   `CREATE TABLE IF NOT EXISTS playlist (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account TEXT NOT NULL DEFAULT '',
     name TEXT NOT NULL,
     createdAt REAL,
     updatedAt REAL,
@@ -161,7 +168,9 @@ export const CREATE_TABLES = [
 
   /* この PC では取り込まない登録キー。ローカルで削除・同期解除したプレイリストが、ニコニコ側に残ったマイリストから復活しないようにする */
   `CREATE TABLE IF NOT EXISTS playlist_sync_dismissed (
-    syncKey TEXT PRIMARY KEY
+    account TEXT NOT NULL DEFAULT '',
+    syncKey TEXT NOT NULL,
+    PRIMARY KEY (account, syncKey)
   );`,
 
   /* プレイリストとニコニコ側マイリストの同期で使う「前回同期した時点の動画一覧」。削除の伝播を判定するための基準 */
@@ -279,16 +288,18 @@ export const Q = {
       SELECT DISTINCT dirpath_id FROM NNDDREVideo WHERE dirpath_id IS NOT NULL
     );`,
 
-  // マイリスト
-  SELECT_MYLISTS: `SELECT * FROM mylist ORDER BY isDir DESC, name;`,
+  // マイリスト (すべてアカウントごと。第1引数が account)
+  SELECT_MYLISTS: `SELECT * FROM mylist WHERE account = ? ORDER BY isDir DESC, name;`,
+  SELECT_MYLIST_PARENT: `SELECT parentUrl FROM mylist WHERE account = ? AND url = ?;`,
   INSERT_MYLIST: `
-    INSERT OR REPLACE INTO mylist (url, name, type, isDir, unPlayCount, lastRenewed, icon, parentUrl)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?);`,
-  UPDATE_MYLIST_PARENT: `UPDATE mylist SET parentUrl = ? WHERE url = ?;`,
-  RELEASE_MYLIST_CHILDREN: `UPDATE mylist SET parentUrl = NULL WHERE parentUrl = ?;`,
-  UPDATE_MYLIST_ICON: `UPDATE mylist SET icon = ? WHERE url = ?;`,
-  DELETE_MYLIST: `DELETE FROM mylist WHERE url = ?;`,
-  DELETE_ALL_MYLIST: `DELETE FROM mylist;`,
+    INSERT OR REPLACE INTO mylist (account, url, name, type, isDir, unPlayCount, lastRenewed, icon, parentUrl)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+  UPDATE_MYLIST_NAME: `UPDATE mylist SET name = ? WHERE account = ? AND url = ?;`,
+  UPDATE_MYLIST_PARENT: `UPDATE mylist SET parentUrl = ? WHERE account = ? AND url = ?;`,
+  RELEASE_MYLIST_CHILDREN: `UPDATE mylist SET parentUrl = NULL WHERE account = ? AND parentUrl = ?;`,
+  UPDATE_MYLIST_ICON: `UPDATE mylist SET icon = ? WHERE account = ? AND url = ?;`,
+  DELETE_MYLIST: `DELETE FROM mylist WHERE account = ? AND url = ?;`,
+  DELETE_ALL_MYLIST: `DELETE FROM mylist WHERE account = ?;`,
 
   // 履歴
   SELECT_HISTORY: `SELECT * FROM history ORDER BY watchedAt DESC LIMIT ?;`,
@@ -300,14 +311,14 @@ export const Q = {
   DELETE_HISTORY: `DELETE FROM history;`,
   DELETE_HISTORY_BY_ID: `DELETE FROM history WHERE id = ?;`,
 
-  // スケジュール
-  SELECT_SCHEDULES: `SELECT * FROM schedule;`,
+  // スケジュール (アカウントごと)
+  SELECT_SCHEDULES: `SELECT * FROM schedule WHERE account = ?;`,
   INSERT_SCHEDULE: `
     INSERT OR REPLACE INTO schedule
-      (id, name, targetType, targetMyListUrl, targetId, daysOfWeek, time, enabled, lastRun, makeSubfolder)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
-  DELETE_SCHEDULE: `DELETE FROM schedule WHERE id = ?;`,
-  DELETE_ALL_SCHEDULE: `DELETE FROM schedule;`,
+      (id, account, name, targetType, targetMyListUrl, targetId, daysOfWeek, time, enabled, lastRun, makeSubfolder)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);`,
+  DELETE_SCHEDULE: `DELETE FROM schedule WHERE account = ? AND id = ?;`,
+  DELETE_ALL_SCHEDULE: `DELETE FROM schedule WHERE account = ?;`,
 
   // 保存検索
   SELECT_SAVED_SEARCHES: `SELECT * FROM saved_search;`,
@@ -337,14 +348,14 @@ export const Q = {
   SELECT_SEARCH_HISTORY_USED_RANGE: `SELECT MIN(usedAt) AS minUsedAt, MAX(usedAt) AS maxUsedAt FROM search_history;`,
   DELETE_ALL_SEARCH_HISTORY: `DELETE FROM search_history;`,
 
-  SELECT_MYLIST_HISTORY: `SELECT name, url FROM mylist_history ORDER BY usedAt DESC, id DESC LIMIT ?;`,
-  UPSERT_MYLIST_HISTORY: `INSERT INTO mylist_history (url, name, usedAt) VALUES (?, ?, ?)
-    ON CONFLICT(url) DO UPDATE SET name = excluded.name, usedAt = excluded.usedAt;`,
-  INSERT_MYLIST_HISTORY_IGNORE: `INSERT OR IGNORE INTO mylist_history (url, name, usedAt) VALUES (?, ?, ?);`,
-  TRIM_MYLIST_HISTORY: `DELETE FROM mylist_history WHERE id NOT IN
-    (SELECT id FROM mylist_history ORDER BY usedAt DESC, id DESC LIMIT ?);`,
-  SELECT_MYLIST_HISTORY_USED_RANGE: `SELECT MIN(usedAt) AS minUsedAt, MAX(usedAt) AS maxUsedAt FROM mylist_history;`,
-  DELETE_ALL_MYLIST_HISTORY: `DELETE FROM mylist_history;`,
+  SELECT_MYLIST_HISTORY: `SELECT name, url FROM mylist_history WHERE account = ? ORDER BY usedAt DESC, id DESC LIMIT ?;`,
+  UPSERT_MYLIST_HISTORY: `INSERT INTO mylist_history (account, url, name, usedAt) VALUES (?, ?, ?, ?)
+    ON CONFLICT(account, url) DO UPDATE SET name = excluded.name, usedAt = excluded.usedAt;`,
+  INSERT_MYLIST_HISTORY_IGNORE: `INSERT OR IGNORE INTO mylist_history (account, url, name, usedAt) VALUES (?, ?, ?, ?);`,
+  TRIM_MYLIST_HISTORY: `DELETE FROM mylist_history WHERE account = ? AND id NOT IN
+    (SELECT id FROM mylist_history WHERE account = ? ORDER BY usedAt DESC, id DESC LIMIT ?);`,
+  SELECT_MYLIST_HISTORY_USED_RANGE: `SELECT MIN(usedAt) AS minUsedAt, MAX(usedAt) AS maxUsedAt FROM mylist_history WHERE account = ?;`,
+  DELETE_ALL_MYLIST_HISTORY: `DELETE FROM mylist_history WHERE account = ?;`,
 
   SELECT_NG_TAGS: `SELECT tag FROM ng_tag;`,
   INSERT_NG_TAG: `INSERT OR IGNORE INTO ng_tag (tag) VALUES (?);`,
@@ -357,12 +368,12 @@ export const Q = {
   DELETE_ALL_NG_UP: `DELETE FROM ng_up;`,
 
   // プレイリスト (完全ローカル)
-  SELECT_PLAYLISTS: `SELECT * FROM playlist ORDER BY name;`,
-  INSERT_PLAYLIST: `INSERT INTO playlist (name, createdAt, updatedAt) VALUES (?, ?, ?);`,
+  SELECT_PLAYLISTS: `SELECT * FROM playlist WHERE account = ? ORDER BY name;`,
+  INSERT_PLAYLIST: `INSERT INTO playlist (account, name, createdAt, updatedAt) VALUES (?, ?, ?, ?);`,
   UPDATE_PLAYLIST_NAME: `UPDATE playlist SET name = ?, updatedAt = ? WHERE id = ?;`,
   UPDATE_PLAYLIST_ICON: `UPDATE playlist SET icon = ? WHERE id = ?;`,
   DELETE_PLAYLIST: `DELETE FROM playlist WHERE id = ?;`,
-  DELETE_ALL_PLAYLIST: `DELETE FROM playlist;`,
+  DELETE_ALL_PLAYLIST: `DELETE FROM playlist WHERE account = ?;`,
 
   SELECT_PLAYLIST_ITEMS: `SELECT * FROM playlist_item WHERE playlist_id = ? ORDER BY sortOrder;`,
   SELECT_PLAYLIST_ITEM_MAX_ORDER: `SELECT MAX(sortOrder) AS maxOrder FROM playlist_item WHERE playlist_id = ?;`,
@@ -376,10 +387,10 @@ export const Q = {
   SELECT_PLAYLIST_SYNC_BASE: `SELECT videoId FROM playlist_sync_base WHERE playlist_id = ?;`,
   INSERT_PLAYLIST_SYNC_BASE: `INSERT OR IGNORE INTO playlist_sync_base (playlist_id, videoId) VALUES (?, ?);`,
   DELETE_PLAYLIST_SYNC_BASE: `DELETE FROM playlist_sync_base WHERE playlist_id = ?;`,
-  DELETE_ALL_PLAYLIST_SYNC_BASE: `DELETE FROM playlist_sync_base;`,
-  DELETE_ALL_PLAYLIST_ITEM: `DELETE FROM playlist_item;`,
+  DELETE_ALL_PLAYLIST_SYNC_BASE: `DELETE FROM playlist_sync_base WHERE playlist_id IN (SELECT id FROM playlist WHERE account = ?);`,
+  DELETE_ALL_PLAYLIST_ITEM: `DELETE FROM playlist_item WHERE playlist_id IN (SELECT id FROM playlist WHERE account = ?);`,
   UPDATE_PLAYLIST_ITEM_ORDER: `UPDATE playlist_item SET sortOrder = ? WHERE playlist_id = ? AND videoId = ?;`,
-  SELECT_PLAYLISTS_CONTAINING_VIDEO: `SELECT playlist_id FROM playlist_item WHERE videoId = ?;`,
+  SELECT_PLAYLISTS_CONTAINING_VIDEO: `SELECT playlist_id FROM playlist_item WHERE videoId = ? AND playlist_id IN (SELECT id FROM playlist WHERE account = ?);`,
 
   // 再生位置レジューム
   SELECT_RESUME: `SELECT * FROM resume_position WHERE videoKey = ?;`,

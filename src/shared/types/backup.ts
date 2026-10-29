@@ -64,6 +64,47 @@ export interface GitHubSyncConfig {
 
 export const BACKUP_SCHEMA_VERSION = 1;
 
+/** アカウントごとのバックアップデータの形 (マイリスト・スケジュール・プレイリスト) */
+export interface BackupAccountData {
+  /**
+   * アカウントごとのマイリスト・スケジュール・プレイリスト (キーはニコニコのユーザーID、未ログイン時のデータは空文字)。
+   * 形式 2 以降。復元時はアカウントごとにそのアカウント分だけを置き換える。
+   * 下の myList / schedule / playlist は、形式 1 のアプリでも読めるよう、書き出したときのアカウント分を重ねて入れる
+   */
+  accounts?: Record<string, BackupAccountData>;
+  myList?: Array<{
+    url: string;
+    name: string;
+    type: RssTypeValue;
+    isDir: boolean;
+    parentUrl?: string | null;
+  }>;
+  schedule?: Array<{
+    id: string;
+    name: string;
+    targetType?: ScheduleTargetTypeValue;
+    targetMyListUrl: string;
+    targetId?: string;
+    daysOfWeek: number[];
+    time: string;
+    enabled: boolean;
+    makeSubfolder?: boolean;
+  }>;
+  /**
+   * 自作プレイリスト。id は AUTOINCREMENT のため保持しない
+   * (復元時は create()+addVideo() で再採番、配列順序で並びを保持)
+   */
+  playlist?: Array<{
+    name: string;
+    items: Array<{
+      videoId: string;
+      title: string;
+      thumbnailUrl: string;
+      lengthSec: number;
+    }>;
+  }>;
+}
+
 /** Gist にアップロードするバックアップペイロード */
 export interface BackupPayload {
   schemaVersion: number;
@@ -80,6 +121,12 @@ export interface BackupPayload {
     tags: string[];
     ups: string[];
   };
+  /**
+   * アカウントごとのマイリスト・スケジュール・プレイリスト (キーはニコニコのユーザーID、未ログイン時のデータは空文字)。
+   * 復元時はアカウントごとに、そのアカウント分だけを置き換える。
+   * 下の myList / schedule / playlist は、これを知らない古いアプリでも読めるよう、書き出したときのアカウント分を重ねて入れる
+   */
+  accounts?: Record<string, BackupAccountData>;
   myList?: Array<{
     url: string;
     name: string;

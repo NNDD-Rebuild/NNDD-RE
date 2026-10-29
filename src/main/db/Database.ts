@@ -183,6 +183,35 @@ export class NnddDatabase {
       }
       log.info('added saved_search.parentId / isDir columns');
     }
+    // v17 → v18: マルチアカウント対応。マイリスト・マイリスト履歴・プレイリスト・スケジュールをアカウントごとに持つ。
+    // 既存の行は account='' (未割り当て) にして、最初にログインしたアカウントへ後で引き継ぐ (LibraryManager.adoptUnscopedData)
+    if (Number(from) <= 17) {
+      // url / id の一意制約を account 付きにするため、SQLite では表を作り直すしかない
+      for (const table of ['mylist', 'mylist_history', 'playlist_sync_dismissed', 'schedule']) {
+        this.rebuildWithAccount(table);
+      }
+      // playlist は playlist_item などが id で参照するので、表は作り直さず列だけ足す
+      const playlistCols = this.db.prepare(`PRAGMA table_info(playlist);`).all() as { name: string }[];
+      if (!playlistCols.some((c) => c.name === 'account')) {
+        this.db.exec(`ALTER TABLE playlist ADD COLUMN account TEXT NOT NULL DEFAULT '';`);
+      }
+      log.info('added account scope to mylist / mylist_history / playlist / playlist_sync_dismissed / schedule');
+    }
+  }
+
+  /** account カラムを持つ定義で表を作り直し、既存の行は account='' で引き継ぐ (既に account があれば何もしない) */
+  private rebuildWithAccount(table: string): void {
+    const oldCols = this.db.prepare(`PRAGMA table_info(${table});`).all() as { name: string }[];
+    if (oldCols.length === 0 || oldCols.some((c) => c.name === 'account')) return;
+    const create = CREATE_TABLES.find((sql) => sql.includes(`CREATE TABLE IF NOT EXISTS ${table} (`));
+    if (!create) throw new Error(`CREATE TABLE definition not found: ${table}`);
+    this.db.exec(`ALTER TABLE ${table} RENAME TO ${table}_old;`);
+    this.db.exec(create);
+    const newCols = new Set((this.db.prepare(`PRAGMA table_info(${table});`).all() as { name: string }[]).map((c) => c.name));
+    const common = oldCols.map((c) => c.name).filter((n) => newCols.has(n));
+    const list = common.join(', ');
+    this.db.exec(`INSERT OR IGNORE INTO ${table} (${list}) SELECT ${list} FROM ${table}_old;`);
+    this.db.exec(`DROP TABLE ${table}_old;`);
   }
 
   /** プリペアドステートメントの取得 */

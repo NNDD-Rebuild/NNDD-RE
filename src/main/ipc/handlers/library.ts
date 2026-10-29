@@ -3,6 +3,7 @@ import { ipcMain, shell, webContents } from 'electron';
 import { IpcChannel } from '@shared/types';
 import type { LibraryScanOptions, LibraryScanProgress, LibraryScanResult } from '@shared/types';
 import { MyListClient, NicoContext, NicoHistoryClient } from '../../nicovideo';
+import { AccountManager } from '../../nicovideo/auth/AccountManager';
 import {
   buildPlaylistSyncDescription,
   extractPlaylistSyncKey,
@@ -195,16 +196,27 @@ export function registerLibraryHandlers(ctx: IpcHandlerContext): void {
   });
 
   // --- プレイリスト (完全ローカル) ---
+  /**
+   * ニコニコ側に触れる操作の前に、プレイリストが今のアカウントのものか確かめる。
+   * 画面が前のアカウントの一覧を出したままのときに、別のアカウントのマイリストへ書き込まないため
+   */
+  const assertOwnPlaylist = (id: number): void => {
+    if (library.playlistDao.getAccount(id) !== AccountManager.key) {
+      throw new Error('このプレイリストは別のアカウントのものです。表示を更新してください');
+    }
+  };
+
   ipcMain.handle(IpcChannel.PLAYLIST_LIST, () => {
-    return library.playlistDao.list();
+    return library.playlistDao.list(AccountManager.key);
   });
 
   ipcMain.handle(IpcChannel.PLAYLIST_CREATE, (_e, name: string) => {
-    return library.playlistDao.create(name);
+    return library.playlistDao.create(AccountManager.key, name);
   });
 
   // 同期中のプレイリストは先にサーバーへ反映する。失敗したらローカルも変えない (名前がずれるのを防ぐ)
   ipcMain.handle(IpcChannel.PLAYLIST_RENAME, async (_e, args: { id: number; name: string }) => {
+    assertOwnPlaylist(args.id);
     const mylistId = library.playlistDao.getServerMylistId(args.id);
     if (mylistId) await MyListClient.renameMylist(mylistId, args.name);
     library.playlistDao.rename(args.id, args.name);
@@ -225,6 +237,7 @@ export function registerLibraryHandlers(ctx: IpcHandlerContext): void {
   });
 
   ipcMain.handle(IpcChannel.PLAYLIST_REMOVE_WITH_SERVER, async (_e, args: { id: number }) => {
+    assertOwnPlaylist(args.id);
     const mylistId = library.playlistDao.getServerMylistId(args.id);
     if (!mylistId) throw new Error('このプレイリストはニコニコと同期していません');
     // ニコニコ側を先に消す。失敗したときにプレイリストだけ消えて、同期先が分からなくなるのを防ぐ
@@ -243,6 +256,7 @@ export function registerLibraryHandlers(ctx: IpcHandlerContext): void {
       _e,
       args: { playlistId: number; videoId: string; title: string; thumbnailUrl: string; lengthSec: number }
     ) => {
+      assertOwnPlaylist(args.playlistId);
       library.playlistDao.addVideo(args.playlistId, args);
       // 同期中ならニコニコ側にも即時反映 (ローカルを先に確定し、失敗はログのみ)
       const mylistId = library.playlistDao.getServerMylistId(args.playlistId);
@@ -258,6 +272,7 @@ export function registerLibraryHandlers(ctx: IpcHandlerContext): void {
   ipcMain.handle(
     IpcChannel.PLAYLIST_REMOVE_VIDEO,
     (_e, args: { playlistId: number; videoId: string }) => {
+      assertOwnPlaylist(args.playlistId);
       library.playlistDao.removeVideo(args.playlistId, args.videoId);
       const mylistId = library.playlistDao.getServerMylistId(args.playlistId);
       if (mylistId) {
@@ -305,6 +320,7 @@ export function registerLibraryHandlers(ctx: IpcHandlerContext): void {
   ipcMain.handle(IpcChannel.PLAYLIST_SERVER_SYNC, (_e, args: { id: number; force?: boolean }) =>
     // 同じプレイリストの同期は直列に (並走するとサーバーへ二重に追加・削除し、基準も不正になる)
     runExclusive(`playlist-sync:${args.id}`, async () => {
+      assertOwnPlaylist(args.id);
       const mylistId = library.playlistDao.getServerMylistId(args.id);
       if (!mylistId) return { ok: false as const, reason: 'notSynced' as const };
       if (!(await NicoContext.get().isLoggedIn())) return { ok: false as const, reason: 'notLoggedIn' as const };
@@ -316,6 +332,7 @@ export function registerLibraryHandlers(ctx: IpcHandlerContext): void {
 
   ipcMain.handle(IpcChannel.PLAYLIST_SET_SYNC, (_e, args: { id: number; enabled: boolean }) =>
     runExclusive(`playlist-sync:${args.id}`, async () => {
+      assertOwnPlaylist(args.id);
       if (!args.enabled) {
         // 解除してもニコニコ側のマイリストは消さない。登録キーは取り込み除外にして、復活させない
         library.playlistDao.unlink(args.id);
@@ -324,7 +341,7 @@ export function registerLibraryHandlers(ctx: IpcHandlerContext): void {
       if (!(await NicoContext.get().isLoggedIn())) return { ok: false as const, reason: 'notLoggedIn' as const };
       let mylistId = library.playlistDao.getServerMylistId(args.id);
       if (!mylistId) {
-        const pl = library.playlistDao.list().find((p) => p.id === args.id);
+        const pl = library.playlistDao.list(AccountManager.key).find((p) => p.id === args.id);
         if (!pl) throw new Error('プレイリストが見つかりません');
         // 非公開で作成。説明文にプレイリスト固有の登録キーを入れる。作成に失敗した (上限など) ときは例外にして、リンクを作らない
         const key = randomUUID();
@@ -348,19 +365,21 @@ export function registerLibraryHandlers(ctx: IpcHandlerContext): void {
 
   // 別の PC で作られたプレイリスト同期用マイリスト (登録キー付き) を、この PC のプレイリストとして取り込む。
   // この PC で削除・同期解除したもの (取り込み除外のキー) や、すでに取り込み済みのものは対象外
-  let adopting: Promise<Array<{ id: number; name: string }>> | null = null;
+  const adopting = new Map<string, Promise<Array<{ id: number; name: string }>>>();
   const adoptServerPlaylists = async (): Promise<Array<{ id: number; name: string }>> => {
     if (!(await NicoContext.get().isLoggedIn())) return [];
-    const known = new Set([...library.playlistDao.listSyncKeys(), ...library.playlistDao.listDismissedKeys()]);
+    // 取り込み中にアカウントが切り替わっても、始めたアカウントの行として扱う
+    const account = AccountManager.key;
+    const known = new Set([...library.playlistDao.listSyncKeys(account), ...library.playlistDao.listDismissedKeys(account)]);
     const linkedIds = new Set(
-      library.playlistDao.list().flatMap((p) => (p.serverMylistId ? [p.serverMylistId] : []))
+      library.playlistDao.list(account).flatMap((p) => (p.serverMylistId ? [p.serverMylistId] : []))
     );
     const adopted: Array<{ id: number; name: string }> = [];
     for (const m of await MyListClient.fetchOwnMylistsCompact()) {
       const key = extractPlaylistSyncKey(m.description);
       if (!key || known.has(key) || linkedIds.has(m.id)) continue;
       try {
-        const pl = library.playlistDao.createLinked(m.name, m.id, key);
+        const pl = library.playlistDao.createLinked(account, m.name, m.id, key);
         known.add(key);
         adopted.push({ id: pl.id, name: pl.name });
         // 動画を取り込む (ローカルが空で基準も無いので、サーバー側の動画がそのまま入る)
@@ -375,14 +394,19 @@ export function registerLibraryHandlers(ctx: IpcHandlerContext): void {
   };
   ipcMain.handle(IpcChannel.PLAYLIST_ADOPT_SERVER, () => {
     // 画面の再描画などで続けて呼ばれても、同時に二重で取り込まない
-    adopting ??= adoptServerPlaylists().finally(() => {
-      adopting = null;
-    });
-    return adopting;
+    const account = AccountManager.key;
+    let running = adopting.get(account);
+    if (!running) {
+      running = adoptServerPlaylists().finally(() => {
+        adopting.delete(account);
+      });
+      adopting.set(account, running);
+    }
+    return running;
   });
 
   ipcMain.handle(IpcChannel.PLAYLIST_LIST_CONTAINING, (_e, videoId: string) => {
-    return library.playlistDao.listPlaylistIdsForVideo(videoId);
+    return library.playlistDao.listPlaylistIdsForVideo(AccountManager.key, videoId);
   });
 
   // --- 再生位置レジューム ---

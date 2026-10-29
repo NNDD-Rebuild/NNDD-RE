@@ -32,6 +32,7 @@ import type { MyListHistoryEntry } from '@shared/utils/inputHistory';
 import type { LibraryManager } from '../db/LibraryManager';
 import { getConfigStore } from '../config/ConfigStore';
 import { createLogger } from '../util/Logger';
+import { AccountManager } from '../nicovideo/auth/AccountManager';
 import {
   extractInputHistory,
   parseConfigXml,
@@ -489,7 +490,7 @@ export class HonkeImporter {
     const items: MyListCandidate[] = [];
     const skipped: string[] = [];
     const seen = new Set<string>();
-    const existing = new Set(this.deps.library.myListDao.list().map((m) => m.myListUrl));
+    const existing = new Set(this.deps.library.myListDao.list(AccountManager.key).map((m) => m.myListUrl));
     const candidateIndex = new Map<number, number>();
     let duplicate = 0;
     list.forEach((m, i) => {
@@ -525,12 +526,14 @@ export class HonkeImporter {
   private applyMyLists(c: Collected<MyListCandidate>, policy: HonkeImportPolicy): HonkeImportCategoryResult {
     if (c.error) throw new Error(c.error);
     const dao = this.deps.library.myListDao;
+    // 取り込み先は、実行を始めたときのアカウント
+    const account = AccountManager.key;
     let added = 0;
     let skipped = 0;
     let folders = 0;
     this.deps.library.db.transaction(() => {
-      if (policy === 'replace') dao.clearAll();
-      const current = dao.list();
+      if (policy === 'replace') dao.clearAll(account);
+      const current = dao.list(account);
       const existing = new Set(current.map((m) => m.myListUrl));
       const folderKey = (parentUrl: string | null, name: string): string => `${parentUrl ?? ''}\0${name}`;
       const folderUrls = new Map<string, string>();
@@ -544,7 +547,7 @@ export class HonkeImporter {
           if (!url) {
             url = `folder:${crypto.randomUUID()}`;
             folderUrls.set(key, url);
-            dao.upsert({
+            dao.upsert(account, {
               myListUrl: url,
               myListName: m.name,
               type: RssType.MY_LIST,
@@ -562,7 +565,7 @@ export class HonkeImporter {
           skipped++;
           return;
         }
-        dao.upsert({
+        dao.upsert(account, {
           myListUrl: m.url,
           myListName: m.name,
           type: m.type,
@@ -670,7 +673,7 @@ export class HonkeImporter {
     }
     const dao = this.deps.library.inputHistoryDao;
     const existingSearch = new Set(dao.listSearch());
-    const existingUrls = new Set(dao.listMyList().map((x) => x.url));
+    const existingUrls = new Set(dao.listMyList(AccountManager.key).map((x) => x.url));
     const items: InputHistoryCandidate[] = [
       ...h.search.map((search) => ({ search })),
       ...h.myList.map((myList) => ({ myList }))
@@ -688,18 +691,19 @@ export class HonkeImporter {
     const incomingSearch = c.items.flatMap((x) => ('search' in x ? [x.search] : []));
     const incomingMyList = c.items.flatMap((x) => ('myList' in x ? [x.myList] : []));
     const dao = this.deps.library.inputHistoryDao;
+    const account = AccountManager.key;
     let before = 0;
     let after = 0;
     this.deps.library.db.transaction(() => {
       if (policy === 'replace') {
         dao.clearSearch();
-        dao.clearMyList();
+        dao.clearMyList(account);
       }
-      before = dao.listSearch().length + dao.listMyList().length;
+      before = dao.listSearch().length + dao.listMyList(account).length;
       // 現在の履歴の後ろ (より古い扱い) に追加し、最大10件に収める
       dao.appendOlderSearch(incomingSearch);
-      dao.appendOlderMyList(incomingMyList);
-      after = dao.listSearch().length + dao.listMyList().length;
+      dao.appendOlderMyList(account, incomingMyList);
+      after = dao.listSearch().length + dao.listMyList(account).length;
     });
     const added = after - before;
     return {
@@ -783,7 +787,7 @@ export class HonkeImporter {
     if (!dir || !isDirectory(dir)) return this.missing('playList フォルダ');
     const items: PlaylistCandidate[] = [];
     const skipped: string[] = [];
-    const existing = new Set(this.deps.library.playlistDao.list().map((p) => p.name));
+    const existing = new Set(this.deps.library.playlistDao.list(AccountManager.key).map((p) => p.name));
     let duplicate = 0;
     let files: string[];
     try {
@@ -820,18 +824,19 @@ export class HonkeImporter {
   private applyPlaylists(c: Collected<PlaylistCandidate>, policy: HonkeImportPolicy): HonkeImportCategoryResult {
     if (c.error) throw new Error(c.error);
     const dao = this.deps.library.playlistDao;
+    const account = AccountManager.key;
     const videoDao = this.deps.library.videoDao;
     const missing = new Set<string>();
     let added = 0;
     let updated = 0;
     this.deps.library.db.transaction(() => {
-      if (policy === 'replace') dao.clearAll();
-      const byName = new Map(dao.list().map((p) => [p.name, p.id]));
+      if (policy === 'replace') dao.clearAll(account);
+      const byName = new Map(dao.list(account).map((p) => [p.name, p.id]));
       for (const p of c.items) {
         let id = byName.get(p.name);
         let isNew = false;
         if (id === undefined) {
-          id = dao.create(p.name).id;
+          id = dao.create(account, p.name).id;
           byName.set(p.name, id);
           isNew = true;
         }

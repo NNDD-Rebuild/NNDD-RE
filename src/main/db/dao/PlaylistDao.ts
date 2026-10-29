@@ -25,18 +25,22 @@ interface PlaylistItemRow {
 
 /**
  * 自作プレイリスト DAO (ローカル。serverMylistId があればニコニコ側のマイリストと同期)
+ *
+ * プレイリストはニコニコのアカウントごとに持つ (同期先のマイリストがアカウントのものなので)。
+ * 個別の id を取る操作 (名前変更・動画追加など) は id がアカウント間で重ならないので account を取らない。
+ * 呼び出し側で、現在のアカウントの一覧から選んだ id だけを渡すこと。
  */
 export class PlaylistDao {
   constructor(private readonly db: NnddDatabase) {}
 
-  list(): Playlist[] {
-    const rows = this.db.prepare(Q.SELECT_PLAYLISTS).all() as PlaylistRow[];
+  list(account: string): Playlist[] {
+    const rows = this.db.prepare(Q.SELECT_PLAYLISTS).all(account) as PlaylistRow[];
     return rows.map((r) => this.rowToPlaylist(r));
   }
 
-  create(name: string): Playlist {
+  create(account: string, name: string): Playlist {
     const now = Date.now() / 1000;
-    const info = this.db.prepare(Q.INSERT_PLAYLIST).run(name, now, now);
+    const info = this.db.prepare(Q.INSERT_PLAYLIST).run(account, name, now, now);
     return { id: Number(info.lastInsertRowid), name, createdAt: new Date(now * 1000), updatedAt: new Date(now * 1000) };
   }
 
@@ -53,7 +57,8 @@ export class PlaylistDao {
     this.db.transaction(() => {
       // 同期していたプレイリストの登録キーは「取り込み除外」にする (ニコニコ側に残ったマイリストから復活させない)
       const key = this.getSyncKey(id);
-      if (key) this.dismissKey(key);
+      const account = this.getAccount(id);
+      if (key && account !== null) this.dismissKey(account, key);
       this.db.prepare(Q.DELETE_PLAYLIST_ITEMS).run(id);
       this.db.prepare(Q.DELETE_PLAYLIST_SYNC_BASE).run(id);
       this.db.prepare(Q.DELETE_PLAYLIST).run(id);
@@ -72,10 +77,19 @@ export class PlaylistDao {
   unlink(id: number): void {
     this.db.transaction(() => {
       const key = this.getSyncKey(id);
-      if (key) this.dismissKey(key);
+      const account = this.getAccount(id);
+      if (key && account !== null) this.dismissKey(account, key);
       this.db.prepare('UPDATE playlist SET serverMylistId = NULL, syncKey = NULL WHERE id = ?').run(id);
       this.db.prepare(Q.DELETE_PLAYLIST_SYNC_BASE).run(id);
     });
+  }
+
+  /** プレイリストの持ち主のアカウント。存在しなければ null */
+  getAccount(id: number): string | null {
+    const row = this.db.prepare('SELECT account FROM playlist WHERE id = ?').get(id) as
+      | { account: string }
+      | undefined;
+    return row?.account ?? null;
   }
 
   getSyncKey(id: number): string | null {
@@ -91,28 +105,28 @@ export class PlaylistDao {
   }
 
   /** ローカルのプレイリストが持つ登録キー一覧 */
-  listSyncKeys(): string[] {
-    const rows = this.db.prepare('SELECT syncKey FROM playlist WHERE syncKey IS NOT NULL').all() as {
+  listSyncKeys(account: string): string[] {
+    const rows = this.db.prepare('SELECT syncKey FROM playlist WHERE account = ? AND syncKey IS NOT NULL').all(account) as {
       syncKey: string;
     }[];
     return rows.map((r) => r.syncKey);
   }
 
-  dismissKey(syncKey: string): void {
-    this.db.prepare('INSERT OR IGNORE INTO playlist_sync_dismissed (syncKey) VALUES (?)').run(syncKey);
+  dismissKey(account: string, syncKey: string): void {
+    this.db.prepare('INSERT OR IGNORE INTO playlist_sync_dismissed (account, syncKey) VALUES (?, ?)').run(account, syncKey);
   }
 
-  listDismissedKeys(): string[] {
-    const rows = this.db.prepare('SELECT syncKey FROM playlist_sync_dismissed').all() as { syncKey: string }[];
+  listDismissedKeys(account: string): string[] {
+    const rows = this.db.prepare('SELECT syncKey FROM playlist_sync_dismissed WHERE account = ?').all(account) as { syncKey: string }[];
     return rows.map((r) => r.syncKey);
   }
 
   /** 別の PC で作られたニコニコ側マイリストを、プレイリストとして取り込む (動画は別途マージで取り込む) */
-  createLinked(name: string, mylistId: string, syncKey: string): Playlist {
+  createLinked(account: string, name: string, mylistId: string, syncKey: string): Playlist {
     const now = Date.now() / 1000;
     const info = this.db
-      .prepare('INSERT INTO playlist (name, createdAt, updatedAt, serverMylistId, syncKey) VALUES (?, ?, ?, ?, ?)')
-      .run(name, now, now, mylistId, syncKey);
+      .prepare('INSERT INTO playlist (account, name, createdAt, updatedAt, serverMylistId, syncKey) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(account, name, now, now, mylistId, syncKey);
     return {
       id: Number(info.lastInsertRowid),
       name,
@@ -175,19 +189,22 @@ export class PlaylistDao {
   }
 
   /** VideoCard右クリックメニューで「追加済み」チェック表示に使う */
-  listPlaylistIdsForVideo(videoId: string): number[] {
-    const rows = this.db.prepare(Q.SELECT_PLAYLISTS_CONTAINING_VIDEO).all(videoId) as {
+  listPlaylistIdsForVideo(account: string, videoId: string): number[] {
+    const rows = this.db.prepare(Q.SELECT_PLAYLISTS_CONTAINING_VIDEO).all(videoId, account) as {
       playlist_id: number;
     }[];
     return rows.map((r) => r.playlist_id);
   }
 
-  /** 全プレイリスト・全アイテムを削除 */
-  clearAll(): void {
-    this.db.prepare('DELETE FROM playlist_sync_dismissed').run();
-    this.db.prepare(Q.DELETE_ALL_PLAYLIST_SYNC_BASE).run();
-    this.db.prepare(Q.DELETE_ALL_PLAYLIST_ITEM).run();
-    this.db.prepare(Q.DELETE_ALL_PLAYLIST).run();
+  /** そのアカウントの全プレイリスト・全アイテムを削除 */
+  clearAll(account: string): void {
+    this.db.transaction(() => {
+      this.db.prepare('DELETE FROM playlist_sync_dismissed WHERE account = ?').run(account);
+      // アイテムと基準は playlist を消す前に (playlist の account で対象を決めるため)
+      this.db.prepare(Q.DELETE_ALL_PLAYLIST_SYNC_BASE).run(account);
+      this.db.prepare(Q.DELETE_ALL_PLAYLIST_ITEM).run(account);
+      this.db.prepare(Q.DELETE_ALL_PLAYLIST).run(account);
+    });
   }
 
   private rowToPlaylist(r: PlaylistRow): Playlist {

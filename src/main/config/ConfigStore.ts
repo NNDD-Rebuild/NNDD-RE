@@ -392,6 +392,12 @@ export interface NnddConfig {
     activeId?: string;
   };
 
+  /**
+   * アカウント導入前に作ったローカルデータ (マイリスト・プレイリスト・スケジュール・録画予約) を、
+   * 最初にログインしたアカウントへ引き継ぎ済みか
+   */
+  accountScopeAdopted: boolean;
+
   /** 旧単一アカウント時代の保存済み認証情報 (safeStorage で暗号化)。accounts へ移行済みなら空 */
   auth: {
     savedEmail?: string;
@@ -594,6 +600,7 @@ const DEFAULTS: NnddConfig = {
     apiDumpTargets: ['watch']
   },
   accounts: { list: [] },
+  accountScopeAdopted: false,
   auth: {},
   githubSync: {
     profiles: [],

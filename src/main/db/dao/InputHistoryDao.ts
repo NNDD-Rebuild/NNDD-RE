@@ -17,14 +17,14 @@ export class InputHistoryDao {
   constructor(private readonly db: NnddDatabase) {}
 
   /** 既存のどれよりも新しい usedAt (同一ミリ秒でも順序が崩れないよう単調増加させる) */
-  private nextUsedAt(rangeSql: string): number {
-    const r = this.db.prepare(rangeSql).get() as UsedRange;
+  private nextUsedAt(rangeSql: string, ...params: string[]): number {
+    const r = this.db.prepare(rangeSql).get(...params) as UsedRange;
     return Math.max(Date.now(), (r.maxUsedAt ?? 0) + 1);
   }
 
   /** 既存のどれよりも古い usedAt の基準 (履歴が空なら現在時刻) */
-  private olderBase(rangeSql: string): number {
-    const r = this.db.prepare(rangeSql).get() as UsedRange;
+  private olderBase(rangeSql: string, ...params: string[]): number {
+    const r = this.db.prepare(rangeSql).get(...params) as UsedRange;
     return (r.minUsedAt ?? Date.now() + 1) - 1;
   }
 
@@ -58,28 +58,28 @@ export class InputHistoryDao {
 
   // ---- マイリストURL ----
 
-  listMyList(): MyListHistoryEntry[] {
-    return this.db.prepare(Q.SELECT_MYLIST_HISTORY).all(INPUT_HISTORY_MAX) as MyListHistoryEntry[];
+  listMyList(account: string): MyListHistoryEntry[] {
+    return this.db.prepare(Q.SELECT_MYLIST_HISTORY).all(account, INPUT_HISTORY_MAX) as MyListHistoryEntry[];
   }
 
-  addMyList(entry: MyListHistoryEntry): void {
+  addMyList(account: string, entry: MyListHistoryEntry): void {
     this.db.transaction(() => {
-      const usedAt = this.nextUsedAt(Q.SELECT_MYLIST_HISTORY_USED_RANGE);
-      this.db.prepare(Q.UPSERT_MYLIST_HISTORY).run(entry.url, entry.name, usedAt);
-      this.db.prepare(Q.TRIM_MYLIST_HISTORY).run(INPUT_HISTORY_MAX);
+      const usedAt = this.nextUsedAt(Q.SELECT_MYLIST_HISTORY_USED_RANGE, account);
+      this.db.prepare(Q.UPSERT_MYLIST_HISTORY).run(account, entry.url, entry.name, usedAt);
+      this.db.prepare(Q.TRIM_MYLIST_HISTORY).run(account, account, INPUT_HISTORY_MAX);
     });
   }
 
   /** 既存の履歴より古いものとして追加 (新しい順の配列)。既にある項目は触らない */
-  appendOlderMyList(entries: MyListHistoryEntry[]): void {
+  appendOlderMyList(account: string, entries: MyListHistoryEntry[]): void {
     this.db.transaction(() => {
-      const base = this.olderBase(Q.SELECT_MYLIST_HISTORY_USED_RANGE);
-      entries.forEach((e, i) => this.db.prepare(Q.INSERT_MYLIST_HISTORY_IGNORE).run(e.url, e.name, base - i));
-      this.db.prepare(Q.TRIM_MYLIST_HISTORY).run(INPUT_HISTORY_MAX);
+      const base = this.olderBase(Q.SELECT_MYLIST_HISTORY_USED_RANGE, account);
+      entries.forEach((e, i) => this.db.prepare(Q.INSERT_MYLIST_HISTORY_IGNORE).run(account, e.url, e.name, base - i));
+      this.db.prepare(Q.TRIM_MYLIST_HISTORY).run(account, account, INPUT_HISTORY_MAX);
     });
   }
 
-  clearMyList(): void {
-    this.db.prepare(Q.DELETE_ALL_MYLIST_HISTORY).run();
+  clearMyList(account: string): void {
+    this.db.prepare(Q.DELETE_ALL_MYLIST_HISTORY).run(account);
   }
 }

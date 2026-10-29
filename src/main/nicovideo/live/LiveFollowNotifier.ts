@@ -3,6 +3,7 @@ import { getConfigStore } from '../../config/ConfigStore';
 import { LivePlayerManager } from '../../player/LivePlayerManager';
 import { createLogger } from '../../util/Logger';
 import { NicoContext } from '../NicoContext';
+import { AccountManager } from '../auth/AccountManager';
 import type { LiveProgramSummary } from '@shared/types';
 import { fetchFollowingPrograms } from './LiveListClient';
 
@@ -22,8 +23,8 @@ const MIN_INTERVAL_MIN = 1;
  */
 export class LiveFollowNotifier {
   private timer: NodeJS.Timeout | null = null;
-  /** 前回確認したときの放送中の番組ID。null は未取得 (最初の取得は通知しない) */
-  private seen: Set<string> | null = null;
+  /** アカウントごとの、前回確認したときの放送中の番組ID。無いアカウントは未取得 (最初の取得は通知しない) */
+  private seen = new Map<string, Set<string>>();
   private running = false;
 
   /** 設定に合わせて開始・停止する (設定変更時にも呼ぶ) */
@@ -42,7 +43,7 @@ export class LiveFollowNotifier {
       clearInterval(this.timer);
       this.timer = null;
     }
-    this.seen = null;
+    this.seen.clear();
   }
 
   /** 放送中のフォロー番組を先頭から MAX_PAGES ページ分取得する。どれかが失敗したら例外 (基準を更新しない) */
@@ -61,16 +62,17 @@ export class LiveFollowNotifier {
     if (this.running) return;
     this.running = true;
     try {
-      // 未ログインのときは取得できない。別アカウントに切り替わったときに誤通知しないよう基準も捨てる
-      if (!(await NicoContext.get().isLoggedIn())) {
-        this.seen = null;
-        return;
-      }
+      // 基準はアカウントごとに持つ (別アカウントに切り替えても、そのアカウントの既存の番組を新規扱いしない)
+      const account = AccountManager.key;
+      // 未ログインのときは取得できない
+      if (!(await NicoContext.get().isLoggedIn())) return;
       const programs = await this.fetchOnAir();
+      // 取得中に切り替わっていたら、取れた一覧は前のアカウントのものなので捨てる
+      if (AccountManager.key !== account) return;
       const current = new Set(programs.map((p) => p.programId));
-      const prev = this.seen;
-      this.seen = current;
-      if (prev === null) return;
+      const prev = this.seen.get(account);
+      this.seen.set(account, current);
+      if (prev === undefined) return;
 
       const started = programs.filter((p) => !prev.has(p.programId));
       if (started.length === 0) return;

@@ -5,6 +5,7 @@ import { MyListAutoDownloader } from './MyListAutoDownloader';
 import { SeriesAutoDownloader } from './SeriesAutoDownloader';
 import { FollowUserAutoDownloader } from './FollowUserAutoDownloader';
 import { FollowFeedClient } from '../nicovideo/follow/FollowFeedClient';
+import { AccountManager } from '../nicovideo/auth/AccountManager';
 import { createLogger } from '../util/Logger';
 
 const log = createLogger('Scheduler');
@@ -52,10 +53,13 @@ export class ScheduleManager {
     this.running = true;
     try {
       const now = new Date();
-      const schedules = this.library.scheduleDao.list();
+      // 実行に使う Cookie は今のアカウントのものなので、今のアカウントのスケジュールだけ実行する。
+      // 実行中に切り替わっても、始めたアカウントの行として扱えるよう account を渡す
+      const account = AccountManager.key;
+      const schedules = this.library.scheduleDao.list(account);
       for (const s of schedules) {
         if (!this.isDue(s, now)) continue;
-        await this.execute(s, now);
+        await this.execute(account, s, now);
       }
     } finally {
       this.running = false;
@@ -93,7 +97,7 @@ export class ScheduleManager {
     }
   }
 
-  private async execute(s: Schedule, now: Date): Promise<void> {
+  private async execute(account: string, s: Schedule, now: Date): Promise<void> {
     const targetType = s.targetType || ScheduleTargetType.MYLIST;
     log.info(`executing schedule: ${s.name} (${targetType})`);
 
@@ -125,13 +129,13 @@ export class ScheduleManager {
         case ScheduleTargetType.MYLIST:
         default: {
           const myList = this.library.myListDao
-            .list()
+            .list(account)
             .find((ml) => ml.myListUrl === s.targetMyListUrl);
           if (!myList) {
             log.warn(`schedule target mylist not found: ${s.targetMyListUrl}`);
             return;
           }
-          const r = await this.mylistDownloader.renew(myList, true, s.makeSubfolder);
+          const r = await this.mylistDownloader.renew(myList, true, s.makeSubfolder, account);
           log.info(`schedule done: ${s.name} fetched=${r.fetched} queued=${r.queued}`);
           return;
         }
@@ -140,7 +144,7 @@ export class ScheduleManager {
       log.warn(`schedule execution failed: ${s.name}`, e);
     } finally {
       // 最終実行時刻を更新
-      this.library.scheduleDao.upsert({ ...s, lastRun: now });
+      this.library.scheduleDao.upsert(account, { ...s, lastRun: now });
     }
   }
 }

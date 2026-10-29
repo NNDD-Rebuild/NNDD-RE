@@ -3,6 +3,7 @@ import { getConfigStore } from '../../config/ConfigStore';
 import type { DownloadManager } from '../../downloader/DownloadManager';
 import type { TrayManager } from '../../tray/TrayManager';
 import { createLogger } from '../../util/Logger';
+import { AccountManager } from '../auth/AccountManager';
 
 const log = createLogger('LiveRecordScheduler');
 
@@ -42,15 +43,25 @@ export class LiveRecordScheduler {
     }
   }
 
-  list(): LiveRecordReservation[] {
+  /** 全アカウント分の予約。マルチアカウント導入前の予約 (account 未設定) も含む */
+  private all(): LiveRecordReservation[] {
     return getConfigStore().get('liveRecordReservations') ?? [];
+  }
+
+  /** 今のアカウントの予約。account 未設定 (導入前) のものは今のアカウントの扱いにする */
+  list(): LiveRecordReservation[] {
+    const account = AccountManager.key;
+    return this.all().filter((r) => (r.account ?? account) === account);
   }
 
   /** 予約を追加する。同じ番組が既にあれば置き換える */
   reserve(req: LiveRecordReserveRequest): void {
     if (!/^lv\d+$/i.test(req.programId)) throw new Error('録画予約できるのは番組ID (lv) の番組だけです');
-    const next = this.list().filter((r) => r.programId !== req.programId);
-    next.push({ ...req, programId: req.programId.toLowerCase(), reservedAtMs: Date.now() });
+    const account = AccountManager.key;
+    const programId = req.programId.toLowerCase();
+    // 同じ番組を別のアカウントで予約していても、そちらは残す
+    const next = this.all().filter((r) => !(r.programId === programId && (r.account ?? account) === account));
+    next.push({ ...req, programId, reservedAtMs: Date.now(), account });
     next.sort((a, b) => a.beginAtMs - b.beginAtMs);
     getConfigStore().set('liveRecordReservations', next);
     log.info(`reserved ${req.programId} (begin=${new Date(req.beginAtMs).toISOString()})`);
@@ -60,7 +71,8 @@ export class LiveRecordScheduler {
 
   unreserve(programId: string): void {
     const id = programId.toLowerCase();
-    const next = this.list().filter((r) => r.programId !== id);
+    const account = AccountManager.key;
+    const next = this.all().filter((r) => !(r.programId === id && (r.account ?? account) === account));
     getConfigStore().set('liveRecordReservations', next);
     log.info(`unreserved ${id}`);
   }
@@ -83,8 +95,10 @@ export class LiveRecordScheduler {
 
   private tick(): void {
     const now = Date.now();
-    const all = this.list();
-    const due = all.filter((r) => now >= r.beginAtMs - LEAD_MS);
+    const all = this.all();
+    // 録画は今ログインしているアカウントで行うので、今のアカウントの予約だけ実行する (他は残す)
+    const account = AccountManager.key;
+    const due = all.filter((r) => (r.account ?? account) === account && now >= r.beginAtMs - LEAD_MS);
     if (due.length === 0) return;
     // 先に予約から外してから積む (積んだあとの失敗で、次の確認で二重に積まれないように)
     getConfigStore().set(

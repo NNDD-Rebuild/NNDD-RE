@@ -390,7 +390,9 @@ export interface LiveRecordReservation {
   endAtMs: number;
   /** 予約した時刻 (unix ms) */
   reservedAtMs: number;
+  /** 予約したアカウント (ニコニコのユーザーID)。未ログインは空文字。マルチアカウント導入前の予約は未設定 */
+  account?: string;
 }
 
 /** 録画予約の追加に必要な項目 (予約時刻は main が付ける) */
-export type LiveRecordReserveRequest = Omit<LiveRecordReservation, 'reservedAtMs'>;
+export type LiveRecordReserveRequest = Omit<LiveRecordReservation, 'reservedAtMs' | 'account'>;

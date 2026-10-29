@@ -1,13 +1,14 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { app } from 'electron';
 import { GitHubApi } from '@shared/constants';
-import type { BackupPayload, BackupResult, DataScope, GistRevision, GistSummary, SyncProfile } from '@shared/types';
+import type { BackupAccountData, BackupPayload, BackupResult, DataScope, GistRevision, GistSummary, SyncProfile } from '@shared/types';
 import { BACKUP_SCHEMA_VERSION, DEFAULT_DATA_SCOPE } from '@shared/types';
 import { LibraryManager } from '../db/LibraryManager';
 import { getConfigStore, type NnddConfig } from '../config/ConfigStore';
 import { GitHubAuthManager } from '../github/GitHubAuthManager';
 import { GistClient } from '../github/GistClient';
 import { createLogger } from '../util/Logger';
+import { AccountManager } from '../nicovideo/auth/AccountManager';
 
 const log = createLogger('BackupManager');
 
@@ -175,44 +176,22 @@ export class BackupManager {
       };
     }
 
-    if (scope.myList) {
-      payload.myList = this.library.myListDao.list().map((m) => ({
-        url: m.myListUrl,
-        name: m.myListName,
-        type: m.type,
-        isDir: m.isDir,
-        parentUrl: m.parentUrl ?? null
-      }));
-    }
-
-    if (scope.schedule) {
-      payload.schedule = this.library.scheduleDao.list().map((s) => ({
-        id: s.id,
-        name: s.name,
-        targetType: s.targetType,
-        targetMyListUrl: s.targetMyListUrl,
-        targetId: s.targetId,
-        daysOfWeek: s.daysOfWeek,
-        time: s.time,
-        enabled: s.enabled,
-        makeSubfolder: s.makeSubfolder
-      }));
+    // マイリスト・スケジュール・プレイリストはアカウントごと。データのあるアカウントすべてを accounts に入れ、
+    // 形式 1 のアプリでも読めるよう、今のアカウント分は従来の myList / schedule / playlist にも重ねる
+    if (scope.myList || scope.schedule || scope.playlist) {
+      const current = AccountManager.key;
+      const keys = new Set([...this.library.listAccountsWithData(), current]);
+      const accounts: Record<string, BackupAccountData> = {};
+      for (const account of keys) accounts[account] = this.buildAccountData(account, scope);
+      payload.accounts = accounts;
+      const own = accounts[current];
+      if (scope.myList) payload.myList = own?.myList ?? [];
+      if (scope.schedule) payload.schedule = own?.schedule ?? [];
+      if (scope.playlist) payload.playlist = own?.playlist ?? [];
     }
 
     if (scope.savedSearch) {
       payload.savedSearch = this.library.searchDao.list();
-    }
-
-    if (scope.playlist) {
-      payload.playlist = this.library.playlistDao.list().map((p) => ({
-        name: p.name,
-        items: this.library.playlistDao.getItems(p.id).map((it) => ({
-          videoId: it.videoId,
-          title: it.title,
-          thumbnailUrl: it.thumbnailUrl,
-          lengthSec: it.lengthSec
-        }))
-      }));
     }
 
     if (scope.history) {
@@ -227,6 +206,92 @@ export class BackupManager {
     }
 
     return payload;
+  }
+
+  /** 1 アカウント分のマイリスト・スケジュール・プレイリスト */
+  private buildAccountData(account: string, scope: DataScope): BackupAccountData {
+    const data: BackupAccountData = {};
+    if (scope.myList) {
+      data.myList = this.library.myListDao.list(account).map((m) => ({
+        url: m.myListUrl,
+        name: m.myListName,
+        type: m.type,
+        isDir: m.isDir,
+        parentUrl: m.parentUrl ?? null
+      }));
+    }
+    if (scope.schedule) {
+      data.schedule = this.library.scheduleDao.list(account).map((s) => ({
+        id: s.id,
+        name: s.name,
+        targetType: s.targetType,
+        targetMyListUrl: s.targetMyListUrl,
+        targetId: s.targetId,
+        daysOfWeek: s.daysOfWeek,
+        time: s.time,
+        enabled: s.enabled,
+        makeSubfolder: s.makeSubfolder
+      }));
+    }
+    if (scope.playlist) {
+      data.playlist = this.library.playlistDao.list(account).map((p) => ({
+        name: p.name,
+        items: this.library.playlistDao.getItems(p.id).map((it) => ({
+          videoId: it.videoId,
+          title: it.title,
+          thumbnailUrl: it.thumbnailUrl,
+          lengthSec: it.lengthSec
+        }))
+      }));
+    }
+    return data;
+  }
+
+  /** 1 アカウント分を置き換える。呼び出し側でトランザクションに入れること */
+  private applyAccountData(account: string, data: BackupAccountData, scope: DataScope, applied: DataScope): void {
+    if (scope.myList && data.myList) {
+      this.library.myListDao.clearAll(account);
+      for (const m of data.myList) {
+        this.library.myListDao.upsert(account, {
+          myListUrl: m.url,
+          myListName: m.name,
+          type: m.type,
+          isDir: m.isDir,
+          parentUrl: m.parentUrl ?? null,
+          unPlayVideoCount: 0,
+          myListVideoIds: {}
+        });
+      }
+      applied.myList = true;
+    }
+    if (scope.schedule && data.schedule) {
+      this.library.scheduleDao.clearAll(account);
+      for (const s of data.schedule) {
+        this.library.scheduleDao.upsert(account, {
+          id: s.id,
+          name: s.name,
+          targetType: s.targetType || 'mylist',
+          targetMyListUrl: s.targetMyListUrl,
+          targetId: s.targetId || '',
+          daysOfWeek: s.daysOfWeek,
+          time: s.time,
+          enabled: s.enabled,
+          makeSubfolder: s.makeSubfolder ?? false,
+          lastRun: null
+        });
+      }
+      applied.schedule = true;
+    }
+    if (scope.playlist && data.playlist) {
+      this.library.playlistDao.clearAll(account);
+      for (const p of data.playlist) {
+        const created = this.library.playlistDao.create(account, p.name);
+        for (const item of p.items) {
+          this.library.playlistDao.addVideo(created.id, item);
+        }
+      }
+      applied.playlist = true;
+    }
   }
 
   /** ローカルデータへ全置換 (ミラー) 適用。呼び出し前に破壊的操作であることをUI側で確認済みとする。 */
@@ -273,45 +338,17 @@ export class BackupManager {
       applied.ngList = true;
     }
 
-    if (scope.myList && payload.myList) {
-      const myList = payload.myList;
+    // マイリスト・スケジュール・プレイリスト: accounts があればアカウントごとに、
+    // 無ければ (形式 1 のバックアップ) 今のアカウントの分として復元する。バックアップに無いアカウントは触らない
+    if (scope.myList || scope.schedule || scope.playlist) {
+      const buckets: Record<string, BackupAccountData> = payload.accounts ?? {
+        [AccountManager.key]: { myList: payload.myList, schedule: payload.schedule, playlist: payload.playlist }
+      };
       this.library.db.transaction(() => {
-        this.library.myListDao.clearAll();
-        for (const m of myList) {
-          this.library.myListDao.upsert({
-            myListUrl: m.url,
-            myListName: m.name,
-            type: m.type,
-            isDir: m.isDir,
-            parentUrl: m.parentUrl ?? null,
-            unPlayVideoCount: 0,
-            myListVideoIds: {}
-          });
+        for (const [account, data] of Object.entries(buckets)) {
+          this.applyAccountData(account, data, scope, applied);
         }
       });
-      applied.myList = true;
-    }
-
-    if (scope.schedule && payload.schedule) {
-      const schedule = payload.schedule;
-      this.library.db.transaction(() => {
-        this.library.scheduleDao.clearAll();
-        for (const s of schedule) {
-          this.library.scheduleDao.upsert({
-            id: s.id,
-            name: s.name,
-            targetType: s.targetType || 'mylist',
-            targetMyListUrl: s.targetMyListUrl,
-            targetId: s.targetId || '',
-            daysOfWeek: s.daysOfWeek,
-            time: s.time,
-            enabled: s.enabled,
-            makeSubfolder: s.makeSubfolder ?? false,
-            lastRun: null
-          });
-        }
-      });
-      applied.schedule = true;
     }
 
     if (scope.savedSearch && payload.savedSearch) {
@@ -321,20 +358,6 @@ export class BackupManager {
         for (const s of savedSearch) this.library.searchDao.upsert(s);
       });
       applied.savedSearch = true;
-    }
-
-    if (scope.playlist && payload.playlist) {
-      const playlists = payload.playlist;
-      this.library.db.transaction(() => {
-        this.library.playlistDao.clearAll();
-        for (const p of playlists) {
-          const created = this.library.playlistDao.create(p.name);
-          for (const item of p.items) {
-            this.library.playlistDao.addVideo(created.id, item);
-          }
-        }
-      });
-      applied.playlist = true;
     }
 
     if (scope.history && payload.history) {
@@ -572,6 +595,59 @@ function checkOptionalList(root: JsonObject, key: string, check: (item: unknown,
   expectArray(root[key], key).forEach((item, i) => check(item, `${key}[${i}]`));
 }
 
+/** マイリスト 1 件の形式チェック */
+function checkMyListItem(item: unknown, where: string): void {
+    const o = expectObject(item, where);
+    expectString(o.url, `${where}.url`);
+    expectNullableString(o.name, `${where}.name`);
+    expectNullableString(o.type, `${where}.type`);
+    expectBoolean(o.isDir, `${where}.isDir`);
+    if (o.parentUrl !== undefined) expectNullableString(o.parentUrl, `${where}.parentUrl`);
+}
+
+/** スケジュール 1 件の形式チェック */
+function checkScheduleItem(item: unknown, where: string): void {
+    const o = expectObject(item, where);
+    expectString(o.id, `${where}.id`);
+    expectNullableString(o.name, `${where}.name`);
+    if (o.targetType !== undefined) expectNullableString(o.targetType, `${where}.targetType`);
+    expectNullableString(o.targetMyListUrl, `${where}.targetMyListUrl`);
+    if (o.targetId !== undefined) expectNullableString(o.targetId, `${where}.targetId`);
+    expectArray(o.daysOfWeek, `${where}.daysOfWeek`).forEach((d, i) => expectNumber(d, `${where}.daysOfWeek[${i}]`));
+    expectNullableString(o.time, `${where}.time`);
+    expectBoolean(o.enabled, `${where}.enabled`);
+}
+
+/** プレイリスト 1 件の形式チェック */
+function checkPlaylistItem(item: unknown, where: string): void {
+    const o = expectObject(item, where);
+    expectString(o.name, `${where}.name`);
+    expectArray(o.items, `${where}.items`).forEach((it, i) => {
+      const itemWhere = `${where}.items[${i}]`;
+      const v = expectObject(it, itemWhere);
+      expectString(v.videoId, `${itemWhere}.videoId`);
+      expectNullableString(v.title, `${itemWhere}.title`);
+      expectNullableString(v.thumbnailUrl, `${itemWhere}.thumbnailUrl`);
+      expectNumber(v.lengthSec, `${itemWhere}.lengthSec`);
+    });
+}
+
+/** accounts (アカウントごとのデータ) の形式チェック */
+function checkAccounts(v: unknown): void {
+  const accounts = expectObject(v, 'accounts');
+  for (const [id, data] of Object.entries(accounts)) {
+    const where = `accounts[${JSON.stringify(id)}]`;
+    const o = expectObject(data, where);
+    const list = (key: 'myList' | 'schedule' | 'playlist', check: (item: unknown, w: string) => void): void => {
+      if (o[key] === undefined) return;
+      expectArray(o[key], `${where}.${key}`).forEach((item, i) => check(item, `${where}.${key}[${i}]`));
+    };
+    list('myList', checkMyListItem);
+    list('schedule', checkScheduleItem);
+    list('playlist', checkPlaylistItem);
+  }
+}
+
 function parseBackupPayload(raw: string): BackupPayload {
   let data: unknown;
   try {
@@ -605,26 +681,11 @@ function parseBackupPayload(raw: string): BackupPayload {
     expectArray(ngList.ups, 'ngList.ups').forEach((u, i) => expectString(u, `ngList.ups[${i}]`));
   }
 
-  checkOptionalList(root, 'myList', (item, where) => {
-    const o = expectObject(item, where);
-    expectString(o.url, `${where}.url`);
-    expectNullableString(o.name, `${where}.name`);
-    expectNullableString(o.type, `${where}.type`);
-    expectBoolean(o.isDir, `${where}.isDir`);
-    if (o.parentUrl !== undefined) expectNullableString(o.parentUrl, `${where}.parentUrl`);
-  });
+  if (root.accounts !== undefined) checkAccounts(root.accounts);
 
-  checkOptionalList(root, 'schedule', (item, where) => {
-    const o = expectObject(item, where);
-    expectString(o.id, `${where}.id`);
-    expectNullableString(o.name, `${where}.name`);
-    if (o.targetType !== undefined) expectNullableString(o.targetType, `${where}.targetType`);
-    expectNullableString(o.targetMyListUrl, `${where}.targetMyListUrl`);
-    if (o.targetId !== undefined) expectNullableString(o.targetId, `${where}.targetId`);
-    expectArray(o.daysOfWeek, `${where}.daysOfWeek`).forEach((d, i) => expectNumber(d, `${where}.daysOfWeek[${i}]`));
-    expectNullableString(o.time, `${where}.time`);
-    expectBoolean(o.enabled, `${where}.enabled`);
-  });
+  checkOptionalList(root, 'myList', checkMyListItem);
+
+  checkOptionalList(root, 'schedule', checkScheduleItem);
 
   checkOptionalList(root, 'savedSearch', (item, where) => {
     const o = expectObject(item, where);
@@ -635,18 +696,7 @@ function parseBackupPayload(raw: string): BackupPayload {
     expectNullableString(o.sortType, `${where}.sortType`);
   });
 
-  checkOptionalList(root, 'playlist', (item, where) => {
-    const o = expectObject(item, where);
-    expectString(o.name, `${where}.name`);
-    expectArray(o.items, `${where}.items`).forEach((it, i) => {
-      const itemWhere = `${where}.items[${i}]`;
-      const v = expectObject(it, itemWhere);
-      expectString(v.videoId, `${itemWhere}.videoId`);
-      expectNullableString(v.title, `${itemWhere}.title`);
-      expectNullableString(v.thumbnailUrl, `${itemWhere}.thumbnailUrl`);
-      expectNumber(v.lengthSec, `${itemWhere}.lengthSec`);
-    });
-  });
+  checkOptionalList(root, 'playlist', checkPlaylistItem);
 
   checkOptionalList(root, 'history', (item, where) => {
     const o = expectObject(item, where);

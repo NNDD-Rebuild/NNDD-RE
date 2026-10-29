@@ -4,6 +4,7 @@ import { LibraryManager } from '../db/LibraryManager';
 import { DownloadManager } from './DownloadManager';
 import { fetchMylistLikeItems } from '../nicovideo/mylist/MylistFetcher';
 import { SeriesClient } from '../nicovideo/series/SeriesClient';
+import { AccountManager } from '../nicovideo/auth/AccountManager';
 import { createLogger } from '../util/Logger';
 import { extractBracketedVideoId } from '@shared/utils/videoId';
 
@@ -30,9 +31,15 @@ export class MyListAutoDownloader {
    * 1つのマイリストを更新し、新規動画があれば DL キューに追加する。
    * @param enqueue false なら一覧の再取得と未再生数の更新だけ行い、DL キューには追加しない
    * @param makeSubfolder true ならマイリスト名のサブフォルダに保存する
+   * @param account マイリストの持ち主のアカウント (長い処理の途中で切り替わっても、始めたアカウントの行を更新する)
    * @returns { fetched: 取得した動画数, queued: DLキューに追加した数 }
    */
-  async renew(myList: MyList, enqueue = true, makeSubfolder = false): Promise<{ fetched: number; queued: number }> {
+  async renew(
+    myList: MyList,
+    enqueue = true,
+    makeSubfolder = false,
+    account: string = AccountManager.key
+  ): Promise<{ fetched: number; queued: number }> {
     const items = await this.fetchAllItems(myList);
     let queued = 0;
 
@@ -55,7 +62,7 @@ export class MyListAutoDownloader {
     }
 
     // 未再生数を再計算 (ライブラリにあるが未再生のもの)
-    this.library.myListDao.upsert({
+    this.library.myListDao.upsert(account, {
       ...myList,
       unPlayVideoCount: this.countUnplayed(items)
     });
@@ -77,10 +84,11 @@ export class MyListAutoDownloader {
       string,
       { fetched: number; queued: number; error?: string }
     > = {};
-    const mylists = this.library.myListDao.list().filter((m) => !m.isDir);
+    const account = AccountManager.key;
+    const mylists = this.library.myListDao.list(account).filter((m) => !m.isDir);
     for (const ml of mylists) {
       try {
-        const r = await this.renew(ml, enqueue);
+        const r = await this.renew(ml, enqueue, false, account);
         out[ml.myListUrl] = r;
       } catch (e) {
         log.warn(`renew failed: ${ml.myListUrl}`, e);
