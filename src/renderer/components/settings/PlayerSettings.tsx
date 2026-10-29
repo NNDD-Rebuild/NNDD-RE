@@ -63,6 +63,7 @@ export function PlayerSettings(): JSX.Element {
     'player.commentOutlineIntensity',
     'light'
   );
+  const [ngUpEnabled, setNgUpEnabled] = useConfig<boolean>('player.ngUpEnabled', true);
   const [keepCA, setKeepCA] = useConfig<boolean>(
     'player.commentKeepCA',
     true
@@ -168,6 +169,12 @@ export function PlayerSettings(): JSX.Element {
           </Row>
         )}
         <CheckRow checked={antiAlias} onChange={setAntiAlias} label="アンチエイリアス" />
+        <CheckRow
+          checked={ngUpEnabled}
+          onChange={setNgUpEnabled}
+          label="投稿者フィルターを有効にする"
+          hint="投稿者が設定したコメントの置き換え (旧仕様)。本家NNDDで保存した動画のコメントにだけ効きます"
+        />
         <CheckRow
           checked={keepCA}
           onChange={setKeepCA}

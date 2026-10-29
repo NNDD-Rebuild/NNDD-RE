@@ -37,6 +37,7 @@ const ALLOWED: Record<string, Guard> = {
   // ローカル (ライブラリ) 再生に必要な読み取り系
   [IpcChannel.COMMENT_READ_LOCAL]: pathArg(0),
   [IpcChannel.COMMENT_NOW_IDS_READ]: pathArg(0),
+  [IpcChannel.COMMENT_READ_NGUPS]: pathArg(0),
   // 過去コメント (DL済みXMLの日時絞り込みのみ。ニコニコ直取得・差分更新は許可しない)
   [IpcChannel.PAST_COMMENT_FETCH_LOCAL]: pathArg(0),
   [IpcChannel.THUMB_INFO_XML_READ]: pathArg(0),

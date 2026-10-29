@@ -69,6 +69,12 @@ export function registerConfigHandlers(ctx: IpcHandlerContext): void {
       BrowserWindow.fromWebContents(e.sender)?.setBackgroundColor(bgColor);
       nativeTheme.themeSource = value === 'light' ? 'light' : 'dark';
     }
+    if (key === 'player.permitOnly') {
+      // 「許可IDのみ表示」: 開いている全ウィンドウのコメント表示へ即時反映する
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) win.webContents.send(IpcChannel.NG_COMMENT_CHANGED);
+      }
+    }
     if (key === 'logLevel') {
       setLogLevel(value as 'standard' | 'verbose');
     }

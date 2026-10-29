@@ -54,6 +54,8 @@ export interface CommentRenderConfig {
    *   - 'strong': 上記に加え、短時間の連投コメントも自動非表示
    */
   ngStrength: 'weak' | 'medium' | 'strong';
+  /** 許可IDのみ表示 (許可IDのユーザーと投稿者のコメントだけを表示する) */
+  permitOnly?: boolean;
 }
 
 export const DEFAULT_RENDER_CONFIG: CommentRenderConfig = {
@@ -245,7 +247,9 @@ export class CommentRenderer {
 
     // enabled / NG が変化したらエンジン再起動 (既に流れる予定のコメントへも NG を反映するため)
     const ngChanged =
-      prev.ngList !== this.config.ngList || prev.ngStrength !== this.config.ngStrength;
+      prev.ngList !== this.config.ngList ||
+      prev.ngStrength !== this.config.ngStrength ||
+      prev.permitOnly !== this.config.permitOnly;
     // on/off だけの切替はエンジンを作り直さず canvas の表示切替で済ませる (作り直すとちらつく)
     this.canvas.style.visibility = this.config.enabled ? 'visible' : 'hidden';
     const needsEngine = this.config.enabled && !this.nc;
@@ -554,7 +558,7 @@ export class CommentRenderer {
     return comments.filter((c) => {
       if (!c.isShow) return false;
       if (spamUserIds?.has(c.userId)) return false;
-      return !matchesNg(c, compiledNg, strength);
+      return !matchesNg(c, compiledNg, strength, this.config.permitOnly ?? false);
     });
   }
 

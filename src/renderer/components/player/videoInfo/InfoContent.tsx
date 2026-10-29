@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useConfig } from '@renderer/hooks/useConfig';
 import type { WatchPageInfo } from '@shared/types';
 import { IpcChannel } from '@shared/types';
-import { userUrl, watchUrl } from '@shared/utils/nicoUrl';
+import { tagDictionaryUrl, userUrl, watchUrl } from '@shared/utils/nicoUrl';
 import { ContextMenuPopup, MenuItem } from '../../common/VideoCard';
 import { descriptionLinkUrl, openDescriptionUrl, sanitizeDescription } from './description';
 
@@ -129,7 +129,7 @@ export function InfoContent({ watch, ichibaHtmlPath }: { watch: WatchPageInfo | 
 
       {watch.tags.length > 0 && (
         <div className="mb-3">
-          <div className="text-xs text-nndd-subtext mb-1">タグ (ダブルクリックで検索)</div>
+          <div className="text-xs text-nndd-subtext mb-1">タグ (ダブルクリックで検索 / 右クリックで大百科)</div>
           <div className="flex flex-wrap gap-1">
             {watch.tags.map((t) => (
               // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions -- ダブルクリック専用の補助操作で、キーボード操作の追加は挙動変更になるため
@@ -137,7 +137,15 @@ export function InfoContent({ watch, ichibaHtmlPath }: { watch: WatchPageInfo | 
                 key={t}
                 className="px-2 py-0.5 bg-nndd-border rounded text-xs cursor-pointer hover:bg-nndd-accent hover:text-white transition-colors"
                 onDoubleClick={() => window.nndd.invoke(IpcChannel.NAV_SEARCH_TAG, t)}
-                onContextMenu={(e) => openCopyMenu(e, [{ label: '📋 タグをコピー', text: t }])}
+                onContextMenu={(e) =>
+                  openCopyMenu(e, [
+                    {
+                      label: '📖 ニコニコ大百科で開く',
+                      onClick: () => window.nndd.invoke(window.nndd.channels.SYS_OPEN_PATH, tagDictionaryUrl(t))
+                    },
+                    { label: '📋 タグをコピー', text: t }
+                  ])
+                }
               >
                 {t}
               </span>

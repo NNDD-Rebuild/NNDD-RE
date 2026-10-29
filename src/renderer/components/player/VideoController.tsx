@@ -35,6 +35,9 @@ interface Props {
   currentQualityId?: string;
   onQualityChange?: (id: string) => void;
   audioOnly?: boolean;
+  /** リピート再生の状態とトグル。onToggleRepeat を渡したときだけボタンを出す (生放送では渡さない) */
+  repeat?: boolean;
+  onToggleRepeat?: () => void;
   /** ローカル再生中か (true の場合のみシークバーホバー時のサムネイルプレビューを有効化) */
   isLocal?: boolean;
   /**
@@ -94,6 +97,8 @@ export function VideoController({
   currentQualityId,
   onQualityChange,
   audioOnly,
+  repeat,
+  onToggleRepeat,
   isLocal,
   live,
   hideRateSelect,
@@ -615,6 +620,16 @@ export function VideoController({
             </option>
           ))}
         </select>
+      )}
+
+      {onToggleRepeat && (
+        <Btn
+          onClick={onToggleRepeat}
+          title={repeat ? 'リピート再生 ON (クリックで OFF)' : 'リピート再生 OFF (クリックで ON)'}
+          className={repeat ? '!bg-nndd-accent text-white' : 'opacity-60'}
+        >
+          🔁
+        </Btn>
       )}
 
       {!hideCommentToggle && (

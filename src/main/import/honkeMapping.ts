@@ -60,6 +60,8 @@ export const HONKE_CONFIG_MAP: Record<string, ConfigMapEntry> = {
   isSaveSearchHistory: { reKey: 'saveSearchHistory', convert: toBool },
   isSaveMyListHistory: { reKey: 'saveMyListHistory', convert: toBool },
   isRepeat: { reKey: 'player.repeat', convert: toBool },
+  isNgUpEnable: { reKey: 'player.ngUpEnabled', convert: toBool },
+  isShowOnlyPermissionComment: { reKey: 'player.permitOnly', convert: toBool },
   isShowComment: { reKey: 'player.showComments', convert: toBool },
   isCommentFontBold: { reKey: 'player.commentBold', convert: toBool },
   isAntiAlias: { reKey: 'player.commentAntiAlias', convert: toBool },
@@ -83,7 +85,7 @@ export const HONKE_CONFIG_MAP: Record<string, ConfigMapEntry> = {
 /** 認証情報など、本家側で暗号化ストアにありインポートできないことが分かっているキー */
 export const HONKE_CONFIG_NEVER_IMPORT = new Set(['userName', 'password']);
 
-/** NG 種別 (本家 Comments.NG_KIND_ARRAY)。許可ID は RE に対応が無いので null */
+/** NG 種別 (本家 Comments.NG_KIND_ARRAY) */
 export function mapNgKind(kind: string): NgListItemTypeValue | null {
   switch (kind) {
     case '単語':
@@ -91,7 +93,7 @@ export function mapNgKind(kind: string): NgListItemTypeValue | null {
     case 'コマンド':
       return NgListItemType.COMMAND;
     case '許可ID':
-      return null;
+      return NgListItemType.PERMIT_ID;
     case 'ID':
     default:
       return NgListItemType.USER_ID;
@@ -119,7 +121,7 @@ export function mapSearchType(searchType: number): NNDDRESearchTypeValue {
 /**
  * 本家の sortType (= sort*2 + order) を RE のソート種別へ。
  * sort: 0投稿日 1再生数 2コメント数 3コメント日時 4マイリスト数 5再生時間 / order: 0降順 1昇順。
- * 対応が無いもの (コメント日時) は投稿日の新しい順にフォールバックし、fallback=true を返す。
+ * 範囲外の値は投稿日の新しい順にフォールバックし、fallback=true を返す。
  */
 export function mapSortType(sortType: number): { value: NNDDRESearchSortTypeValue; fallback: boolean } {
   const sort = Math.floor(sortType / 2);
@@ -132,6 +134,8 @@ export function mapSortType(sortType: number): { value: NNDDRESearchSortTypeValu
       return { value: asc ? S.VIEW_COUNT_ASC : S.VIEW_COUNT_DESC, fallback: false };
     case 2:
       return { value: asc ? S.COMMENT_COUNT_ASC : S.COMMENT_COUNT_DESC, fallback: false };
+    case 3:
+      return { value: asc ? S.LAST_COMMENT_ASC : S.LAST_COMMENT_DESC, fallback: false };
     case 4:
       return { value: asc ? S.MYLIST_COUNT_ASC : S.MYLIST_COUNT_DESC, fallback: false };
     case 5:

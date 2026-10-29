@@ -263,6 +263,10 @@ export interface NnddConfig {
     autoNextFolder: boolean;
     /** 過去ログ (過去コメント) の同時描画件数の上限。0 = 無制限 */
     pastCommentMaxCount: number;
+    /** 投稿者フィルター: 投稿者コメントXMLの <ngups> (ワード→置換語) でコメント本文を置き換える (元: 本家の「投稿者フィルターを有効にする」) */
+    ngUpEnabled: boolean;
+    /** 許可IDのみ表示: 許可IDのユーザーと投稿者のコメントだけを表示する (元: 本家の「許可IDのみ表示」) */
+    permitOnly: boolean;
   };
 
   /** UI 設定 */
@@ -295,6 +299,8 @@ export interface NnddConfig {
     librarySortCol: 'videoName' | 'time' | 'playCount' | 'pubDate' | 'creationDate';
     /** ライブラリ一覧の初期ソート方向 */
     librarySortDir: 'asc' | 'desc';
+    /** マイリストごとの並び順 (キー: マイリストのURL)。未設定のリストは取得順 (元: 本家の「マイリストのソート順を保持」) */
+    mylistSort: Record<string, { key: string; desc: boolean }>;
   };
 
   /** 視聴履歴 */
@@ -516,7 +522,9 @@ const DEFAULTS: NnddConfig = {
     jumpCommand: 'ask',
     controlsAlwaysVisible: true,
     autoNextFolder: false,
-    pastCommentMaxCount: 0
+    pastCommentMaxCount: 0,
+    ngUpEnabled: true,
+    permitOnly: false
   },
   ui: {
     theme: 'dark',
@@ -529,7 +537,8 @@ const DEFAULTS: NnddConfig = {
     libraryViewMode: 'table',
     contentViewMode: 'grid',
     librarySortCol: 'pubDate',
-    librarySortDir: 'asc'
+    librarySortDir: 'asc',
+    mylistSort: {}
   },
   history: {
     showWatchedBadge: true

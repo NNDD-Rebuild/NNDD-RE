@@ -12,6 +12,8 @@ export interface NgTarget {
   text: string;
   mail: string;
   userId: string;
+  /** 投稿者コメントなら 'owner' (ストリーミング) / '1' (ローカルXML)。許可IDのみ表示でも常に表示する */
+  fork?: string;
 }
 
 /**
@@ -29,7 +31,9 @@ export function normalizeNgText(s: string): string {
 export function compileNgList(ngList: readonly NgListItem[]): CompiledNg[] {
   const out: CompiledNg[] = [];
   for (const ng of ngList) {
-    const value = ng.type === NgListItemType.USER_ID ? ng.value : normalizeNgText(ng.value);
+    const value =
+      ng.type === NgListItemType.USER_ID || ng.type === NgListItemType.PERMIT_ID
+        ? ng.value : normalizeNgText(ng.value);
     if (value === '') continue; // 空文字は includes が常に真になり全コメントが消える
     out.push({ type: ng.type, value });
   }
@@ -37,13 +41,19 @@ export function compileNgList(ngList: readonly NgListItem[]): CompiledNg[] {
 }
 
 /**
- * コメントが NG にマッチするか。弱 (weak) では部分一致の NG ワードも完全一致のときだけ適用する。
+ * コメントが NG にマッチするか。permitOnly が真なら、許可ID以外のコメントを NG とみなす。弱 (weak) では部分一致の NG ワードも完全一致のときだけ適用する。
  */
 export function matchesNg(
   target: NgTarget,
   compiled: readonly CompiledNg[],
-  strength: NgStrength = 'medium'
+  strength: NgStrength = 'medium',
+  permitOnly = false
 ): boolean {
+  if (permitOnly) {
+    // 許可IDのみ表示: 許可IDのユーザーと投稿者のコメントだけを残す (通常のNG判定は行わない)
+    if (target.fork === 'owner' || target.fork === '1') return false;
+    return !compiled.some((ng) => ng.type === NgListItemType.PERMIT_ID && ng.value === target.userId);
+  }
   if (compiled.length === 0) return false;
   let text: string | null = null;
   let mail: string | null = null;

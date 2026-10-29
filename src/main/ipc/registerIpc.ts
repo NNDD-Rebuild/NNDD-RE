@@ -51,7 +51,8 @@ const NG_TYPE_LABEL: Record<NgListItem['type'], string> = {
   word: 'NGワード',
   wordExact: 'NGワード (完全一致)',
   userId: 'NGユーザーID',
-  command: 'NGコマンド'
+  command: 'NGコマンド',
+  permitId: '許可ID'
 };
 
 export interface CmdApi {

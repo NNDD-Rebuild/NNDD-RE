@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { XMLParser } from 'fast-xml-parser';
 import {
   type NNDDREComment,
+  type NgUpReplacement,
   CommentPosition,
   CommentSize
 } from '@shared/types';
@@ -25,6 +26,34 @@ export class CommentXmlReader {
     if (!fs.existsSync(filePath)) return [];
     const xml = fs.readFileSync(filePath, 'utf-8');
     return this.parse(xml);
+  }
+
+  /**
+   * 投稿者コメントXMLの <ngups><ngup ngword="..." changeValue="..."/></ngups> を読む (投稿者フィルター)。
+   * 値は encodeURIComponent されて保存されている。無い・壊れているときは空配列
+   */
+  static readNgUps(filePath: string): NgUpReplacement[] {
+    if (!fs.existsSync(filePath)) return [];
+    const parser = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@_', trimValues: false });
+    const doc = parser.parse(fs.readFileSync(filePath, 'utf-8'));
+    const root = doc?.packet?.ngups ?? doc?.ngups;
+    const raw = root && typeof root === 'object' ? (root as Record<string, unknown>).ngup : undefined;
+    const list = Array.isArray(raw) ? raw : raw ? [raw] : [];
+    const decode = (v: unknown): string => {
+      const s = String(v ?? '');
+      try {
+        return decodeURIComponent(s);
+      } catch {
+        return s;
+      }
+    };
+    const out: NgUpReplacement[] = [];
+    for (const item of list) {
+      const o = item as Record<string, unknown>;
+      const ngWord = decode(o['@_ngword']);
+      if (ngWord) out.push({ ngWord, changeValue: decode(o['@_changeValue']) });
+    }
+    return out;
   }
 
   static parse(xml: string): NNDDREComment[] {

@@ -158,6 +158,9 @@ export default function PlayerApp(): JSX.Element {
 
   const [defaultQuality] = useConfig<'highest' | number>('player.defaultQuality', 'highest');
   const [controlsAlwaysVisible] = useConfig<boolean>('player.controlsAlwaysVisible', true);
+  const [repeat, setRepeat] = useConfig<boolean>('player.repeat', false);
+  const repeatRef = useRef(repeat);
+  repeatRef.current = repeat;
   const defaultQualityRef = useRef(defaultQuality);
   defaultQualityRef.current = defaultQuality;
   const { ngList, addNg, removeNg } = useNgList();
@@ -258,6 +261,18 @@ export default function PlayerApp(): JSX.Element {
     );
     return off;
   }, []);
+
+  /** 再生が終わったとき: リピートONなら同じ動画を最初から、OFFなら連続再生の次へ */
+  const handleEnded = (): void => {
+    consecutiveSkipRef.current = 0;
+    const v = videoElementRef.current;
+    if (repeatRef.current && v) {
+      v.currentTime = 0;
+      v.play().catch(() => {});
+      return;
+    }
+    advanceToNextVideo();
+  };
 
   const handleVideoError = async (code: number): Promise<void> => {
     // code 4 = MEDIA_ERR_SRC_NOT_SUPPORTED: キャッシュファイルが破損 or 非対応コーデック
@@ -675,7 +690,7 @@ export default function PlayerApp(): JSX.Element {
               className="w-0 h-0"
               audioOnly
               onVideoError={(code) => { handleVideoError(code).catch(console.error); }}
-              onEnded={() => { consecutiveSkipRef.current = 0; advanceToNextVideo(); }}
+              onEnded={handleEnded}
             />
           )}
           <div className="flex-1 flex items-center px-3 gap-3 min-w-0">
@@ -708,6 +723,8 @@ export default function PlayerApp(): JSX.Element {
               currentQualityId={selectedQualityId ?? undefined}
               onQualityChange={(id) => { handleQualityChange(id).catch(console.error); }}
               audioOnly={audioOnly}
+              repeat={repeat}
+              onToggleRepeat={() => { void setRepeat(!repeat); }}
             />
           </div>
           {(loading || error) && (
@@ -778,7 +795,7 @@ export default function PlayerApp(): JSX.Element {
                   className="w-full h-full"
                   onVideoError={(code) => { handleVideoError(code).catch(console.error); }}
                   audioOnly={audioOnly}
-                  onEnded={() => { consecutiveSkipRef.current = 0; advanceToNextVideo(); }}
+                  onEnded={handleEnded}
                   onVideoClick={isMobileTouch ? handleVideoTap : undefined}
                   onCommentContextMenu={(comment, x, y) => setCommentMenu({ comment, x, y })}
                 />
@@ -845,6 +862,8 @@ export default function PlayerApp(): JSX.Element {
                 currentQualityId={selectedQualityId ?? undefined}
                 onQualityChange={(id) => { handleQualityChange(id).catch(console.error); }}
                 audioOnly={audioOnly}
+                repeat={repeat}
+                onToggleRepeat={() => { void setRepeat(!repeat); }}
               />
             </div>
           </>

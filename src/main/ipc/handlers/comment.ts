@@ -105,6 +105,9 @@ export function registerCommentHandlers(ctx: IpcHandlerContext): {
   });
 
   // --- ローカルコメント読み込み ---
+  ipcMain.handle(IpcChannel.COMMENT_READ_NGUPS, (_e, filePath: string) => {
+    return CommentXmlReader.readNgUps(filePath);
+  });
   ipcMain.handle(IpcChannel.COMMENT_READ_LOCAL, (_e, filePath: string) => {
     return CommentXmlReader.readFile(filePath);
   });

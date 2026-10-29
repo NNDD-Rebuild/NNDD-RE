@@ -4,6 +4,7 @@ import { COMMENT_FONT_FAMILY } from '@shared/constants';
 import { applyDefaultColors, isNicoScriptText } from '@shared/utils/nicoScript';
 import type { CommentRenderConfig } from '../../components/player/CommentRenderer';
 import { useConfig } from '../useConfig';
+import { usePermitOnly } from './usePermitOnly';
 import { limitSimultaneousComments } from './playerUtils';
 
 /**
@@ -52,6 +53,10 @@ export function useCommentRenderSettings({
   );
   /** 過去コメント時の同時描画制限 (0=無制限) */
   const [pastCommentMaxCount] = useConfig<number>('player.pastCommentMaxCount', 0);
+  /** 投稿者フィルター: 投稿者が設定した置換語で本文を置き換える */
+  const [ngUpEnabled] = useConfig<boolean>('player.ngUpEnabled', true);
+  /** 許可IDのみ表示 */
+  const [permitOnly] = usePermitOnly();
 
   /** 過去コメント同時表示制限付きコメント配列をメモ化 (不要な rebuildEngine を防ぐ) */
   const renderedComments = useMemo<NNDDREComment[]>(() => {
@@ -60,8 +65,12 @@ export function useCommentRenderSettings({
       : comments;
     // owner コマンドコメント (@ジャンプ / ＠デフォルト / ＠CM / ニワン語 等) は画面に流さない
     // ＠デフォルト の既定色は本編の投稿者コメントから集めて適用する
-    return applyDefaultColors(base.filter((c) => !isNicoScriptText(c.text ?? '')), comments);
-  }, [showPastComments, pastComments, pastCommentMaxCount, comments]);
+    const filtered = base.filter((c) => !isNicoScriptText(c.text ?? ''));
+    const replaced = ngUpEnabled
+      ? filtered.map((c) => (c.ngUpText !== undefined ? { ...c, text: c.ngUpText } : c))
+      : filtered;
+    return applyDefaultColors(replaced, comments);
+  }, [showPastComments, pastComments, pastCommentMaxCount, comments, ngUpEnabled]);
 
   const commentConfig = useMemo<Partial<CommentRenderConfig>>(
     () => ({
@@ -78,7 +87,8 @@ export function useCommentRenderSettings({
       antiAlias: commentAntiAlias,
       keepCA: commentKeepCA,
       ngStrength,
-      ngList
+      ngList,
+      permitOnly
     }),
     [
       showComments,
@@ -92,7 +102,8 @@ export function useCommentRenderSettings({
       commentAntiAlias,
       commentKeepCA,
       ngStrength,
-      ngList
+      ngList,
+      permitOnly
     ]
   );
 

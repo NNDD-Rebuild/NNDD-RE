@@ -1,6 +1,7 @@
 import type {
   DomandStreamCandidate,
   NNDDREComment,
+  NgUpReplacement,
   OpenPlayerParams,
   WatchPageInfo
 } from '@shared/types';
@@ -104,6 +105,19 @@ export async function readLocalComments(
       .catch(() => []);
     // fork 属性が無い古いXML (本家NNDD等) でも投稿者コメントとして扱う (ニコスクリプト処理に必要)
     ownerCs = ownerCs.map((c) => (c.fork ? c : { ...c, fork: '1' }));
+  }
+  // 投稿者フィルター (投稿者コメントXMLの <ngups>)。本文が完全一致するコメントに置換語を付けておき、ON/OFFは描画側で切り替える
+  const ngUps = files?.ownerCommentXml
+    ? await window.nndd
+        .invoke<NgUpReplacement[]>(window.nndd.channels.COMMENT_READ_NGUPS, files.ownerCommentXml)
+        .catch(() => [] as NgUpReplacement[])
+    : [];
+  if (ngUps.length > 0) {
+    const map = new Map(ngUps.map((n) => [n.ngWord, n.changeValue]));
+    for (const c of cs) {
+      const replaced = map.get(c.text);
+      if (replaced !== undefined) c.ngUpText = replaced;
+    }
   }
   if (files?.nowCommentJson) {
     const nos = await window.nndd.invoke<number[]>(

@@ -72,6 +72,17 @@ export interface NNDDREComment {
   fork?: string;
   /** 生放送: 他番組から転送されたコメント (cruise: クルーズ / collab: コラボ) */
   forwarded?: 'cruise' | 'collab';
+  /**
+   * 投稿者フィルターで置き換わる本文。投稿者コメントXMLの <ngups> に本文と完全一致するワードがあるとき設定される。
+   * 設定 player.ngUpEnabled が ON のときだけ描画側が text の代わりに使う
+   */
+  ngUpText?: string;
+}
+
+/** 投稿者フィルター: 投稿者が設定した「ワード → 置換語」 (元: nicovideo4as の NgUp) */
+export interface NgUpReplacement {
+  ngWord: string;
+  changeValue: string;
 }
 
 /**
@@ -126,7 +137,9 @@ export const NgListItemType = {
   /** ユーザーIDによるNG */
   USER_ID: 'userId',
   /** コマンドによるNG */
-  COMMAND: 'command'
+  COMMAND: 'command',
+  /** 許可ID。「許可IDのみ表示」が ON のとき、このユーザーのコメントだけを表示する (元: 本家の許可ID) */
+  PERMIT_ID: 'permitId'
 } as const;
 
 export type NgListItemTypeValue =

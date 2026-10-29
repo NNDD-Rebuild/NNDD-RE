@@ -11,6 +11,7 @@ import { compileNgList, detectSpamUsers, matchesNg } from '@shared/utils/ngMatch
 import { mylistUrl, watchUrl } from '@shared/utils/nicoUrl';
 import { NgListDialog } from './NgListDialog';
 import { useConfig } from '../../hooks/useConfig';
+import { usePermitOnly } from '../../hooks/player/usePermitOnly';
 
 // ── 列幅型 ──────────────────────────────────────────────
 interface ColWidths {
@@ -265,6 +266,7 @@ export function CommentList({
   const compiledNg = useMemo(() => compileNgList(ngList), [ngList]);
   // 流れるコメント (CommentRenderer) と同じ強度で照合する
   const [ngStrength] = useConfig<'weak' | 'medium' | 'strong'>('player.ngStrength', 'medium');
+  const [permitOnly, setPermitOnly] = usePermitOnly();
 
   // 流れるコメントと同じ判定: 非表示 (isShow=false)・strong の連投スパム・NG リスト一致
   const spamUserIds = useMemo(
@@ -273,8 +275,8 @@ export function CommentList({
   );
   const isNgComment = useCallback(
     (c: NNDDREComment) =>
-      !c.isShow || !!spamUserIds?.has(c.userId) || matchesNg(c, compiledNg, ngStrength),
-    [spamUserIds, compiledNg, ngStrength]
+      !c.isShow || !!spamUserIds?.has(c.userId) || matchesNg(c, compiledNg, ngStrength, permitOnly),
+    [spamUserIds, compiledNg, ngStrength, permitOnly]
   );
 
   const ngCount = useMemo(() => sorted.filter(isNgComment).length, [sorted, isNgComment]);
@@ -356,6 +358,13 @@ export function CommentList({
         <label className="flex items-center gap-0.5 text-xs text-nndd-subtext shrink-0 cursor-pointer">
           <input type="checkbox" checked={autoScroll} onChange={(e) => setAutoScroll(e.target.checked)} />
           追従
+        </label>
+        <label
+          className="flex items-center gap-0.5 text-xs text-nndd-subtext shrink-0 cursor-pointer"
+          title="許可IDに登録したユーザーと投稿者のコメントだけを表示します (右クリックで許可IDに追加)"
+        >
+          <input type="checkbox" checked={permitOnly} onChange={(e) => setPermitOnly(e.target.checked)} />
+          許可IDのみ
         </label>
         {ngCount > 0 && (
           <label className="flex items-center gap-0.5 text-xs text-nndd-subtext shrink-0 cursor-pointer">
@@ -614,6 +623,9 @@ export function ContextMenuPopup({
   const isUserNg = ngList.some(
     (n) => n.type === NgListItemType.USER_ID && n.value === comment.userId
   );
+  const isPermit = ngList.some(
+    (n) => n.type === NgListItemType.PERMIT_ID && n.value === comment.userId
+  );
   const isWordNg = ngList.some(
     (n) => n.type === NgListItemType.WORD && n.value === comment.text
   );
@@ -621,7 +633,7 @@ export function ContextMenuPopup({
   const style: React.CSSProperties = {
     position: 'fixed',
     zIndex: 9999,
-    top: Math.min(y, window.innerHeight - 160),
+    top: Math.min(y, window.innerHeight - 190),
     left: Math.min(x, window.innerWidth - 220)
   };
 
@@ -649,6 +661,17 @@ export function ContextMenuPopup({
           {isUserNg
             ? 'ユーザー NG 解除'
             : `ユーザー「${comment.userId.slice(0, 10)}…」をNG`}
+        </MenuItem>
+      )}
+      {comment.userId && (
+        <MenuItem
+          onClick={() =>
+            isPermit
+              ? onRemoveNg({ type: NgListItemType.PERMIT_ID, value: comment.userId })
+              : onAddNg({ type: NgListItemType.PERMIT_ID, value: comment.userId })
+          }
+        >
+          {isPermit ? '許可ID 解除' : `ユーザー「${comment.userId.slice(0, 10)}…」を許可ID`}
         </MenuItem>
       )}
       {comment.text && (

@@ -13,14 +13,16 @@ const TYPE_LABEL: Record<string, string> = {
   [NgListItemType.WORD]: 'ワード',
   [NgListItemType.WORD_EXACT]: 'ワード（完全一致）',
   [NgListItemType.USER_ID]: 'ユーザーID',
-  [NgListItemType.COMMAND]: 'コマンド'
+  [NgListItemType.COMMAND]: 'コマンド',
+  [NgListItemType.PERMIT_ID]: '許可ID'
 };
 
 const TYPE_OPTIONS: { type: NgListItemTypeValue; label: string; placeholder: string }[] = [
   { type: NgListItemType.WORD, label: 'ワード', placeholder: 'NGワードを入力' },
   { type: NgListItemType.WORD_EXACT, label: 'ワード（完全一致）', placeholder: 'NGワードを入力 (完全一致)' },
   { type: NgListItemType.USER_ID, label: 'ユーザーID', placeholder: 'ユーザーIDを入力' },
-  { type: NgListItemType.COMMAND, label: 'コマンド', placeholder: 'コマンドを入力 (例: big)' }
+  { type: NgListItemType.COMMAND, label: 'コマンド', placeholder: 'コマンドを入力 (例: big)' },
+  { type: NgListItemType.PERMIT_ID, label: '許可ID', placeholder: '許可するユーザーIDを入力' }
 ];
 
 /**
@@ -40,6 +42,7 @@ export function NgListDialog({ ngList, onAdd, onRemove, onClose }: Props): JSX.E
   const words = ngList.filter((x) => x.type === NgListItemType.WORD || x.type === NgListItemType.WORD_EXACT);
   const users = ngList.filter((x) => x.type === NgListItemType.USER_ID);
   const cmds = ngList.filter((x) => x.type === NgListItemType.COMMAND);
+  const permits = ngList.filter((x) => x.type === NgListItemType.PERMIT_ID);
 
   return (
     <div
@@ -70,7 +73,8 @@ export function NgListDialog({ ngList, onAdd, onRemove, onClose }: Props): JSX.E
           {[
             { label: 'NGワード', items: words },
             { label: 'NGユーザーID', items: users },
-            { label: 'NGコマンド', items: cmds }
+            { label: 'NGコマンド', items: cmds },
+            { label: '許可ID (「許可IDのみ」ON のとき表示)', items: permits }
           ].map(({ label, items }) =>
             items.length === 0 ? null : (
               <div key={label}>

@@ -18,6 +18,7 @@ const KIND_OPTIONS: { value: NgListItemTypeValue; label: string; placeholder: st
   { value: NgListItemType.WORD,    label: 'NGワード',   placeholder: 'NGワードを入力 (例: 荒らし)', hasMatch: true },
   { value: NgListItemType.USER_ID, label: 'NGユーザーID', placeholder: 'ユーザーIDを入力 (例: 12345678)' },
   { value: NgListItemType.COMMAND, label: 'NGコマンド',  placeholder: 'コマンドを入力 (例: big)' },
+  { value: NgListItemType.PERMIT_ID, label: '許可ID', placeholder: '許可するユーザーIDを入力' },
 ];
 
 const TYPE_LABEL: Record<string, string> = {
@@ -25,6 +26,7 @@ const TYPE_LABEL: Record<string, string> = {
   [NgListItemType.WORD_EXACT]: 'ワード（完全）',
   [NgListItemType.USER_ID]:    'ユーザーID',
   [NgListItemType.COMMAND]:    'コマンド',
+  [NgListItemType.PERMIT_ID]:  '許可ID',
 };
 
 export function NgCommentSettings(): JSX.Element {
@@ -137,7 +139,7 @@ export function NgCommentSettings(): JSX.Element {
         </div>
         <Hint>
           前回の同期との差分で、追加も削除も双方に反映します (どちらかで消した NG は、もう一方からも消えます)。初回は足し合わせるだけで、何も消えません。
-          対応するのは「NGワード (部分一致)」と「NGユーザーID」です。完全一致ワードとコマンドはこのアプリだけで保持します。
+          対応するのは「NGワード (部分一致)」と「NGユーザーID」です。完全一致ワード・コマンド・許可IDはこのアプリだけで保持します。
           {!isLoggedIn && ' ログインすると使えます。'}
         </Hint>
       </div>

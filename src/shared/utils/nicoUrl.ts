@@ -39,3 +39,8 @@ export function channelUrl(channelId: string): string {
 export function liveWatchUrl(programId: string): string {
   return `${NicoApi.LIVE_WATCH_PAGE}${programId}`;
 }
+
+/** ニコニコ大百科のタグ記事 (元: 本家NNDDの「タグをニコニコ大百科で表示」) */
+export function tagDictionaryUrl(tag: string): string {
+  return `https://dic.nicovideo.jp/a/${encodeURIComponent(tag)}`;
+}
