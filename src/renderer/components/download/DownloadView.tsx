@@ -1,8 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { DownloadQueueItem, MyListItem } from '@shared/types';
 import { DownloadStatusType, IpcChannel, RssType } from '@shared/types';
 import { extractLiveIdFromInput } from '@shared/utils/liveId';
+import { extractVideoIdFromInput } from '@shared/utils/videoId';
+import { useAppStore } from '@renderer/store/useAppStore';
 import { enqueueLiveDownload } from '@renderer/util/enqueueDownload';
+import { useFreeSpace } from '@renderer/hooks/useFreeSpace';
 
 /**
  * DLリストタブ。
@@ -165,6 +168,30 @@ export function DownloadView(): JSX.Element {
     for (const line of lines) await handleAdd(line);
   };
 
+  // Ctrl+V (貼り付け) で、クリップボードの動画URL・動画ID・マイリストURLをそのまま追加する (元: 本家の「クリップボード自動貼付」)。
+  // 入力欄などに貼り付けるときは何もしない。DLリストタブを開いている間だけ有効
+  const activeTab = useAppStore((s) => s.activeTab);
+  const handleAddRef = useRef(handleAdd);
+  handleAddRef.current = handleAdd;
+  useEffect(() => {
+    if (activeTab !== 'download') return;
+    const onPaste = (e: ClipboardEvent): void => {
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return;
+      const lines = (e.clipboardData?.getData('text/plain') ?? '')
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((l) => l && (extractVideoIdFromInput(l) || extractLiveIdFromInput(l) || /nicovideo\.jp(?:\/user\/\d+)?\/mylist\/\d+/.test(l)));
+      if (lines.length === 0) return;
+      e.preventDefault();
+      void (async () => {
+        for (const line of lines) await handleAddRef.current(line);
+      })();
+    };
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+  }, [activeTab]);
+
   const handleCancel = (id: string): void => {
     window.nndd
       .invoke(window.nndd.channels.DOWNLOAD_CANCEL, id)
@@ -212,6 +239,11 @@ export function DownloadView(): JSX.Element {
       .then(reload);
   };
   const hasPausedItems = items.some((it) => it.status === DownloadStatusType.PAUSED);
+  // 下部の状態表示 (本家と同じ: DL済み N 項目, 未DL N 項目, X GB 空き)。完了数が変わったら空き容量を取り直す
+  const doneCount = items.filter(
+    (it) => it.status === DownloadStatusType.SUCCESS || it.status === DownloadStatusType.SKIPPED
+  ).length;
+  const freeSpace = useFreeSpace(doneCount);
 
   return (
     <div
@@ -388,6 +420,9 @@ export function DownloadView(): JSX.Element {
             </tbody>
           </table>
         )}
+      </div>
+      <div className="shrink-0 px-3 py-1 border-t border-nndd-border bg-nndd-panel text-xs text-nndd-subtext">
+        DL済み {doneCount} 項目, 未DL {items.length - doneCount} 項目{freeSpace ? `, ${freeSpace}` : ''}
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { LibraryScanProgress, LibraryScanResult, NNDDREVideo } from '@shared/types';
 import { IpcChannel } from '@shared/types';
-import { watchUrl } from '@shared/utils/nicoUrl';
+import { tagDictionaryUrl, watchUrl } from '@shared/utils/nicoUrl';
 import { ContextMenuPopup, MenuItem } from '../common/VideoCard';
 import { useAppStore } from '@renderer/store/useAppStore';
 import { enqueueDownload } from '../../util/enqueueDownload';
@@ -10,6 +10,7 @@ import { useLibraryFolderTree } from '@renderer/hooks/library/useLibraryFolderTr
 import { useLanLibrary } from '@renderer/hooks/library/useLanLibrary';
 import { useLibraryFolderCreate } from '@renderer/hooks/library/useLibraryFolderCreate';
 import { useNgTags } from '@renderer/hooks/library/useNgTags';
+import { useFreeSpace } from '@renderer/hooks/useFreeSpace';
 import {
   LAN_FOLDER,
   extractVideoId,
@@ -19,11 +20,14 @@ import {
   type SortDir,
   type ViewMode
 } from './libraryUtils';
-import { FolderCreateArea, LibraryFolderList, LibraryTagList, TabBtn } from './LibrarySidebarParts';
+import { FolderCreateArea, LibraryFolderList, LibraryTagList, ROOT_DROP, TabBtn } from './LibrarySidebarParts';
 import { LanLibraryPane } from './LanLibraryPane';
 import { LibraryToolbar } from './LibraryToolbar';
 import { LibraryGridView } from './LibraryGridView';
 import { LibraryTableView } from './LibraryTableView';
+
+/** 「ライブラリが空」の更新確認を、アプリ起動中に一度だけ出すための印 (本家の askAndRenewAtBootTime 相当) */
+let emptyLibraryPrompted = false;
 
 export function LibraryView(): JSX.Element {
   const [scanning, setScanning] = useState(false);
@@ -77,6 +81,7 @@ export function LibraryView(): JSX.Element {
   const { videos, setVideos, commentOnlyVideos, setCommentOnlyVideos, loading, fsFolders, reload } = useLibraryVideos();
 
   const folderCreate = useLibraryFolderCreate(reload);
+  const freeSpace = useFreeSpace(videos.length);
 
   // フォルダ選択中は、フォルダ・タグ両モードでそのフォルダ内の動画だけを対象にする
   const folderScope = selectedFolder !== null && selectedFolder !== LAN_FOLDER ? selectedFolder : null;
@@ -109,7 +114,9 @@ export function LibraryView(): JSX.Element {
     useLibraryFolderTree(videos, fsFolders);
 
   const handleFolderDragOver = (path: string, e: React.DragEvent): void => {
-    if (e.dataTransfer.types.includes('application/nndd-video-ids')) {
+    const isFolderDrag = e.dataTransfer.types.includes('application/nndd-folder-path');
+    // 「すべて」(ライブラリ直下) は、フォルダのドロップだけ受け付ける
+    if (path === ROOT_DROP ? isFolderDrag : isFolderDrag || e.dataTransfer.types.includes('application/nndd-video-ids')) {
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
       setDragOverFolder(path);
@@ -203,6 +210,22 @@ export function LibraryView(): JSX.Element {
   const handleFolderDrop = async (e: React.DragEvent, targetFolder: string): Promise<void> => {
     e.preventDefault();
     setDragOverFolder(null);
+    const folderSrc = e.dataTransfer.getData('application/nndd-folder-path');
+    if (folderSrc) {
+      setMoveError(null);
+      try {
+        const dest = await window.nndd.invoke<string>(IpcChannel.LIBRARY_FOLDER_MOVE, {
+          path: folderSrc,
+          targetParent: targetFolder === ROOT_DROP ? null : targetFolder
+        });
+        remapSelectedFolder(folderSrc, dest);
+        reload();
+      } catch (err) {
+        setMoveError(err instanceof Error ? err.message : String(err));
+      }
+      return;
+    }
+    if (targetFolder === ROOT_DROP) return;
     const raw = e.dataTransfer.getData('application/nndd-video-ids');
     if (!raw) return;
     const videoIds = JSON.parse(raw) as number[];
@@ -299,6 +322,39 @@ export function LibraryView(): JSX.Element {
     window.nndd.invoke(window.nndd.channels.LIBRARY_SCAN_CANCEL);
   };
 
+  // ライブラリが空なら、最初に開いたときに一度だけ更新 (スキャン) するか確認する
+  useEffect(() => {
+    if (loading || emptyLibraryPrompted) return;
+    emptyLibraryPrompted = true;
+    if (videos.length > 0 || commentOnlyVideos.length > 0) return;
+    if (window.confirm('ライブラリに動画が登録されていません。\n今すぐ動画の保存先をスキャンしてライブラリを更新しますか?\n(動画が多いと時間がかかることがあります。後から「ライブラリを更新」でも実行できます。)')) {
+      void handleScan();
+    }
+    // 読み込みが終わった最初の1回だけ判定する
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
+
+  /** フォルダの移動・名前変更のあと、選択中のフォルダがその配下なら新しいパスに付け替える */
+  const remapSelectedFolder = (oldPath: string, newPath: string): void => {
+    setSelectedFolder((cur) => {
+      if (cur === null || cur === LAN_FOLDER) return cur;
+      if (cur === oldPath) return newPath;
+      const sep = oldPath.includes('\\') ? '\\' : '/';
+      return cur.startsWith(oldPath + sep) ? newPath + cur.slice(oldPath.length) : cur;
+    });
+  };
+
+  const handleFolderRename = async (folderPath: string, newName: string): Promise<void> => {
+    setMoveError(null);
+    try {
+      const dest = await window.nndd.invoke<string>(IpcChannel.LIBRARY_FOLDER_RENAME, { path: folderPath, newName });
+      remapSelectedFolder(folderPath, dest);
+      reload();
+    } catch (err) {
+      setMoveError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   const handleFolderDelete = async (folderPath: string): Promise<void> => {
     const label = folderPath.split(/[/\\]/).pop() || folderPath;
     const ok = confirm(
@@ -384,6 +440,7 @@ export function LibraryView(): JSX.Element {
               folderVideoCounts={folderVideoCounts}
               onToggleExpand={toggleFolderExpand}
               onDeleteFolder={(path) => void handleFolderDelete(path)}
+              onRenameFolder={handleFolderRename}
               onDragOverFolder={handleFolderDragOver}
               onDragLeaveFolder={() => setDragOverFolder(null)}
               onDropFolder={handleFolderDrop}
@@ -476,6 +533,14 @@ export function LibraryView(): JSX.Element {
                 />
               )}
             </div>
+            {/* 下部の状態表示 (本家と同じ: 項目数と保存先ドライブの空き容量) */}
+            <div className="shrink-0 px-3 py-1 border-t border-nndd-border bg-nndd-panel text-xs text-nndd-subtext">
+              {mode === 'commentOnly' ? commentOnlyVideos.length : videos.length} 項目
+              {filtered.length !== (mode === 'commentOnly' ? commentOnlyVideos.length : videos.length)
+                ? ` (表示中 ${filtered.length} 項目)`
+                : ''}
+              {freeSpace ? `, ${freeSpace}` : ''}
+            </div>
           </>
         )}
       </main>
@@ -487,6 +552,14 @@ export function LibraryView(): JSX.Element {
         >
           <MenuItem onClick={() => { setPendingSearchTag(tagCtxMenu.tag); setActiveTab('search'); setTagCtxMenu(null); }}>
             検索
+          </MenuItem>
+          <MenuItem
+            onClick={() => {
+              void window.nndd.invoke(window.nndd.channels.SYS_OPEN_PATH, tagDictionaryUrl(tagCtxMenu.tag));
+              setTagCtxMenu(null);
+            }}
+          >
+            ニコニコ大百科で開く
           </MenuItem>
           <MenuItem onClick={() => { void handleHideTag(tagCtxMenu.tag); setTagCtxMenu(null); }}>
             タグを隠す

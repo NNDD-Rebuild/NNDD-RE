@@ -70,6 +70,8 @@ export const IpcChannel = {
   SEARCH_SAVED_LIST: 'nndd:search:savedList',
   SEARCH_SAVED_ADD: 'nndd:search:savedAdd',
   SEARCH_SAVED_REMOVE: 'nndd:search:savedRemove',
+  /** 保存検索 (フォルダ含む) を別のフォルダへ移動 ({id, parentId: string | null}) → true */
+  SEARCH_SAVED_MOVE: 'nndd:search:savedMove',
 
   // 入力欄の履歴 (検索ワード / マイリストURL)
   INPUT_HISTORY_SEARCH_LIST: 'nndd:inputHistory:searchList',
@@ -393,6 +395,8 @@ export const IpcChannel = {
   // システム
   /** 内蔵ブラウザウィンドウで URL/ファイルを開く */
   SYS_OPEN_IN_BROWSER: 'nndd:sys:openInBrowser',
+  /** 動画保存先ドライブの空き容量 → { freeBytes: number; totalBytes: number } | null */
+  SYS_GET_FREE_SPACE: 'nndd:sys:getFreeSpace',
 
   // ナビゲーション (プレイヤーウィンドウ → メインウィンドウ)
   /** マイリストIDを指定してマイリストタブを開く */
@@ -434,10 +438,16 @@ export const IpcChannel = {
   LIBRARY_FOLDER_CREATE: 'nndd:library:folder:create',
   /** フォルダとその配下ファイルを削除 (folderPath: string) → true */
   LIBRARY_FOLDER_DELETE: 'nndd:library:folder:delete',
+  /** フォルダ名を変更 ({ path: string, newName: string }) → 変更後のフォルダのパス。同名のフォルダがあるときなどはエラー */
+  LIBRARY_FOLDER_RENAME: 'nndd:library:folder:rename',
+  /** フォルダを別のフォルダの中へ移動 ({ path: string, targetParent: string | null }) → 移動後のフォルダのパス。null はライブラリの直下 */
+  LIBRARY_FOLDER_MOVE: 'nndd:library:folder:move',
   /** ライブラリ配下のサブディレクトリ一覧を返す () → string[] */
   LIBRARY_FOLDER_LIST: 'nndd:library:folder:list',
   /** 今コメント no 配列JSONを読む (filePath: string) → number[] */
   COMMENT_NOW_IDS_READ: 'nndd:comment:nowIds:read',
+  /** 投稿者コメントXMLの <ngups> (投稿者フィルター: ワード→置換語) を読む (filePath: string) → NgUpReplacement[] */
+  COMMENT_READ_NGUPS: 'nndd:comment:ngups:read',
   /** 動画ファイルを別フォルダへ移動 ({ videoIds: number[], targetFolder: string }) → true */
   LIBRARY_VIDEO_MOVE: 'nndd:library:video:move',
   /** 指定フォルダ内の動画ファイル一覧を名前順で返す (folderPath: string) → string[] */

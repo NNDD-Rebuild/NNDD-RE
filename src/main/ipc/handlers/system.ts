@@ -1,4 +1,5 @@
 import path from 'node:path';
+import fs from 'node:fs';
 import { ipcMain, dialog, shell, app, BrowserWindow } from 'electron';
 import { IpcChannel } from '@shared/types';
 import { ConnectionDiag } from '../../nicovideo';
@@ -38,6 +39,19 @@ export function registerSystemHandlers(ctx: IpcHandlerContext): void {
     logPath: getLogFilePath(),
     cacheDir: YtDlpStreamer.cacheDir(),
   }));
+
+  // 動画保存先ドライブの空き容量 (DLリスト・ライブラリ画面の下部表示用。元: 本家の updateDownloadStatusBar)
+  ipcMain.handle(IpcChannel.SYS_GET_FREE_SPACE, async () => {
+    for (const dir of [library.videoDir, library.rootDir]) {
+      try {
+        const st = await fs.promises.statfs(dir);
+        return { freeBytes: st.bavail * st.bsize, totalBytes: st.blocks * st.bsize };
+      } catch {
+        // 保存先が未作成・切断中のときは次の候補へ
+      }
+    }
+    return null;
+  });
 
   ipcMain.handle(
     IpcChannel.SYS_CHOOSE_DIRECTORY,

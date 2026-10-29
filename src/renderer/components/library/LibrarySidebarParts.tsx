@@ -110,6 +110,9 @@ export function LibraryTagList({
   );
 }
 
+/** 「すべて」行へのドロップ (フォルダをライブラリの直下へ移動) を表す、フォルダパスとは別の目印 */
+export const ROOT_DROP = '\u0000root';
+
 /** 左ペイン (フォルダモード): 「すべて」 + フォルダツリー + LANライブラリ */
 export function LibraryFolderList({
   totalCount,
@@ -121,6 +124,7 @@ export function LibraryFolderList({
   folderVideoCounts,
   onToggleExpand,
   onDeleteFolder,
+  onRenameFolder,
   onDragOverFolder,
   onDragLeaveFolder,
   onDropFolder,
@@ -139,6 +143,7 @@ export function LibraryFolderList({
   folderVideoCounts: Map<string, number>;
   onToggleExpand: (path: string) => void;
   onDeleteFolder: (path: string) => void;
+  onRenameFolder: (path: string, newName: string) => Promise<void> | void;
   onDragOverFolder: (path: string, e: React.DragEvent) => void;
   onDragLeaveFolder: () => void;
   onDropFolder: (e: React.DragEvent, path: string) => void;
@@ -154,10 +159,16 @@ export function LibraryFolderList({
       {/* すべて */}
       <button
         onClick={() => onSelectFolder(null)}
+        onDragOver={(e) => onDragOverFolder(ROOT_DROP, e)}
+        onDragLeave={onDragLeaveFolder}
+        onDrop={(e) => void onDropFolder(e, ROOT_DROP)}
+        title="フォルダをここにドロップすると、ライブラリの直下へ移動します"
         className={[
           'block w-full text-left px-2 py-0.5 rounded text-xs mb-1',
           selectedFolder === null
             ? 'bg-nndd-accent text-white'
+            : dragOverFolder === ROOT_DROP
+            ? 'bg-nndd-accent/50 ring-1 ring-nndd-accent'
             : 'hover:bg-nndd-border'
         ].join(' ')}
       >
@@ -179,6 +190,7 @@ export function LibraryFolderList({
           onSelect={onSelectFolder}
           onToggleExpand={onToggleExpand}
           onDelete={onDeleteFolder}
+          onRename={onRenameFolder}
           onDragOverFolder={onDragOverFolder}
           onDragLeaveFolder={onDragLeaveFolder}
           onDropFolder={onDropFolder}

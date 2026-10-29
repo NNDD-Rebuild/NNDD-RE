@@ -197,6 +197,41 @@ export class VideoDao {
   }
 
   /**
+   * フォルダの移動・名前変更に合わせて、配下の動画の uri / thumbUrl の先頭部分を付け替える。
+   * @returns 付け替えた動画の数
+   */
+  relocateFolder(oldDir: string, newDir: string): number {
+    const norm = (p: string): string => p.replace(/\\/g, '/').replace(/\/+$/, '');
+    const oldNorm = norm(oldDir);
+    const sep = oldDir.includes('\\') ? '\\' : '/';
+    const swap = (value: string): string | null => {
+      const v = norm(value);
+      if (v !== oldNorm && !v.startsWith(oldNorm + '/')) return null;
+      const rest = v.slice(oldNorm.length).split('/').join(sep);
+      return newDir.replace(/[\\/]+$/, '') + rest;
+    };
+    return this.db.transaction(() => {
+      const rows = this.db.prepare('SELECT id, uri, thumbUrl FROM NNDDREVideo').all() as {
+        id: number;
+        uri: string;
+        thumbUrl: string | null;
+      }[];
+      const update = this.db.prepare('UPDATE NNDDREVideo SET uri = ?, thumbUrl = ?, dirpath_id = ? WHERE id = ?');
+      let count = 0;
+      for (const r of rows) {
+        const uri = swap(r.uri);
+        if (uri === null) continue;
+        const thumb = r.thumbUrl ? swap(r.thumbUrl) : null;
+        const dir = uri.replace(/[\\/][^\\/]+$/, '');
+        update.run(uri, thumb ?? r.thumbUrl, this.ensureFileDir(dir), r.id);
+        count++;
+      }
+      this.cleanupOrphanFiles();
+      return count;
+    });
+  }
+
+  /**
    * 再生回数を +1 し lastPlayDate を更新。
    * key はファイル名の `[sm12345]` から抽出した動画ID。
    */

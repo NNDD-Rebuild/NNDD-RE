@@ -78,7 +78,7 @@ export function registerLibraryHandlers(ctx: IpcHandlerContext): void {
   // スキャンは同時に1本だけ。実行中に呼ばれたら実行中のものの結果を返す
   let scanRun: { controller: AbortController; promise: Promise<LibraryScanResult> } | null = null;
 
-  ipcMain.handle(IpcChannel.LIBRARY_SCAN, (_e, opts?: LibraryScanOptions) => {
+  const startScan = (opts?: LibraryScanOptions): Promise<LibraryScanResult> => {
     if (scanRun) return scanRun.promise;
     const controller = new AbortController();
     let lastSentAt = 0;
@@ -102,7 +102,9 @@ export function registerLibraryHandlers(ctx: IpcHandlerContext): void {
     });
     scanRun = { controller, promise };
     return promise;
-  });
+  };
+
+  ipcMain.handle(IpcChannel.LIBRARY_SCAN, (_e, opts?: LibraryScanOptions) => startScan(opts));
 
   ipcMain.handle(IpcChannel.LIBRARY_SCAN_CANCEL, () => {
     if (!scanRun) return false;
@@ -470,6 +472,59 @@ export function registerLibraryHandlers(ctx: IpcHandlerContext): void {
         library.videoDao.updateUri(id, newUri);
       }
       return true;
+    }
+  );
+
+  /** フォルダを src から dest へ移す (名前変更・移動の共通処理)。DB の動画パスも付け替える */
+  const relocateFolder = async (src: string, dest: string): Promise<string> => {
+    const fsmod = await import('node:fs');
+    const root = path.resolve(library.videoDir);
+    const inside = (p: string): boolean => {
+      const rel = path.relative(root, path.resolve(p));
+      return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+    };
+    if (!inside(src) || !inside(dest)) throw new Error('ライブラリの外のフォルダは移動できません');
+    if (!fsmod.existsSync(src)) throw new Error('フォルダが見つかりません');
+    const rel = path.relative(path.resolve(src), path.resolve(dest));
+    if (rel === '' ) return dest;
+    if (!rel.startsWith('..') && !path.isAbsolute(rel)) throw new Error('フォルダを自分の中には移動できません');
+    const caseOnly = src.toLowerCase() === dest.toLowerCase();
+    if (!caseOnly && fsmod.existsSync(dest)) throw new Error('移動先にすでに同名のフォルダがあります');
+    try {
+      fsmod.renameSync(src, dest);
+    } catch (e) {
+      log.warn('folder relocate error:', src, '->', dest, e);
+      throw new Error('フォルダを移動できませんでした。中のファイルを開いているアプリを閉じてから、もう一度試してください');
+    }
+    const n = library.videoDao.relocateFolder(src, dest);
+    log.info(`folder relocated: ${src} -> ${dest} (${n} videos)`);
+    // 付け替え漏れ (DB に載っていないファイルなど) があっても動画を見失わないよう、続けてライブラリを更新する
+    try {
+      await startScan({ full: false });
+    } catch (e) {
+      log.warn('scan after folder relocate failed:', e);
+    }
+    return dest;
+  };
+
+  ipcMain.handle(
+    IpcChannel.LIBRARY_FOLDER_RENAME,
+    async (_e, args: { path: string; newName: string }): Promise<string> => {
+      const name = (args.newName ?? '').trim();
+      if (!name || name === '.' || name === '..' || /[\\/:*?"<>|]/.test(name)) {
+        throw new Error('フォルダ名に使えない文字が含まれています');
+      }
+      const dest = path.join(path.dirname(args.path), name);
+      return relocateFolder(args.path, dest);
+    }
+  );
+
+  ipcMain.handle(
+    IpcChannel.LIBRARY_FOLDER_MOVE,
+    async (_e, args: { path: string; targetParent: string | null }): Promise<string> => {
+      const parent = args.targetParent ?? library.videoDir;
+      const dest = path.join(parent, path.basename(args.path));
+      return relocateFolder(args.path, dest);
     }
   );
 
