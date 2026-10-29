@@ -106,7 +106,7 @@ export function TailscaleSidecarSection(): JSX.Element {
       <Hint>
         NNDD-RE を、PC の Tailscale とは別の「NNDD-RE 専用の端末」として tailnet に参加させます (MagicDNS 名も独自)。
         PC に Tailscale を入れていなくても使えます。閲覧する端末には Tailscale が必要です。
-        使うには、設定 → 全般 → 内蔵HTTPサーバー の待受範囲で「Tailscale」を選んで起動してください。
+        使うには、設定 → 外部ツール・連携 → サーバー・LAN → 内蔵HTTPサーバー の待受範囲で「Tailscale」を選んで起動してください。
       </Hint>
 
       {st && st.supported && !st.canInstall && (

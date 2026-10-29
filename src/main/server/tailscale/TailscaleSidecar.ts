@@ -148,7 +148,7 @@ export class TailscaleSidecar implements Exposure {
       case 'hello':
         if (ev.protocol !== SIDECAR_PROTOCOL) {
           this.fail(
-            `Tailscale サイドカーのプロトコル (v${ev.protocol ?? '?'}) が本体 (v${SIDECAR_PROTOCOL}) と合いません。設定 → 外部ツール で更新してください`
+            `Tailscale サイドカーのプロトコル (v${ev.protocol ?? '?'}) が本体 (v${SIDECAR_PROTOCOL}) と合いません。設定 → 外部ツール・連携 → サーバー・LAN で更新してください`
           );
           this.wanted = false;
           child.kill();

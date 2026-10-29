@@ -223,7 +223,7 @@ export function HttpServerSection(): JSX.Element {
             {
               value: 'tailscale-node',
               label: 'Tailscale (NNDD-RE 専用の端末として参加。LAN内からもアクセス可。外部ツールで取得が必要)',
-              hint: 'このPCに Tailscale を入れていなくても使えます。NNDD-RE を PC の Tailscale とは別の「専用の端末」として tailnet に参加させます。LAN内の他端末からも、IP アドレスでアクセスできます (LAN公開と同じ。認証はありません)。設定 → 外部ツール で Tailscale を取得し、起動後に表示されるログイン用ページで承認してください。アクセスできる端末は、Tailscale の管理画面の ACL で絞れます (例: 端末にタグ tag:nndd-re を付け、自分の端末だけに許可)。',
+              hint: 'このPCに Tailscale を入れていなくても使えます。NNDD-RE を PC の Tailscale とは別の「専用の端末」として tailnet に参加させます。LAN内の他端末からも、IP アドレスでアクセスできます (LAN公開と同じ。認証はありません)。設定 → 外部ツール・連携 → サーバー・LAN で Tailscale を取得し、起動後に表示されるログイン用ページで承認してください。アクセスできる端末は、Tailscale の管理画面の ACL で絞れます (例: 端末にタグ tag:nndd-re を付け、自分の端末だけに許可)。',
               children: (
                 <Row label="端末名" hint="MagicDNS 名になります。英小文字・数字・ハイフン">
                   <CommitInput

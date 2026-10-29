@@ -138,13 +138,13 @@ export class SidecarInstaller {
     }
     const file = this.localPath();
     if (!fs.existsSync(file)) {
-      throw new Error('Tailscale サイドカーが未取得です。設定 → 外部ツール で取得してください');
+      throw new Error('Tailscale サイドカーが未取得です。設定 → 外部ツール・連携 → サーバー・LAN で取得してください');
     }
     if (this.installedVersion() !== this.pin.version) {
-      throw new Error(`Tailscale サイドカーが古い (または不明な) バージョンです。設定 → 外部ツール で更新してください (必要: ${this.pin.version})`);
+      throw new Error(`Tailscale サイドカーが古い (または不明な) バージョンです。設定 → 外部ツール・連携 → サーバー・LAN で更新してください (必要: ${this.pin.version})`);
     }
     if (sha256File(file) !== expected) { // 実行直前なのでキャッシュは使わない
-      throw new Error('Tailscale サイドカーのファイルが想定と一致しません (改ざん・破損の可能性)。設定 → 外部ツール で取得し直してください');
+      throw new Error('Tailscale サイドカーのファイルが想定と一致しません (改ざん・破損の可能性)。設定 → 外部ツール・連携 → サーバー・LAN で取得し直してください');
     }
     return file;
   }

@@ -89,7 +89,7 @@ export function LanLibraryView(): JSX.Element {
       <div className="flex flex-col items-center justify-center h-full gap-4 text-nndd-subtext">
         <div className="text-lg">LANライブラリが設定されていません</div>
         <div className="text-sm">
-          設定 → 全般 → LANライブラリ でアドレスと「参照する」チェックを設定してください。
+          設定 → 外部ツール・連携 → サーバー・LAN → LANライブラリ でアドレスと「参照する」チェックを設定してください。
         </div>
         <button
           onClick={refresh}
