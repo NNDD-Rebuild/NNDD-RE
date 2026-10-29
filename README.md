@@ -16,8 +16,8 @@ MineAP氏作のNNDD（Adobe AIR/ActionScript）を **Electron + TypeScript + Rea
 
 ## 主な機能
 
-- 動画ダウンロード (yt-dlp + FFmpeg によるベスト画質DL、Cookie認証)
-- ストリーミング再生 (yt-dlp/FFmpeg 不要、hls.js でニコニコCDNから直接再生 / ニコニコ公式プレイヤー埋め込みにも対応)
+- 動画ダウンロード (既定は内蔵の方式で yt-dlp / FFmpeg 不要。)
+- ストリーミング再生 (yt-dlp / FFmpeg 不要、hls.js でニコニコCDNから直接再生 / ニコニコ公式プレイヤー埋め込みにも対応)
 - ローカルライブラリ管理 (SQLite、命名規則 `タイトル[sm12345].mp4`、フォルダ管理)
 - ニコニココメント付き動画プレイヤー (Canvas APIで流れるコメント描画)
 - 再生コントロール強化 (画質切替、倍速再生 0.25x〜2.0x、音声のみ再生モード)
@@ -201,7 +201,7 @@ Space / F / M / V / ←→ / ↑↓ など。一覧は [プレイヤー](https:/
 
 ### 動画の再生とダウンロード
 
-再生 (ストリーミング、デフォルト動作) は hls.js が niconico CDN に直接アクセスするため yt-dlp・FFmpeg は不要です。詳細な経路図は [トラブルシューティング](https://nndd-rebuild.github.io/NNDD-RE/troubleshooting/) を参照してください。
+再生 (ストリーミング) は hls.js が niconico CDN に直接アクセスするため、常に yt-dlp・FFmpeg は不要です。ダウンロードも既定の設定では内蔵の方式で動作し、外部ツールは不要です。詳細な経路図は [トラブルシューティング](https://nndd-rebuild.github.io/NNDD-RE/troubleshooting/) を参照してください。
 
 ### コメント描画
 
@@ -217,7 +217,7 @@ Space / F / M / V / ←→ / ↑↓ など。一覧は [プレイヤー](https:/
 ## 開発時の注意
 
 - `better-sqlite3` はネイティブモジュールのため `electron-rebuild` または `electron-builder install-app-deps` の実行が必要になることがあります
-- FFmpeg / yt-dlp は **動画のダウンロード (ライブラリへの保存) にのみ必要**です。動画の視聴 (デフォルトのストリーミング再生) は niconico CDN から `hls.js` で直接再生するため、どちらも不要です
-- FFmpeg / yt-dlp は設定 → 外部ツール・連携 → 外部ツール画面からオンデマンドでダウンロードします (バイナリは `userData/bin/` 配下に保存、yt-dlpと同じディレクトリに置くことでyt-dlpがFFmpegを自動検出します)
+- yt-dlp / FFmpeg は **既定の設定では不要**です (再生もダウンロードも不要)。「ネイティブHLSダウンロードを優先する」をOFFにしたときだけ yt-dlp、「mux実装」を「ffmpeg」にしたときだけ FFmpeg が必要になります
+- 必要になった場合は、設定 → 外部ツール・連携 → 外部ツール画面からオンデマンドでダウンロードできます (バイナリは `userData/bin/` 配下に保存、yt-dlpと同じディレクトリに置くことでyt-dlpがFFmpegを自動検出します)
 - カスタムプロトコル `nndd-re-local://` は CSP 設定で許可済みです
 
