@@ -4,7 +4,7 @@
   "description": "NNDD-RE - NicoNico Douga Downloader/Player",
   "main": "out/main/main.js",
   "author": "NNDD-RE Project",
-  "license": "MPL-2.0",
+  "license": "MIT",
   "private": true,
   "scripts": {
     "dev": "node scripts/dev.js",
