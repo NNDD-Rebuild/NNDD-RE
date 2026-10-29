@@ -18,6 +18,9 @@ import { OpenVideoDialog } from './components/common/OpenVideoDialog';
 import { TelemetryConsentDialog } from './components/telemetry/TelemetryConsentDialog';
 import { trackRenderer } from './util/telemetry';
 
+/** 設定 > 起動時のタブ (ui.initialTab) の値 → タブID */
+const INITIAL_TAB_IDS: MainTab[] = ['ranking', 'search', 'mylist', 'download', 'library', 'history', 'settings'];
+
 export default function App(): JSX.Element {
   const activeTab = useAppStore((s) => s.activeTab);
   const setActiveTab = useAppStore((s) => s.setActiveTab);
@@ -65,10 +68,22 @@ export default function App(): JSX.Element {
   }, []);
 
   // 一度アクティブになったタブはアンマウントせず display:none で保持
-  const [mountedTabs, setMountedTabs] = useState<Set<MainTab>>(new Set([activeTab]));
+  const [mountedTabs, setMountedTabs] = useState<Set<MainTab>>(new Set());
+  // 起動時のタブ設定 (ui.initialTab) を読み込むまでタブを描画しない
+  const [initialTabReady, setInitialTabReady] = useState(false);
   useEffect(() => {
+    window.nndd.invoke<number>(window.nndd.channels.CONFIG_GET, 'ui.initialTab')
+      .then((v) => {
+        const tab = typeof v === 'number' ? INITIAL_TAB_IDS[v] : undefined;
+        if (tab) setActiveTab(tab);
+      })
+      .catch(() => {})
+      .finally(() => setInitialTabReady(true));
+  }, [setActiveTab]);
+  useEffect(() => {
+    if (!initialTabReady) return;
     setMountedTabs((prev) => (prev.has(activeTab) ? prev : new Set([...prev, activeTab])));
-  }, [activeTab]);
+  }, [activeTab, initialTabReady]);
 
   // トレイメニューからのタブ切替
   useEffect(() => {
