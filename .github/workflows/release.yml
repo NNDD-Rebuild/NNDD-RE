@@ -41,11 +41,18 @@ jobs:
       - name: generate-notes
         shell: pwsh
         run: |
-          $prev = git describe --tags --abbrev=0 HEAD^ 2>$null
-          if ($prev) {
-            $notes = (git log "$prev..HEAD" --pretty=format:"- %s" --no-merges) -join "`n"
+          # 正式版 (v1.2.3) は直前の正式版から、ベータ (v1.2.3-beta.1) は直前のタグからの差分にする
+          if ("${{ github.ref_name }}" -match '-') {
+            $prev = git describe --tags --abbrev=0 HEAD^ 2>$null
           } else {
-            $notes = (git log --pretty=format:"- %s" --no-merges) -join "`n"
+            $prev = git describe --tags --abbrev=0 --exclude '*-*' HEAD^ 2>$null
+          }
+          # 変更履歴には feat / fix / refactor だけを載せる
+          $filter = @('--extended-regexp', '--grep=^(feat|fix|refactor)(\([^)]*\))?!?:')
+          if ($prev) {
+            $notes = (git log @filter "$prev..HEAD" --pretty=format:"- %s" --no-merges) -join "`n"
+          } else {
+            $notes = (git log @filter --pretty=format:"- %s" --no-merges) -join "`n"
           }
           gh release edit "${{ github.ref_name }}" --notes $notes
         env:
