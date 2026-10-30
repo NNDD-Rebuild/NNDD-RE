@@ -7,7 +7,7 @@ import { LibraryManager } from './db/LibraryManager';
 import { getConfigStore } from './config/ConfigStore';
 import { registerIpcHandlers } from './ipc/registerIpc';
 import { shutdownHttpServer } from './ipc/handlers/http';
-import { createLogger, setLogLevel } from './util/Logger';
+import { createLogger, markSessionStart, setLogLevel } from './util/Logger';
 import { forwardRendererConsole } from './util/RendererConsole';
 import { isHeadless } from './util/headless';
 import { NicoContext } from './nicovideo/NicoContext';
@@ -80,6 +80,7 @@ const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
 } else {
+  markSessionStart();
   app.on('second-instance', (_event, argv) => {
     // Windows/Linux: nndd-re-cmd:// URL起動時、2つ目のインスタンスのargvに渡ってくる
     const cmdUrl = extractCmdUrlFromArgv(argv);

@@ -1,7 +1,14 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { ipcMain, dialog, shell, app, BrowserWindow } from 'electron';
-import { IpcChannel } from '@shared/types';
+import { IpcChannel, type LogExportOptions, type LogExportRange } from '@shared/types';
+import {
+  buildLogExportPreview,
+  deleteLogExport,
+  sendLogExport,
+  syncLogExportHistory
+} from '../../util/LogExport';
+import { listLogUploads } from '../../util/LogExportHistory';
 import { ConnectionDiag } from '../../nicovideo';
 import { NicoContext } from '../../nicovideo/NicoContext';
 import { MaintenanceMonitor } from '../../nicovideo/MaintenanceMonitor';
@@ -148,6 +155,15 @@ export function registerSystemHandlers(ctx: IpcHandlerContext): void {
     return true;
   });
   ipcMain.handle(IpcChannel.LOG_GET_PATH, () => getLogFilePath());
+  ipcMain.handle(IpcChannel.LOG_EXPORT_PREVIEW, (_e, range: LogExportRange, options: LogExportOptions) =>
+    buildLogExportPreview(range, options)
+  );
+  ipcMain.handle(IpcChannel.LOG_EXPORT_SEND, (_e, previewId: string) =>
+    sendLogExport(previewId)
+  );
+  ipcMain.handle(IpcChannel.LOG_EXPORT_HISTORY, () => listLogUploads());
+  ipcMain.handle(IpcChannel.LOG_EXPORT_SYNC, () => syncLogExportHistory());
+  ipcMain.handle(IpcChannel.LOG_EXPORT_DELETE, (_e, id: string) => deleteLogExport(id));
 
   // --- 自動更新 ---
   ipcMain.handle(IpcChannel.UPDATE_CHECK, async () => {

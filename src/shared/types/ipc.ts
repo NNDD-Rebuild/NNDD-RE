@@ -333,6 +333,11 @@ export const IpcChannel = {
   LOG_READ: 'nndd:log:read',
   LOG_CLEAR: 'nndd:log:clear',
   LOG_GET_PATH: 'nndd:log:getPath',
+  LOG_EXPORT_PREVIEW: 'nndd:log:exportPreview',
+  LOG_EXPORT_SEND: 'nndd:log:exportSend',
+  LOG_EXPORT_HISTORY: 'nndd:log:exportHistory',
+  LOG_EXPORT_SYNC: 'nndd:log:exportSync',
+  LOG_EXPORT_DELETE: 'nndd:log:exportDelete',
 
   // niconicoモード WebContentsView制御 (one-way)
   PLAYER_NICONICO_INIT: 'nndd:player:niconico:init',

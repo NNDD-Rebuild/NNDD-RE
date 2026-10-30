@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { app } from 'electron';
 import { getConfigStore } from '../config/ConfigStore';
+import { SESSION_START_MARK } from './LogExtract';
 import { format } from './LogFormat';
 
 /**
@@ -32,6 +33,28 @@ export function setLogLevel(level: 'standard' | 'verbose'): void {
 
 export function getLogLevel(): 'standard' | 'verbose' {
   return currentLogLevel;
+}
+
+function writeSessionMarker(): void {
+  if (!logFilePath) return;
+  fs.appendFileSync(
+    logFilePath,
+    `${formatLocalTimestamp(new Date())} [INFO][Session] ${SESSION_START_MARK} v${app.getVersion()} ${process.platform}\n`,
+    'utf-8'
+  );
+}
+
+/**
+ * 起動の目印行を書く。「n回前の起動からのログ」を切り出せるようにするため、
+ * 多重起動で終了する2つ目のインスタンスには付けないよう、single instance lock 取得後に呼ぶ。
+ */
+export function markSessionStart(): void {
+  ensureInit();
+  try {
+    writeSessionMarker();
+  } catch {
+    // 書き込み失敗は無視
+  }
 }
 
 function ensureInit(): void {
@@ -153,5 +176,7 @@ export function clearLog(): void {
   ensureInit();
   if (logFilePath && fs.existsSync(logFilePath)) {
     fs.writeFileSync(logFilePath, '', 'utf-8');
+    // 現在の起動の目印を失わないよう書き直す
+    writeSessionMarker();
   }
 }

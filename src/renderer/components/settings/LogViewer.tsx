@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useConfig } from '@renderer/hooks/useConfig';
 import { Btn, ButtonGroup, NumberCommitInput } from './common';
+import { LogSendPanel } from './LogSendPanel';
 
 type LogLevel = 'standard' | 'verbose';
 type LogRotation = { maxSizeMb: number; maxFiles: number };
@@ -11,6 +12,7 @@ export function LogViewer(): JSX.Element {
   const [autoReload, setAutoReload] = useState(true);
   const [logLevel, setLogLevel] = useConfig<LogLevel>('logLevel', 'standard');
   const [logRotation, setLogRotation] = useConfig<LogRotation>('logRotation', { maxSizeMb: 1, maxFiles: 3 });
+  const [sendOpen, setSendOpen] = useState(false);
   const ref = useRef<HTMLPreElement>(null);
 
   const load = (): void => {
@@ -88,6 +90,7 @@ export function LogViewer(): JSX.Element {
         <Btn onClick={handleOpen} disabled={!logPath}>
           ファイルを開く
         </Btn>
+        <Btn onClick={() => setSendOpen(true)}>開発者に送信</Btn>
         <Btn variant="danger" onClick={handleClear}>
           ログをクリア
         </Btn>
@@ -116,12 +119,16 @@ export function LogViewer(): JSX.Element {
           />
         </label>
       </div>
-      <pre
-        ref={ref}
-        className="flex-1 overflow-auto bg-black/40 p-2 text-xs font-mono whitespace-pre-wrap"
-      >
-        {text || '(ログはまだありません)'}
-      </pre>
+      {sendOpen ? (
+        <LogSendPanel onClose={() => setSendOpen(false)} />
+      ) : (
+        <pre
+          ref={ref}
+          className="flex-1 overflow-auto bg-black/40 p-2 text-xs font-mono whitespace-pre-wrap"
+        >
+          {text || '(ログはまだありません)'}
+        </pre>
+      )}
     </div>
   );
 }
