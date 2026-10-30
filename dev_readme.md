@@ -45,7 +45,7 @@ npm run gen:proto   # proto/nicolive から src/main/nicovideo/live/gen/ を生�
 | 映像ストリームキャッシュ | `userData/nndd-cache/movie/` (設定 `cacheRoot` 時は `<cacheRoot>/cache/movie/`) |
 | 設定 | `userData/nndd-config.json` (electron-store、`name: 'nndd-config'`) |
 | Cookie | `userData/accounts/<ユーザーID>.json` (tough-cookie、アカウント別。旧単一アカウント時代は `userData/cookies.json`) |
-| ログ | `userData/log/nndd.log` (超過分は `nndd.log.1` へローテート) |
+| ログ | `userData/log/nndd.log` (超過分は `nndd.log.1` 〜 `.N` へローテート。N は設定の保持世代数、既定3) |
 
 ---
 
@@ -357,7 +357,10 @@ live.nicovideo.jp/watch/lvXXX の #embedded-data (data-props)
 - **`NnddHttpServer`**: Express サーバー (内蔵, `/api/library`, `/api/mylist`, `/api/video/:id/*`, `/library`, `POST /NNDDServer` 等)。Tailscale 公開は `src/main/server/tailscale/`
 - **`TrayManager`**: システムトレイ・メニュー管理
 - **`UpdateManager`**: electron-updater
-- **`Logger`**: ログファイル出力 (`userData/log/nndd.log`)
+- **`LogFormat.ts`**: ログ引数の整形。printf 形式 (`%s %d …`) に対応するが `util.format` は使わない (オブジェクトが inspect 形式になりマスクが効かなくなるため)
+- **`RendererConsole.ts`**: レンダラーの console を main のログへ転送 (`console-message` の details 形式、debug は `log.verbose`)。新しいウィンドウでは直接 `console-message` を購読せずこれを使う
+- **`Logger`**: ログファイル出力 (`userData/log/nndd.log`)。ファイルには生のまま書く (マスクしない)。起動ごとに `[INFO][Session] ===== session start =====` の目印行を `markSessionStart()` で書く (single instance lock 取得後。ログクリア時にも書き直す)
+- **開発者へのログ送信** (設定 > ログ > 「開発者に送信」): `LogExtract.ts` (起動単位・日時での切り出し、electron 非依存) → `LogMask.ts` (送信時だけ Cookie・トークン・ユーザーID・メールなどを `***` に、ファイル/フォルダのパス (Windows・UNC・主要な POSIX ルート) を拡張子だけ残して `<path>` に) → `maskOptional` (UI のチェックで選ぶ追加マスク: 動画ID・タイトル・サムネ / チャンネルID・名前 / マイリスト・シリーズ・予約の名前。ログの定型書式のみ対象。会員種別 `premium=` はデバッグに必須なのでマスクしない。マスクは**エントリ単位**に掛ける: 「エントリ末尾まで伏せる」規則があるため) → `LogExport.ts` (プレビューを main が保持し、`LOG_EXPORT_SEND` は previewId だけ受けて gzip 送信)。送信先 `LOG_UPLOAD_URL` は `LogExport.ts` の定数で、受け口は別リポジトリ `NNDD-RE_cfworker` (Cloudflare Workers + R2)。URL が空だと送信はエラーになる。IPC は `LOG_EXPORT_PREVIEW` / `LOG_EXPORT_SEND` / `LOG_EXPORT_HISTORY` / `LOG_EXPORT_DELETE`。送信すると Worker が削除トークンを返し、`LogExportHistory.ts` が `userData/log-uploads.json` (ConfigStore には入れない: GitHub 同期で流れるため) に保存する。renderer にはトークンを渡さず、削除は id だけを受けて main がトークンを引く。30日超の履歴は読み込み時に間引く。`LOG_EXPORT_SYNC` (`syncLogExportHistory`) が `POST /upload/check` に履歴のトークンを送り、web 側で消された分・期限切れの分を履歴から外す (通信できないときは何もしない)
 - **`LibraryScanner`**: ライブラリディレクトリをスキャン・DB 同期
 - **`DiscordRpcManager`** (`src/main/discord/`): Discord Rich Presence
 - **`WebhookNotifier`** (`src/main/notification/`): Webhook 通知
