@@ -5,6 +5,7 @@ import { is } from '@electron-toolkit/utils';
 import { IpcChannel, type LiveCommentRange, type LiveEvent, type LiveStartResult } from '@shared/types';
 import { getConfigStore } from '../config/ConfigStore';
 import { createLogger } from '../util/Logger';
+import { forwardRendererConsole } from '../util/RendererConsole';
 import { getDiscordRpcManager } from '../discord/DiscordRpcManager';
 import { LiveSession, cookieMatches, type LiveStreamCookie } from '../nicovideo/live/LiveSession';
 
@@ -168,12 +169,7 @@ export class LivePlayerManager {
     });
     this.setupSession(win.webContents.session);
 
-    win.webContents.on('console-message', (_e, level, message, line, sourceId) => {
-      const src = sourceId?.split('/').pop() ?? '';
-      const text = `[renderer] ${message} (${src}:${line})`;
-      if (level >= 3) log.error(text);
-      else if (level === 2) log.warn(text);
-    });
+    forwardRendererConsole(win.webContents, log, 'renderer', 'warning');
     win.on('ready-to-show', () => win.show());
     this.windows.set(win, { requestedId: programId, ncvPending: ncv === 'pending' });
     // closed 後は webContents に触れないので、ID は先に控えておく

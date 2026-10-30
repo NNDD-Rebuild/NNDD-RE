@@ -4,6 +4,7 @@ import { is } from '@electron-toolkit/utils';
 import { IpcChannel } from '@shared/types';
 import type { NNDDREComment } from '@shared/types';
 import { createLogger } from '../util/Logger';
+import { forwardRendererConsole } from '../util/RendererConsole';
 import { getConfigStore } from '../config/ConfigStore';
 import { revealWindow, visibleBoundsOrUndefined } from '../util/windowBounds';
 
@@ -104,13 +105,7 @@ export class CommentWindowManager {
       latestBounds = win.getNormalBounds();
     });
 
-    win.webContents.on('console-message', (_e, level, message, line, sourceId) => {
-      const tag = ['verbose', 'info', 'warn', 'error'][level] ?? 'info';
-      const src = sourceId?.split('/').pop() ?? '';
-      log[tag === 'error' ? 'error' : tag === 'warn' ? 'warn' : 'info'](
-        `[comment-renderer:${tag}] ${message} (${src}:${line})`
-      );
-    });
+    forwardRendererConsole(win.webContents, log, 'comment-renderer');
 
     // ready-to-show は「初回描画完了」のタイミングで発火するが、React 側の
     // useEffect (IPC リスナー登録) 完了より先に発火することがある (特に Linux)。

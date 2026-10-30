@@ -7,6 +7,7 @@ import { getConfigStore } from '../config/ConfigStore';
 import { VideoFileSuffix } from '@shared/constants';
 import type { OpenPlayerParams, PlayerLocalFiles } from '@shared/types';
 import { createLogger } from '../util/Logger';
+import { forwardRendererConsole } from '../util/RendererConsole';
 import { setupHlsSessionInterceptor } from './HlsSessionInterceptor';
 import { registerProtocolHandlerForSession } from './LocalVideoProtocol';
 import { findNicowariFiles, NICOWARI_MARK } from '../library/NicowariSwf';
@@ -125,13 +126,7 @@ export class PlayerManager {
     }
 
     // レンダラーのコンソールログをメインプロセスのログに転送
-    win.webContents.on('console-message', (_e, level, message, line, sourceId) => {
-      const tag = ['verbose', 'info', 'warn', 'error'][level] ?? 'info';
-      const src = sourceId?.split('/').pop() ?? '';
-      log[tag === 'error' ? 'error' : tag === 'warn' ? 'warn' : 'info'](
-        `[renderer:${tag}] ${message} (${src}:${line})`
-      );
-    });
+    forwardRendererConsole(win.webContents, log, 'renderer');
 
     win.on('ready-to-show', () => {
       win.show();

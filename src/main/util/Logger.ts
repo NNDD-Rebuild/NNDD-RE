@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { app } from 'electron';
 import { getConfigStore } from '../config/ConfigStore';
+import { format } from './LogFormat';
 
 /**
  * ロガー (元: src/org/mineap/nndd/LogManager.as)
@@ -86,22 +87,6 @@ function writeToFile(level: string, tag: string, message: string): void {
   } catch {
     // ファイル書き込み失敗は無視
   }
-}
-
-function format(args: unknown[]): string {
-  return args
-    .map((a) => {
-      if (a instanceof Error) return `${a.message}\n${a.stack ?? ''}`;
-      if (typeof a === 'object') {
-        try {
-          return JSON.stringify(a);
-        } catch {
-          return String(a);
-        }
-      }
-      return String(a);
-    })
-    .join(' ');
 }
 
 export class Logger {

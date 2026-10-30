@@ -4,6 +4,7 @@ import { is } from '@electron-toolkit/utils';
 import { IpcChannel, type LiveCommentWindowEvent, type LiveCommentWindowMessage } from '@shared/types';
 import { getConfigStore } from '../config/ConfigStore';
 import { createLogger } from '../util/Logger';
+import { forwardRendererConsole } from '../util/RendererConsole';
 import { revealWindow, visibleBoundsOrUndefined } from '../util/windowBounds';
 
 const log = createLogger('LiveCommentWindowManager');
@@ -92,9 +93,7 @@ export class LiveCommentWindowManager {
       this.sendToPlayer(player, { type: 'closed' });
     });
     win.on('ready-to-show', () => win.show());
-    win.webContents.on('console-message', (_e, level, message, line, sourceId) => {
-      if (level >= 2) log.warn(`[renderer] ${message} (${sourceId?.split('/').pop() ?? ''}:${line})`);
-    });
+    forwardRendererConsole(win.webContents, log, 'renderer', 'warning');
 
     // プレイヤーが閉じたらコメントウィンドウも閉じる
     player.once('destroyed', () => this.close(player.id));

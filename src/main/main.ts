@@ -8,6 +8,7 @@ import { getConfigStore } from './config/ConfigStore';
 import { registerIpcHandlers } from './ipc/registerIpc';
 import { shutdownHttpServer } from './ipc/handlers/http';
 import { createLogger, setLogLevel } from './util/Logger';
+import { forwardRendererConsole } from './util/RendererConsole';
 import { isHeadless } from './util/headless';
 import { NicoContext } from './nicovideo/NicoContext';
 import { AccountManager } from './nicovideo/auth/AccountManager';
@@ -147,13 +148,7 @@ function createMainWindow(): BrowserWindow {
   });
 
   // レンダラーのコンソールログをメインプロセスのログに転送
-  win.webContents.on('console-message', (_e, level, message, line, sourceId) => {
-    const tag = ['verbose', 'info', 'warn', 'error'][level] ?? 'info';
-    const src = sourceId?.split('/').pop() ?? '';
-    log[tag === 'error' ? 'error' : tag === 'warn' ? 'warn' : 'info'](
-      `[renderer:${tag}] ${message} (${src}:${line})`
-    );
-  });
+  forwardRendererConsole(win.webContents, log, 'renderer');
 
   // ウィンドウサイズ・位置を保存
   const saveBounds = (): void => {
