@@ -1,0 +1,88 @@
+name: 不具合報告
+description: 動作がおかしい、エラーが出るなどの不具合を報告します。
+labels: ["bug"]
+body:
+  - type: checkboxes
+    id: precheck
+    attributes:
+      label: 事前確認
+      options:
+        - label: 最新版のNNDD-REで確認しました
+          required: true
+        - label: 同じ内容のissueがないか検索しました
+          required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 何が起きましたか
+      description: エラーメッセージが出た場合は、そのまま書いてください。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期待した動作
+  - type: textarea
+    id: steps
+    attributes:
+      label: 再現手順
+      placeholder: |
+        1. ...
+        2. ...
+        3. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: 問題が起きた機能
+      options:
+        - 動画ダウンロード
+        - 動画再生
+        - コメント
+        - 生放送
+        - ライブラリ
+        - スケジュール
+        - 設定・バックアップ/同期
+        - その他
+    validations:
+      required: true
+  - type: dropdown
+    id: account
+    attributes:
+      label: ニコニコのアカウント種別
+      description: ニコニコ側の仕様が会員種別で変わることがあるため、教えてください。
+      options:
+        - プレミアム会員
+        - 一般会員
+        - ログインしていない
+        - 関係ない
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: NNDD-REのバージョン
+      placeholder: "例: 1.2.3"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options:
+        - Windows 11
+        - Windows 10
+        - その他
+    validations:
+      required: true
+  - type: input
+    id: log-id
+    attributes:
+      label: ログID
+      description: 設定 > ログ > 「開発者に送信」で表示される10文字のIDです。
+      placeholder: "例: Z9X73K4YMR"
+  - type: textarea
+    id: extra
+    attributes:
+      label: スクリーンショット・補足

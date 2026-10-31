@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 質問・相談 (Discussions)
+    url: https://github.com/NNDD-Rebuild/NNDD-RE/discussions
+    about: 使い方の質問や相談はこちらへお願いします。
+  - name: 使い方ガイド
+    url: https://nndd-rebuild.github.io/NNDD-RE/usage-guide/
+    about: 操作方法はまずこちらを確認してください。

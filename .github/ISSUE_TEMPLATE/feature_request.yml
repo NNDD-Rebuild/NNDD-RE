@@ -1,0 +1,42 @@
+name: 機能要望
+description: 新しい機能や改善のアイデアを提案します。
+labels: ["enhancement"]
+body:
+  - type: checkboxes
+    id: precheck
+    attributes:
+      label: 事前確認
+      options:
+        - label: 同じ内容のissueがないか検索しました
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: 困っていること・背景
+      description: どんな場面で何が不便かを書いてください。
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 希望する機能
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 代わりの方法・今の回避策
+  - type: dropdown
+    id: kind
+    attributes:
+      label: 種類
+      options:
+        - 本家NNDDにある機能の移植
+        - 新しい機能
+        - 既存機能の改善
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: 補足
