@@ -59,11 +59,29 @@ body:
         - 関係ない
     validations:
       required: true
-  - type: input
+  - type: dropdown
     id: version
     attributes:
       label: NNDD-REのバージョン
-      placeholder: "例: 1.2.3"
+      description: 設定 > バージョン情報 で確認できます。一覧にない場合は「それより古い / 不明」を選び、補足に書いてください。
+      options:
+        - "1.1.0 (安定版)"
+        - "1.0.4 (安定版)"
+        - "1.0.3 (安定版)"
+        - "1.0.2 (安定版)"
+        - "1.0.1 (安定版)"
+        - "1.0.0 (安定版)"
+        - "1.1.0-beta.8 (開発版)"
+        - "1.1.0-beta.7 (開発版)"
+        - "1.1.0-beta.6 (開発版)"
+        - "1.1.0-beta.5 (開発版)"
+        - "1.1.0-beta.4 (開発版)"
+        - "1.1.0-beta.3 (開発版)"
+        - "1.1.0-beta.2 (開発版)"
+        - "1.1.0-beta.1 (開発版)"
+        - "1.0.4-beta.7 (開発版)"
+        - "1.0.4-beta.6 (開発版)"
+        - "それより古い / 不明"
     validations:
       required: true
   - type: dropdown
